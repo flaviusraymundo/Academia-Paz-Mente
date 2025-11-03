@@ -1,5 +1,5 @@
 [build]
-  command = "echo build-skip"
+  command = "npm run build"
   publish = "public"
 
 [functions]
