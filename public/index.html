@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="pt-BR">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LMS Demo</title>
+<body>
+  <h1>LMS Demo</h1>
+  <section>
+    <h2>JWT</h2>
+    <button id="getJwt">Gerar JWT (DEV_FAKE)</button>
+    <input id="email" placeholder="email" value="demo@local.test">
+    <textarea id="token" rows="4" cols="80" placeholder="token"></textarea>
+  </section>
+  <section>
+    <h2>Chamadas</h2>
+    <button id="catalog">GET /api/catalog</button>
+    <input id="courseId" placeholder="courseId">
+    <button id="modules">GET /api/catalog/courses/:id/modules</button>
+    <pre id="out" style="white-space:pre-wrap"></pre>
+  </section>
+  <script src="/app.js"></script>
+</body>
+</html>
