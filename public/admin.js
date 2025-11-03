@@ -23,7 +23,7 @@ document.getElementById("listCourses").onclick = async () => {
   out("listOut", r);
 };
 document.getElementById("listTracks").onclick = async () => {
-  const r = await req("/catalog"); // lista pública com tracks e courses
+  const r = await req("/catalog");
   out("listOut", r);
 };
 
@@ -120,4 +120,79 @@ document.getElementById("addPrereq").onclick = async () => {
   };
   const r = await req("/admin/prerequisites", "POST", body);
   out("listOut", r);
+};
+
+// ===== Visualizador =====
+document.getElementById("renderGraph").onclick = async () => {
+  const trackId = document.getElementById("g-track").value.trim();
+  const email = document.getElementById("g-email").value.trim();
+  if (!trackId) return alert("Informe trackId");
+  const qs = new URLSearchParams({ trackId, ...(email ? { email } : {}) }).toString();
+  const r = await req(`/admin/track-graph?${qs}`);
+  out("graphRaw", r);
+
+  if (r.status !== 200) { document.getElementById("graph").innerHTML = ""; return; }
+
+  const { track, nodes, edges, hasCycle } = r.data;
+  // Agrupa por nível
+  const byLevel = new Map();
+  nodes.forEach(n => {
+    const arr = byLevel.get(n.level) || [];
+    arr.push(n);
+    byLevel.set(n.level, arr);
+  });
+  // Ordena cada nível por 'order'
+  for (const arr of byLevel.values()) {
+    arr.sort((a,b) => (a.order - b.order) || a.title.localeCompare(b.title));
+  }
+
+  // Render
+  const container = document.getElementById("graph");
+  container.innerHTML = "";
+  Array.from(byLevel.keys()).sort((a,b)=>a-b).forEach(level => {
+    const row = document.createElement("div");
+    row.className = "level";
+    const label = document.createElement("div");
+    label.className = "muted";
+    label.textContent = `Nível ${level}`;
+    label.style.minWidth = "72px";
+    row.appendChild(label);
+
+    byLevel.get(level).forEach(n => {
+      const card = document.createElement("div");
+      card.className = "node";
+      const stateClass = n.courseCompleted ? "ok" : (n.prereqsMet ? "warn" : "bad");
+
+      card.innerHTML = `
+        <div class="title">${n.title}</div>
+        <div>
+          <span class="pill ${stateClass}">
+            ${n.courseCompleted ? "✓ Concluído" : (n.prereqsMet ? "↗ Liberado" : "⛔ Bloqueado")}
+          </span>
+          <span class="pill">${n.progressPct}%</span>
+          <span class="pill ${n.hasEntitlement ? "ok" : ""}">🎫 ${n.hasEntitlement ? "Entitlement" : "Sem acesso"}</span>
+        </div>
+        <div class="muted" style="margin-top:6px;">
+          ${n.prereqIds?.length ? "Pré-requisitos: " : "Sem pré-requisitos"}
+          ${n.prereqIds?.length ? n.prereqIds.map(id => {
+            const found = nodes.find(x=>x.id===id);
+            const name = found ? found.title : (id || "").slice(0,8)+"…";
+            const ok = nodes.find(x=>x.id===n.id)?.prereqsMet && found && (found.courseCompleted);
+            return `<span class="pill ${ok ? "ok" : "bad"}">${name}</span>`;
+          }).join(" ") : ""}
+        </div>
+      `;
+      row.appendChild(card);
+    });
+
+    container.appendChild(row);
+  });
+
+  if (hasCycle) {
+    const warn = document.createElement("div");
+    warn.className = "pill bad";
+    warn.style.marginTop = "8px";
+    warn.textContent = "Atenção: ciclo detectado nos pré-requisitos desta trilha.";
+    container.appendChild(warn);
+  }
 };
