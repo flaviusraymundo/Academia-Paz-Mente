@@ -23,7 +23,7 @@ app.use(cors({ origin: true, credentials: true }));
 app.use(morgan("combined"));
 app.use(json({ limit: "1mb" }));
 
-app.get("/health", async (_req: Request, res: Response) => {
+app.get(["/health", "/api/health"], async (_req: Request, res: Response) => {
   await pool.query("select 1");
   res.json({ ok: true });
 });
@@ -32,19 +32,19 @@ app.get("/health", async (_req: Request, res: Response) => {
 //app.use("/webhooks/stripe", stripeWebhookRouter);
 
 // Auth público
-app.use("/", authRouter);
+app.use(["/", "/api"], authRouter);
 
 // Público
-app.use("/catalog", catalogRouter);
+app.use(["/catalog", "/api/catalog"], catalogRouter);
 
 // Tracking público (respeita TRACK_PUBLIC=1 para aceitar sem JWT)
-app.use("/events", eventsRouter);
+app.use(["/events", "/api/events"], eventsRouter);
 
 // Autenticado
-app.use("/checkout", requireAuth, checkoutRouter);
-app.use("/video", requireAuth, videoRouter);
-app.use("/", requireAuth, progressRouter);       // /me/progress
-app.use("/", requireAuth, certificatesRouter);   // /certificates/:courseId/issue
-app.use("/quizzes", requireAuth, quizzesRouter);
+app.use(["/checkout", "/api/checkout"], requireAuth, checkoutRouter);
+app.use(["/video", "/api/video"], requireAuth, videoRouter);
+app.use(["/", "/api"], requireAuth, progressRouter);       // /me/progress
+app.use(["/", "/api"], requireAuth, certificatesRouter);   // /certificates/:courseId/issue
+app.use(["/quizzes", "/api/quizzes"], requireAuth, quizzesRouter);
 
 export default app;
