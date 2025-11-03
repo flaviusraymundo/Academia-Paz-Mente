@@ -12,6 +12,8 @@ import catalogRouter from "./routes/catalog.js";
 import checkoutRouter from "./routes/checkout.js";
 import quizzesRouter from "./routes/quizzes.js";
 import progressRouter from "./routes/progress.js";
+import authRouter from "./routes/auth.js";
+import certificatesRouter from "./routes/certificates.js";
 import { requireAuth } from "./middleware/auth.js";
 
 const app = express();
@@ -19,8 +21,6 @@ const app = express();
 app.use(helmet());
 app.use(cors({ origin: true, credentials: true }));
 app.use(morgan("combined"));
-
-// JSON global, exceto no webhook Stripe
 app.use(json({ limit: "1mb" }));
 
 app.get("/health", async (_req: Request, res: Response) => {
@@ -28,17 +28,21 @@ app.get("/health", async (_req: Request, res: Response) => {
   res.json({ ok: true });
 });
 
-// Webhook Stripe com raw
+// Webhooks
 app.use("/webhooks/stripe", stripeWebhookRouter);
 
-// Rotas públicas
+// Auth público
+app.use("/", authRouter);
+
+// Público
 app.use("/catalog", catalogRouter);
 
-// Rotas autenticadas
+// Autenticado
 app.use("/checkout", requireAuth, checkoutRouter);
 app.use("/video", requireAuth, videoRouter);
-app.use("/", requireAuth, progressRouter);      // /me/progress
-app.use("/quizzes", requireAuth, quizzesRouter); // /quizzes/:quizId/submit
+app.use("/", requireAuth, progressRouter);       // /me/progress
+app.use("/", requireAuth, certificatesRouter);   // /certificates/:courseId/issue
+app.use("/quizzes", requireAuth, quizzesRouter);
 
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
