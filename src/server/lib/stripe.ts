@@ -1,9 +1,13 @@
 // src/server/lib/stripe.ts
 import Stripe from "stripe";
 
-const { STRIPE_SECRET_KEY } = process.env;
-if (!STRIPE_SECRET_KEY) throw new Error("STRIPE_SECRET_KEY missing");
-
-export const stripe = new Stripe(STRIPE_SECRET_KEY, {
-  apiVersion: "2024-06-20",
-});
+const DEV = process.env.DEV_FAKE === "1";
+export const stripe = DEV
+  ? ({
+      checkout: {
+        sessions: {
+          create: async () => ({ url: "http://localhost:3000/mock-checkout" }),
+        },
+      },
+    } as any)
+  : new Stripe(process.env.STRIPE_SECRET_KEY as string, { apiVersion: "2024-06-20" });

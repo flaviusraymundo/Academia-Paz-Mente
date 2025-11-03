@@ -10,6 +10,10 @@ const router = Router();
 router.post("/:itemId/playback-token", async (req: Request, res: Response) => {
   const userId = req.auth?.userId;
   if (!userId) return res.status(401).json({ error: "unauthorized" });
+  if (process.env.DEV_FAKE === "1") {
+    // token fake para desenvolvimento sem Mux
+    return res.json({ token: "dev-token" });
+  }
 
   const itemId = req.params.itemId;
 
