@@ -3,6 +3,24 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Admin Lite</title>
+<style>
+  body { font-family: system-ui, Arial, sans-serif; line-height: 1.35; margin: 16px; }
+  h1, h2 { margin: 8px 0; }
+  input, textarea, select, button { margin: 4px 0; padding: 6px 8px; }
+  pre { background:#fafafa }
+  .graph { display: grid; gap: 12px; margin-top: 8px; }
+  .level { display: flex; gap: 12px; align-items: flex-start; }
+  .node { border:1px solid #ddd; border-radius: 10px; padding:10px 12px; min-width: 220px; box-shadow: 0 1px 2px rgba(0,0,0,.05); }
+  .node .title { font-weight: 600; margin-bottom: 6px; }
+  .pill { display:inline-block; border-radius:999px; padding:2px 8px; font-size:12px; margin-right:6px; border:1px solid #eee }
+  .ok { background:#e8f9ee; border-color:#bfe8cd; }
+  .warn { background:#fff7e0; border-color:#ffe28a; }
+  .bad { background:#ffeaea; border-color:#ffc3c3; }
+  .muted { color:#666 }
+  .legend { display:flex; gap:8px; margin-top:6px; flex-wrap: wrap; }
+  .legend .pill { border: none }
+  .code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; background:#f6f6f6; padding:2px 6px; border-radius:6px }
+</style>
 <body>
   <h1>Admin Lite</h1>
 
@@ -105,6 +123,25 @@
     <input id="p-course" placeholder="courseId" />
     <input id="p-req" placeholder="requiredCourseId" />
     <button id="addPrereq">Criar pré-requisito</button>
+  </section>
+
+  <hr />
+
+  <section>
+    <h2>Visualizar trilha + pré-requisitos + status do aluno</h2>
+    <p>Informe a <span class="code">trackId</span> e (opcional) o <span class="code">email</span> do aluno para ver bloqueios, progresso e conclusão.</p>
+    <input id="g-track" placeholder="trackId" />
+    <input id="g-email" placeholder="email do aluno (opcional)" />
+    <button id="renderGraph">Renderizar</button>
+    <div class="legend">
+      <span class="pill ok">✓ Concluído</span>
+      <span class="pill warn">↗ Liberado (prereqs ok)</span>
+      <span class="pill bad">⛔ Bloqueado (prereqs pend.)</span>
+      <span class="pill">🎫 Entitlement</span>
+      <span class="pill">📊 Progresso %</span>
+    </div>
+    <div id="graph" class="graph"></div>
+    <pre id="graphRaw" style="white-space:pre-wrap;border:1px solid #ddd;padding:8px;"></pre>
   </section>
 
   <script src="/admin.js"></script>
