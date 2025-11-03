@@ -1,0 +1,249 @@
+# api/openapi.yaml
+openapi: 3.0.3
+info:
+  title: LMS API
+  version: 1.0.0
+servers:
+  - url: https://api.seudominio.com
+paths:
+  /auth/magic-link:
+    post:
+      summary: Solicita magic link
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MagicLinkRequest' }
+      responses:
+        '204': { description: Enviado }
+  /catalog:
+    get:
+      summary: Lista cursos e trilhas
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Catalog' }
+  /checkout/session:
+    post:
+      summary: Cria sessão de checkout Stripe
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CheckoutRequest' }
+      responses:
+        '200':
+          description: URL de checkout
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CheckoutResponse' }
+  /webhooks/stripe:
+    post:
+      summary: Webhook Stripe
+      responses:
+        '200': { description: OK }
+  /entitlements/refresh:
+    post:
+      summary: Recalcula entitlements do usuário autenticado
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Atualizado }
+  /courses/{courseId}/modules:
+    get:
+      summary: Lista módulos liberados no curso
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Modules' }
+  /quizzes/{quizId}/submit:
+    post:
+      summary: Submete respostas do quiz do módulo
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: quizId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/QuizSubmission' }
+      responses:
+        '200':
+          description: Resultado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QuizResult' }
+  /video/{itemId}/playback-token:
+    post:
+      summary: Emite token assinado para playback Mux
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Token
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlaybackToken' }
+  /me/progress:
+    get:
+      summary: Obtém progresso
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Progress' }
+    patch:
+      summary: Heartbeat/atualização de tempo
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProgressPatch' }
+      responses:
+        '204': { description: Atualizado }
+  /certificates/{courseId}/issue:
+    post:
+      summary: Emite certificado para curso concluído
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Certificado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Certificate' }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    MagicLinkRequest:
+      type: object
+      required: [email]
+      properties:
+        email: { type: string, format: email }
+    Catalog:
+      type: object
+      properties:
+        courses:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              slug: { type: string }
+              title: { type: string }
+              summary: { type: string }
+              level: { type: string }
+        tracks:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              slug: { type: string }
+              title: { type: string }
+    CheckoutRequest:
+      type: object
+      required: [mode, priceId]
+      properties:
+        mode: { type: string, enum: [payment, subscription] }
+        priceId: { type: string }
+        courseId: { type: string, nullable: true }
+    CheckoutResponse:
+      type: object
+      properties:
+        url: { type: string }
+    Modules:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              title: { type: string }
+              order: { type: integer }
+              unlocked: { type: boolean }
+              itemCount: { type: integer }
+    QuizSubmission:
+      type: object
+      required: [answers]
+      properties:
+        answers:
+          type: array
+          items:
+            type: object
+            properties:
+              questionId: { type: string }
+              choiceIds:
+                type: array
+                items: { type: string }
+    QuizResult:
+      type: object
+      properties:
+        passed: { type: boolean }
+        score: { type: number }
+    PlaybackToken:
+      type: object
+      properties:
+        token: { type: string }
+    Progress:
+      type: object
+      properties:
+        modules:
+          type: array
+          items:
+            type: object
+            properties:
+              moduleId: { type: string }
+              status: { type: string }
+              score: { type: number }
+              timeSpentSecs: { type: integer }
+    ProgressPatch:
+      type: object
+      required: [events]
+      properties:
+        events:
+          type: array
+          items:
+            type: object
+            properties:
+              type: { type: string, enum: [started, paused, seeked, completed, heartbeat] }
+              itemId: { type: string }
+              dt: { type: string, format: date-time }
+              deltaSecs: { type: integer }
+    Certificate:
+      type: object
+      properties:
+        id: { type: string }
+        courseId: { type: string }
+        issuedAt: { type: string, format: date-time }
+        pdfUrl: { type: string }
+        hash: { type: string }
