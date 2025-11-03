@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="pt-BR">
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Admin Lite</title>
+<body>
+  <h1>Admin Lite</h1>
+
+  <section>
+    <h2>Auth</h2>
+    <p>Pegue um JWT (DEV_FAKE): <code>/.netlify/functions/dev-jwt?email=seu@email</code>
+       e cole abaixo. Seu e-mail deve estar em <code>ADMIN_EMAILS</code>.</p>
+    <textarea id="jwt" rows="4" cols="90" placeholder="Cole o token JWT aqui"></textarea>
+    <button id="ping">Verificar /api/health</button>
+    <pre id="out" style="white-space:pre-wrap;border:1px solid #ddd;padding:8px;"></pre>
+  </section>
+
+  <hr />
+
+  <section>
+    <h2>Lista básica</h2>
+    <button id="listCourses">Listar cursos</button>
+    <button id="listTracks">Listar trilhas</button>
+    <pre id="listOut" style="white-space:pre-wrap;border:1px solid #ddd;padding:8px;"></pre>
+  </section>
+
+  <hr />
+
+  <section>
+    <h2>Novo curso</h2>
+    <input id="c-slug" placeholder="slug" />
+    <input id="c-title" placeholder="título" />
+    <input id="c-summary" placeholder="resumo" />
+    <input id="c-level" placeholder="level (beginner|...)" value="beginner" />
+    <label><input type="checkbox" id="c-active" checked /> ativo</label>
+    <button id="createCourse">Criar/Atualizar curso</button>
+  </section>
+
+  <section>
+    <h2>Novo módulo</h2>
+    <input id="m-course" placeholder="courseId" />
+    <input id="m-title" placeholder="título do módulo" />
+    <input id="m-order" type="number" value="0" />
+    <button id="createModule">Criar módulo</button>
+  </section>
+
+  <section>
+    <h2>Novo item</h2>
+    <input id="i-module" placeholder="moduleId" />
+    <select id="i-type">
+      <option value="video">video</option>
+      <option value="text">text</option>
+      <option value="quiz">quiz</option>
+    </select>
+    <input id="i-order" type="number" value="0" />
+    <input id="i-payload" placeholder='payload_ref (JSON) ex: {"mux_playback_id":"..."}' size="80" />
+    <button id="createItem">Criar item</button>
+  </section>
+
+  <section>
+    <h2>Quiz</h2>
+    <div>
+      <strong>Criar/atualizar quiz do módulo</strong><br/>
+      <input id="q-module" placeholder="moduleId" />
+      <input id="q-pass" type="number" value="70" />
+      <button id="createQuiz">Criar/Atualizar quiz</button>
+    </div>
+    <div style="margin-top:8px;">
+      <strong>Adicionar questão</strong><br/>
+      <input id="qq-quiz" placeholder="quizId" />
+      <select id="qq-kind">
+        <option value="single">single</option>
+        <option value="multiple">multiple</option>
+        <option value="truefalse">truefalse</option>
+      </select>
+      <input id="qq-body" placeholder='body JSON ex: {"prompt":"Pergunta?"}' size="60" />
+      <input id="qq-choices" placeholder='choices JSON ex: [{"id":"A","text":"Opção A"}]' size="60" />
+      <input id="qq-answer" placeholder='answerKey JSON ex: ["A"] ou true/false' size="40" />
+      <button id="addQuestion">Adicionar questão</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Trilhas</h2>
+    <div>
+      <strong>Criar/atualizar trilha</strong><br/>
+      <input id="t-slug" placeholder="slug" />
+      <input id="t-title" placeholder="título" />
+      <label><input type="checkbox" id="t-active" checked /> ativo</label>
+      <button id="createTrack">Criar/Atualizar trilha</button>
+    </div>
+    <div style="margin-top:8px;">
+      <strong>Adicionar curso à trilha</strong><br/>
+      <input id="tc-track" placeholder="trackId" />
+      <input id="tc-course" placeholder="courseId" />
+      <input id="tc-order" type="number" value="0" />
+      <label><input type="checkbox" id="tc-required" checked /> required</label>
+      <button id="addTrackCourse">Adicionar</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Pré-requisitos de curso</h2>
+    <p>Define que o <em>courseId</em> exige o <em>requiredCourseId</em> (o aluno precisa concluir o requerido antes).</p>
+    <input id="p-course" placeholder="courseId" />
+    <input id="p-req" placeholder="requiredCourseId" />
+    <button id="addPrereq">Criar pré-requisito</button>
+  </section>
+
+  <script src="/admin.js"></script>
+</body>
+</html>
