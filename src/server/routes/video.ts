@@ -1,6 +1,6 @@
 // src/server/routes/video.ts
 import { Router, Request, Response } from "express";
-import jwt from "jsonwebtoken";
+import jwt, { JwtHeader } from "jsonwebtoken";
 import { pool } from "../lib/db.js";
 
 const router = Router();
@@ -48,15 +48,20 @@ router.post("/:itemId/playback-token", async (req: Request, res: Response) => {
     const privateKey = (process.env.MUX_SIGNING_KEY_PRIVATE || "").replace(/\\n/g, "\n");
     if (!keyId || !privateKey) return res.status(500).json({ error: "mux_signing_missing" });
 
+    const header: JwtHeader = {
+      alg: "RS256",
+      kid: keyId,
+      typ: "JWT",
+    };
+
     const token = jwt.sign(
       {
         aud: "v",
         sub: playbackId,
-        kid: keyId,
         exp: Math.floor(Date.now() / 1000) + 60 * 10,
       },
       privateKey,
-      { algorithm: "RS256", header: { kid: keyId, typ: "JWT" } }
+      { algorithm: "RS256", header }
     );
 
     return res.json({ token });
