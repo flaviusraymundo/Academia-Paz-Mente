@@ -14,6 +14,7 @@ import progressRouter from "./routes/progress.js";
 import authRouter from "./routes/auth.js";
 import certificatesRouter from "./routes/certificates.js";
 import { requireAuth } from "./middleware/auth.js";
+import eventsRouter from "./routes/events.js";
 
 const app = express();
 
@@ -35,6 +36,9 @@ app.use("/", authRouter);
 
 // Público
 app.use("/catalog", catalogRouter);
+
+// Tracking público (respeita TRACK_PUBLIC=1 para aceitar sem JWT)
+app.use("/events", eventsRouter);
 
 // Autenticado
 app.use("/checkout", requireAuth, checkoutRouter);
