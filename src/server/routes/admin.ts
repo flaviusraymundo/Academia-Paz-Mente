@@ -108,7 +108,7 @@ router.post("/items", async (req, res) => {
 });
 
 // ===== Quizzes =====
-router.post("/quizzes", async (req, res) => {
+router.post("/quizzes", async (req, res: Response) => {
   const parsed = QuizBody.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
@@ -183,6 +183,169 @@ router.post("/prerequisites", async (req, res) => {
     [p.courseId, p.requiredCourseId]
   );
   res.json(rows[0] || { ok: true });
+});
+
+// ===== Visualizador: grafo de trilha + prereqs + status do aluno =====
+/**
+ * GET /admin/track-graph?trackId=...&email=... (ou &userId=...)
+ * Retorna:
+ * {
+ *   track: { id, title },
+ *   nodes: [{ id, title, slug, order, level, moduleCount, progressPct, courseCompleted, hasEntitlement, prereqsMet }],
+ *   edges: [{ from, to }],
+ *   hasCycle: boolean
+ * }
+ */
+router.get("/track-graph", async (req: Request, res: Response) => {
+  const trackId = String(req.query.trackId || "");
+  const email = (req.query.email as string) || "";
+  const userIdParam = (req.query.userId as string) || "";
+  if (!trackId) return res.status(400).json({ error: "trackId required" });
+
+  const client = await pool.connect();
+  try {
+    // resolve usuário (opcional)
+    let userId: string | null = null;
+    if (userIdParam) {
+      userId = userIdParam;
+    } else if (email) {
+      const u = await client.query(`select id from users where lower(email)=lower($1)`, [email]);
+      userId = u.rows[0]?.id || null;
+    }
+
+    const t = await client.query(`select id, title from tracks where id = $1`, [trackId]);
+    if (t.rowCount === 0) return res.status(404).json({ error: "track_not_found" });
+    const track = t.rows[0];
+
+    const tc = await client.query(
+      `select tc.course_id, c.title, c.slug, tc."order"
+       from track_courses tc
+       join courses c on c.id = tc.course_id
+       where tc.track_id = $1
+       order by tc."order" asc`,
+      [trackId]
+    );
+    const courseIds = tc.rows.map((r) => r.course_id);
+    if (courseIds.length === 0) {
+      return res.json({ track, nodes: [], edges: [], hasCycle: false });
+    }
+
+    const prereq = await client.query(
+      `select course_id, required_course_id
+       from prerequisites
+       where course_id = any($1::uuid[])`,
+      [courseIds]
+    );
+
+    const moduleCounts = await client.query(
+      `select course_id, count(*)::int as cnt
+       from modules
+       where course_id = any($1::uuid[])
+       group by course_id`,
+      [courseIds]
+    );
+
+    const passedCounts = userId
+      ? await client.query(
+          `select m.course_id, count(*)::int as cnt
+           from modules m
+           join progress p on p.module_id = m.id
+           where p.user_id = $1 and p.status in ('passed','completed')
+                 and m.course_id = any($2::uuid[])
+           group by m.course_id`,
+          [userId, courseIds]
+        )
+      : { rows: [] as any[] };
+
+    const ent = userId
+      ? await client.query(
+          `select course_id from entitlements where user_id = $1 and course_id = any($2::uuid[])`,
+          [userId, courseIds]
+        )
+      : { rows: [] as any[] };
+
+    const modMap = new Map<string, number>(
+      moduleCounts.rows.map((r: any) => [r.course_id, Number(r.cnt)])
+    );
+    const passMap = new Map<string, number>(
+      passedCounts.rows.map((r: any) => [r.course_id, Number(r.cnt)])
+    );
+    const entSet = new Set<string>(ent.rows.map((r: any) => r.course_id));
+
+    // cursos concluídos = 100% módulos (se houver módulos)
+    const completedSet = new Set<string>();
+    for (const id of courseIds) {
+      const total = modMap.get(id) || 0;
+      const passed = passMap.get(id) || 0;
+      if (total > 0 && passed >= total) completedSet.add(id);
+    }
+
+    // grafo: nós e arestas internas à trilha
+    const edges = prereq.rows
+      .filter((r: any) => courseIds.includes(r.required_course_id))
+      .map((r: any) => ({ from: r.required_course_id, to: r.course_id }));
+
+    // layering simples (Kahn) considerando apenas prereqs internos
+    const indeg = new Map<string, number>();
+    for (const id of courseIds) indeg.set(id, 0);
+    for (const e of edges) indeg.set(e.to, (indeg.get(e.to) || 0) + 1);
+
+    const levels = new Map<string, number>();
+    const q: string[] = [];
+    indeg.forEach((deg, id) => { if (deg === 0) q.push(id); });
+
+    let hasCycle = false;
+    while (q.length) {
+      const cur = q.shift()!;
+      const curLevel = levels.get(cur) ?? 0;
+      for (const e of edges.filter((x) => x.from === cur)) {
+        const d = (indeg.get(e.to) || 0) - 1;
+        indeg.set(e.to, d);
+        if (d === 0) {
+          levels.set(e.to, Math.max(levels.get(e.to) ?? 0, curLevel + 1));
+          q.push(e.to);
+        }
+      }
+      if (!levels.has(cur)) levels.set(cur, 0);
+    }
+    // verifica ciclo: se alguém ficou com indegree > 0
+    for (const [id, deg] of indeg.entries()) if (deg > 0) hasCycle = true;
+
+    // monta nós com métricas
+    const prereqMap = new Map<string, string[]>();
+    for (const r of prereq.rows) {
+      const arr = prereqMap.get(r.course_id) || [];
+      arr.push(r.required_course_id);
+      prereqMap.set(r.course_id, arr);
+    }
+
+    const nodes = tc.rows.map((r: any) => {
+      const total = modMap.get(r.course_id) || 0;
+      const passed = passMap.get(r.course_id) || 0;
+      const progressPct = total > 0 ? Math.round((passed / total) * 100) : 0;
+      const courseCompleted = completedSet.has(r.course_id);
+      const hasEntitlement = entSet.has(r.course_id);
+      const reqs = prereqMap.get(r.course_id) || [];
+      const prereqsMet = reqs.every((reqId) => completedSet.has(reqId));
+      return {
+        id: r.course_id,
+        title: r.title,
+        slug: r.slug,
+        order: Number(r.order),
+        level: levels.get(r.course_id) ?? 0,
+        moduleCount: total,
+        progressPct,
+        courseCompleted,
+        hasEntitlement,
+        prereqsMet,
+        prereqIds: reqs,
+      };
+    });
+
+    res.json({ track, nodes, edges, hasCycle });
+  } finally {
+    client.release();
+  }
 });
 
 export default router;
