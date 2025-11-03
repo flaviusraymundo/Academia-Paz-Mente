@@ -12,12 +12,12 @@ async function call(url, method="GET", body) {
   document.getElementById("out").textContent = `HTTP ${res.status}\n` + text;
   try { return JSON.parse(text); } catch { return text; }
 }
-
-document.getElementById("getJwt").onclick = async () => {
+document.getElementById("getJwt").addEventListener("click", async () => {
   const email = document.getElementById("email").value.trim();
-  const data = await call(`//.netlify/functions/dev-jwt?email=${encodeURIComponent(email)}`);
-  if (data.token) document.getElementById("token").value = data.token;
-};
+  const r = await fetch(`/.netlify/functions/dev-jwt?email=${encodeURIComponent(email)}`);
+  const data = await r.json();
+  document.getElementById("token").value = data.token || "";
+});
 
 document.getElementById("catalog").onclick = async () => {
   const data = await call("/api/catalog");
