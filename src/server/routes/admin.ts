@@ -6,7 +6,7 @@ import { z } from "zod";
 const router = Router();
 
 // Listar cursos com contagens (admin)
-router.get("/admin/courses", async (_req: Request, res: Response) => {
+router.get("/courses", async (_req: Request, res: Response) => {
   const q = await pool.query(`
     select
       c.id, c.slug, c.title, c.summary, c.level, c.active,
