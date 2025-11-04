@@ -1,39 +1,53 @@
-// Admin Lite helpers
+// public/admin.js
 const $ = (id) => document.getElementById(id);
-const authHeader = () => {
-  const t = ($("jwt")?.value || "").trim();
-  return t ? { Authorization: `Bearer ${t}` } : {};
-};
-const show = (el, status, text) => {
-  el.textContent = `HTTP ${status}\n` + text;
-};
 
-// Ping /api/health (só para checar API; não precisa JWT)
+// Lê o token de forma robusta: aceita JSON {"token":"..."} ou string com/sem aspas
+function readToken() {
+  let v = ($("jwt")?.value || "").trim();
+  // se colou o JSON inteiro
+  if (v.startsWith("{")) {
+    try {
+      const j = JSON.parse(v);
+      if (j && j.token) v = String(j.token);
+    } catch {}
+  }
+  // remove aspas simples/duplas de borda
+  v = v.replace(/^['"]+|['"]+$/g, "").trim();
+  return v;
+}
+
+function authHeader() {
+  const t = readToken();
+  return t ? { Authorization: `Bearer ${t}` } : {};
+}
+
+function show(el, status, text) {
+  el.textContent = `HTTP ${status}\n` + text;
+}
+
+// Ping (público)
 document.getElementById("ping")?.addEventListener("click", async () => {
   const out = $("out");
   const r = await fetch("/api/health");
   show(out, r.status, await r.text());
 });
 
-// === Listagens ===
-
-// ADMIN: listar cursos (requer JWT)
+// ADMIN: Listar cursos (requer JWT)
 document.getElementById("listCourses")?.addEventListener("click", async () => {
   const out = $("listOut");
   const r = await fetch("/api/admin/courses", { headers: authHeader() });
   show(out, r.status, await r.text());
 });
 
-// Público: listar trilhas/catálogo (não requer JWT)
+// Público: Listar trilhas/catálogo
 document.getElementById("listTracks")?.addEventListener("click", async () => {
   const out = $("listOut");
   const r = await fetch("/api/catalog");
   show(out, r.status, await r.text());
 });
 
-// === CRUDs ===
-
-// Criar/atualizar curso
+// === CRUD ===
+// Curso
 document.getElementById("createCourse")?.addEventListener("click", async () => {
   const slug = $("c-slug").value.trim();
   const title = $("c-title").value.trim();
@@ -49,7 +63,7 @@ document.getElementById("createCourse")?.addEventListener("click", async () => {
   show(out, r.status, await r.text());
 });
 
-// Criar módulo
+// Módulo
 document.getElementById("createModule")?.addEventListener("click", async () => {
   const courseId = $("m-course").value.trim();
   const title = $("m-title").value.trim();
@@ -63,14 +77,14 @@ document.getElementById("createModule")?.addEventListener("click", async () => {
   show(out, r.status, await r.text());
 });
 
-// Criar item
+// Item
 document.getElementById("createItem")?.addEventListener("click", async () => {
   const moduleId = $("i-module").value.trim();
   const type = $("i-type").value;
   const order = Number($("i-order").value || 0);
   const raw = $("i-payload").value.trim();
   let payload_ref = {};
-  try { if (raw) payload_ref = JSON.parse(raw); } catch (e) {}
+  try { if (raw) payload_ref = JSON.parse(raw); } catch {}
   const out = $("listOut");
   const r = await fetch(`/api/admin/modules/${encodeURIComponent(moduleId)}/items`, {
     method: "POST",
@@ -93,29 +107,17 @@ document.getElementById("createQuiz")?.addEventListener("click", async () => {
   show(out, r.status, await r.text());
 });
 
-// Adicionar questão
+// Questão
 document.getElementById("addQuestion")?.addEventListener("click", async () => {
   const quizId = $("qq-quiz").value.trim();
   const kind = $("qq-kind").value;
   const bodyRaw = $("qq-body").value.trim();
   const choicesRaw = $("qq-choices").value.trim();
   const answerRaw = $("qq-answer").value.trim();
-
-  let body = {};
-  let choices = [];
-  let answerKey = null;
-
+  let body = {}, choices = [], answerKey = null;
   try { if (bodyRaw) body = JSON.parse(bodyRaw); } catch {}
   try { if (choicesRaw) choices = JSON.parse(choicesRaw); } catch {}
-  try {
-    if (answerRaw) {
-      // pode ser JSON (["A"]) ou true/false
-      answerKey = JSON.parse(answerRaw);
-    }
-  } catch {
-    answerKey = answerRaw; // fallback
-  }
-
+  try { if (answerRaw) answerKey = JSON.parse(answerRaw); } catch { answerKey = answerRaw; }
   const out = $("listOut");
   const r = await fetch(`/api/admin/quizzes/${encodeURIComponent(quizId)}/questions`, {
     method: "POST",
