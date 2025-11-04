@@ -5,8 +5,8 @@ import { z } from "zod";
 
 const router = Router();
 
-// Listar cursos com contagens (admin)
-router.get("/courses", async (_req: Request, res: Response) => {
+// Listar cursos com contagens (sem quebrar /api/admin/courses existente)
+router.get("/courses/summary", async (_req: Request, res: Response) => {
   const q = await pool.query(`
     select
       c.id, c.slug, c.title, c.summary, c.level, c.active,
