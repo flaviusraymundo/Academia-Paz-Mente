@@ -150,6 +150,106 @@ router.post("/questions", async (req, res) => {
   res.json(rows[0]);
 });
 
+// ---------------------------------------------------------
+// QUIZZES (ADMIN)
+// ---------------------------------------------------------
+// POST /api/admin/modules/:moduleId/quiz  → cria/atualiza quiz do módulo
+router.post("/modules/:moduleId/quiz", async (req, res) => {
+  try {
+    const moduleId = String(req.params.moduleId);
+    const passScoreRaw = req.body?.passScore;
+    const passScoreNum = Number(passScoreRaw);
+    const passScore = Number.isFinite(passScoreNum) ? passScoreNum : 70;
+    if (passScore < 0 || passScore > 100) {
+      return res.status(400).json({ error: "invalid_pass_score" });
+    }
+
+    // garante que o módulo existe
+    const m = await pool.query(
+      `select id from modules where id = $1 limit 1`,
+      [moduleId]
+    );
+    if (m.rowCount === 0) {
+      return res.status(404).json({ error: "module_not_found" });
+    }
+
+    // upsert por module_id
+    let q;
+    try {
+      q = await pool.query(
+        `
+        insert into quizzes (module_id, pass_score)
+        values ($1, $2)
+        on conflict (module_id)
+        do update set pass_score = excluded.pass_score
+        returning id, module_id, pass_score, created_at
+        `,
+        [moduleId, passScore]
+      );
+    } catch {
+      // fallback caso não exista UNIQUE(module_id)
+      const cur = await pool.query(
+        `select id from quizzes where module_id = $1 limit 1`,
+        [moduleId]
+      );
+      if (cur.rowCount === 0) {
+        q = await pool.query(
+          `insert into quizzes (module_id, pass_score)
+           values ($1,$2)
+           returning id, module_id, pass_score, created_at`,
+          [moduleId, passScore]
+        );
+      } else {
+        q = await pool.query(
+          `update quizzes
+             set pass_score = $2
+           where id = $1
+           returning id, module_id, pass_score, created_at`,
+          [cur.rows[0].id, passScore]
+        );
+      }
+    }
+    return res.json({ quiz: q.rows[0] });
+  } catch (err) {
+    console.error("admin.createQuiz", err);
+    return res.status(500).json({ error: "server_error" });
+  }
+});
+
+// POST /api/admin/quizzes/:quizId/questions  → adiciona questão
+router.post("/quizzes/:quizId/questions", async (req, res) => {
+  try {
+    const quizId = String(req.params.quizId);
+    const kind = String(req.body?.kind || "single");
+    const body = req.body?.body ?? {};
+    const choices = req.body?.choices ?? [];
+    const answerKey = req.body?.answerKey ?? null;
+
+    // valida quiz
+    const q = await pool.query(
+      `select id from quizzes where id = $1 limit 1`,
+      [quizId]
+    );
+    if (q.rowCount === 0) {
+      return res.status(404).json({ error: "quiz_not_found" });
+    }
+
+    // insere pergunta (tabela 'questions' com colunas jsonb)
+    const ins = await pool.query(
+      `
+      insert into questions (quiz_id, kind, body, choices, answer_key)
+      values ($1, $2, $3::jsonb, $4::jsonb, $5::jsonb)
+      returning id, quiz_id, kind, body, choices, answer_key, created_at
+      `,
+      [quizId, kind, JSON.stringify(body), JSON.stringify(choices), JSON.stringify(answerKey)]
+    );
+    return res.json({ question: ins.rows[0] });
+  } catch (err) {
+    console.error("admin.addQuestion", err);
+    return res.status(500).json({ error: "server_error" });
+  }
+});
+
 // ===== Trilhas =====
 router.post("/tracks", async (req, res) => {
   const parsed = TrackBody.safeParse(req.body);
