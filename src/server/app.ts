@@ -15,6 +15,16 @@ import authRouter from "./routes/auth.js";
 import certificatesRouter from "./routes/certificates.js";
 import { requireAuth } from "./middleware/auth.js";
 import eventsRouter from "./routes/events.js";
+import adminRouter from "./routes/admin.js";
+import { requireAuth } from "./middleware/auth.js";
+import { requireAdmin } from "./middleware/admin.js";
+
+// ...
+
+// Admin (protegido)
+// funciona tanto via /api/admin (redirect da Function) quanto /admin (exec local/dev)
+app.use(["/admin", "/api/admin"], requireAuth, requireAdmin, adminRouter);
+
 
 const app = express();
 
