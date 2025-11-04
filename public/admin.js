@@ -1,198 +1,167 @@
-function authHeaders() {
-  const t = document.getElementById("jwt").value.trim();
-  return t ? { Authorization: `Bearer ${t}`, "Content-Type": "application/json" } : { "Content-Type": "application/json" };
-}
-async function req(path, method="GET", body) {
-  const r = await fetch(`/api${path}`, {
-    method,
-    headers: authHeaders(),
-    body: body ? JSON.stringify(body) : undefined
+// Admin Lite helpers
+const $ = (id) => document.getElementById(id);
+const authHeader = () => {
+  const t = ($("jwt")?.value || "").trim();
+  return t ? { Authorization: `Bearer ${t}` } : {};
+};
+const show = (el, status, text) => {
+  el.textContent = `HTTP ${status}\n` + text;
+};
+
+// Ping /api/health (só para checar API; não precisa JWT)
+document.getElementById("ping")?.addEventListener("click", async () => {
+  const out = $("out");
+  const r = await fetch("/api/health");
+  show(out, r.status, await r.text());
+});
+
+// === Listagens ===
+
+// ADMIN: listar cursos (requer JWT)
+document.getElementById("listCourses")?.addEventListener("click", async () => {
+  const out = $("listOut");
+  const r = await fetch("/api/admin/courses", { headers: authHeader() });
+  show(out, r.status, await r.text());
+});
+
+// Público: listar trilhas/catálogo (não requer JWT)
+document.getElementById("listTracks")?.addEventListener("click", async () => {
+  const out = $("listOut");
+  const r = await fetch("/api/catalog");
+  show(out, r.status, await r.text());
+});
+
+// === CRUDs ===
+
+// Criar/atualizar curso
+document.getElementById("createCourse")?.addEventListener("click", async () => {
+  const slug = $("c-slug").value.trim();
+  const title = $("c-title").value.trim();
+  const summary = $("c-summary").value.trim();
+  const level = $("c-level").value.trim() || "beginner";
+  const active = $("c-active").checked;
+  const out = $("listOut");
+  const r = await fetch("/api/admin/courses", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeader() },
+    body: JSON.stringify({ slug, title, summary, level, active })
   });
-  const text = await r.text();
-  try { return { status: r.status, data: JSON.parse(text) }; } catch { return { status: r.status, data: text }; }
-}
-function out(el, x) { document.getElementById(el).textContent = typeof x==="string" ? x : JSON.stringify(x, null, 2); }
+  show(out, r.status, await r.text());
+});
 
-document.getElementById("ping").onclick = async () => {
-  const res = await fetch("/api/health");
-  out("out", `HTTP ${res.status} ${await res.text()}`);
-};
-
-document.getElementById("listCourses").onclick = async () => {
-  const r = await req("/admin/courses");
-  out("listOut", r);
-};
-document.getElementById("listTracks").onclick = async () => {
-  const r = await req("/catalog");
-  out("listOut", r);
-};
-
-document.getElementById("createCourse").onclick = async () => {
-  const body = {
-    slug: document.getElementById("c-slug").value.trim(),
-    title: document.getElementById("c-title").value.trim(),
-    summary: document.getElementById("c-summary").value.trim(),
-    level: document.getElementById("c-level").value.trim() || "beginner",
-    active: document.getElementById("c-active").checked
-  };
-  const r = await req("/admin/courses", "POST", body);
-  out("listOut", r);
-};
-
-document.getElementById("createModule").onclick = async () => {
-  const body = {
-    courseId: document.getElementById("m-course").value.trim(),
-    title: document.getElementById("m-title").value.trim(),
-    order: Number(document.getElementById("m-order").value || 0),
-  };
-  const r = await req("/admin/modules", "POST", body);
-  out("listOut", r);
-};
-
-document.getElementById("createItem").onclick = async () => {
-  let payload = {};
-  const raw = document.getElementById("i-payload").value.trim();
-  if (raw) { try { payload = JSON.parse(raw); } catch { alert("payload_ref inválido"); return; } }
-  const body = {
-    moduleId: document.getElementById("i-module").value.trim(),
-    type: document.getElementById("i-type").value,
-    order: Number(document.getElementById("i-order").value || 0),
-    payloadRef: payload,
-  };
-  const r = await req("/admin/items", "POST", body);
-  out("listOut", r);
-};
-
-document.getElementById("createQuiz").onclick = async () => {
-  const body = {
-    moduleId: document.getElementById("q-module").value.trim(),
-    passScore: Number(document.getElementById("q-pass").value || 70),
-  };
-  const r = await req("/admin/quizzes", "POST", body);
-  out("listOut", r);
-};
-
-document.getElementById("addQuestion").onclick = async () => {
-  let bodyJson = {}, choicesJson = [], answerJson = [];
-  const b = document.getElementById("qq-body").value.trim();
-  const c = document.getElementById("qq-choices").value.trim();
-  const a = document.getElementById("qq-answer").value.trim();
-  try { bodyJson = b ? JSON.parse(b) : {}; } catch { alert("body inválido"); return; }
-  try { choicesJson = c ? JSON.parse(c) : []; } catch { alert("choices inválido"); return; }
-  try { answerJson = a ? JSON.parse(a) : []; } catch { alert("answerKey inválido"); return; }
-
-  const body = {
-    quizId: document.getElementById("qq-quiz").value.trim(),
-    kind: document.getElementById("qq-kind").value,
-    body: bodyJson,
-    choices: choicesJson,
-    answerKey: answerJson
-  };
-  const r = await req("/admin/questions", "POST", body);
-  out("listOut", r);
-};
-
-document.getElementById("createTrack").onclick = async () => {
-  const body = {
-    slug: document.getElementById("t-slug").value.trim(),
-    title: document.getElementById("t-title").value.trim(),
-    active: document.getElementById("t-active").checked
-  };
-  const r = await req("/admin/tracks", "POST", body);
-  out("listOut", r);
-};
-
-document.getElementById("addTrackCourse").onclick = async () => {
-  const body = {
-    trackId: document.getElementById("tc-track").value.trim(),
-    courseId: document.getElementById("tc-course").value.trim(),
-    order: Number(document.getElementById("tc-order").value || 0),
-    required: document.getElementById("tc-required").checked
-  };
-  const r = await req("/admin/track-courses", "POST", body);
-  out("listOut", r);
-};
-
-document.getElementById("addPrereq").onclick = async () => {
-  const body = {
-    courseId: document.getElementById("p-course").value.trim(),
-    requiredCourseId: document.getElementById("p-req").value.trim()
-  };
-  const r = await req("/admin/prerequisites", "POST", body);
-  out("listOut", r);
-};
-
-// ===== Visualizador =====
-document.getElementById("renderGraph").onclick = async () => {
-  const trackId = document.getElementById("g-track").value.trim();
-  const email = document.getElementById("g-email").value.trim();
-  if (!trackId) return alert("Informe trackId");
-  const qs = new URLSearchParams({ trackId, ...(email ? { email } : {}) }).toString();
-  const r = await req(`/admin/track-graph?${qs}`);
-  out("graphRaw", r);
-
-  if (r.status !== 200) { document.getElementById("graph").innerHTML = ""; return; }
-
-  const { track, nodes, edges, hasCycle } = r.data;
-  // Agrupa por nível
-  const byLevel = new Map();
-  nodes.forEach(n => {
-    const arr = byLevel.get(n.level) || [];
-    arr.push(n);
-    byLevel.set(n.level, arr);
+// Criar módulo
+document.getElementById("createModule")?.addEventListener("click", async () => {
+  const courseId = $("m-course").value.trim();
+  const title = $("m-title").value.trim();
+  const order = Number($("m-order").value || 0);
+  const out = $("listOut");
+  const r = await fetch(`/api/admin/courses/${encodeURIComponent(courseId)}/modules`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeader() },
+    body: JSON.stringify({ title, order })
   });
-  // Ordena cada nível por 'order'
-  for (const arr of byLevel.values()) {
-    arr.sort((a,b) => (a.order - b.order) || a.title.localeCompare(b.title));
+  show(out, r.status, await r.text());
+});
+
+// Criar item
+document.getElementById("createItem")?.addEventListener("click", async () => {
+  const moduleId = $("i-module").value.trim();
+  const type = $("i-type").value;
+  const order = Number($("i-order").value || 0);
+  const raw = $("i-payload").value.trim();
+  let payload_ref = {};
+  try { if (raw) payload_ref = JSON.parse(raw); } catch (e) {}
+  const out = $("listOut");
+  const r = await fetch(`/api/admin/modules/${encodeURIComponent(moduleId)}/items`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeader() },
+    body: JSON.stringify({ type, order, payload_ref })
+  });
+  show(out, r.status, await r.text());
+});
+
+// Quiz do módulo
+document.getElementById("createQuiz")?.addEventListener("click", async () => {
+  const moduleId = $("q-module").value.trim();
+  const passScore = Number($("q-pass").value || 70);
+  const out = $("listOut");
+  const r = await fetch(`/api/admin/modules/${encodeURIComponent(moduleId)}/quiz`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeader() },
+    body: JSON.stringify({ passScore })
+  });
+  show(out, r.status, await r.text());
+});
+
+// Adicionar questão
+document.getElementById("addQuestion")?.addEventListener("click", async () => {
+  const quizId = $("qq-quiz").value.trim();
+  const kind = $("qq-kind").value;
+  const bodyRaw = $("qq-body").value.trim();
+  const choicesRaw = $("qq-choices").value.trim();
+  const answerRaw = $("qq-answer").value.trim();
+
+  let body = {};
+  let choices = [];
+  let answerKey = null;
+
+  try { if (bodyRaw) body = JSON.parse(bodyRaw); } catch {}
+  try { if (choicesRaw) choices = JSON.parse(choicesRaw); } catch {}
+  try {
+    if (answerRaw) {
+      // pode ser JSON (["A"]) ou true/false
+      answerKey = JSON.parse(answerRaw);
+    }
+  } catch {
+    answerKey = answerRaw; // fallback
   }
 
-  // Render
-  const container = document.getElementById("graph");
-  container.innerHTML = "";
-  Array.from(byLevel.keys()).sort((a,b)=>a-b).forEach(level => {
-    const row = document.createElement("div");
-    row.className = "level";
-    const label = document.createElement("div");
-    label.className = "muted";
-    label.textContent = `Nível ${level}`;
-    label.style.minWidth = "72px";
-    row.appendChild(label);
-
-    byLevel.get(level).forEach(n => {
-      const card = document.createElement("div");
-      card.className = "node";
-      const stateClass = n.courseCompleted ? "ok" : (n.prereqsMet ? "warn" : "bad");
-
-      card.innerHTML = `
-        <div class="title">${n.title}</div>
-        <div>
-          <span class="pill ${stateClass}">
-            ${n.courseCompleted ? "✓ Concluído" : (n.prereqsMet ? "↗ Liberado" : "⛔ Bloqueado")}
-          </span>
-          <span class="pill">${n.progressPct}%</span>
-          <span class="pill ${n.hasEntitlement ? "ok" : ""}">🎫 ${n.hasEntitlement ? "Entitlement" : "Sem acesso"}</span>
-        </div>
-        <div class="muted" style="margin-top:6px;">
-          ${n.prereqIds?.length ? "Pré-requisitos: " : "Sem pré-requisitos"}
-          ${n.prereqIds?.length ? n.prereqIds.map(id => {
-            const found = nodes.find(x=>x.id===id);
-            const name = found ? found.title : (id || "").slice(0,8)+"…";
-            const ok = nodes.find(x=>x.id===n.id)?.prereqsMet && found && (found.courseCompleted);
-            return `<span class="pill ${ok ? "ok" : "bad"}">${name}</span>`;
-          }).join(" ") : ""}
-        </div>
-      `;
-      row.appendChild(card);
-    });
-
-    container.appendChild(row);
+  const out = $("listOut");
+  const r = await fetch(`/api/admin/quizzes/${encodeURIComponent(quizId)}/questions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeader() },
+    body: JSON.stringify({ kind, body, choices, answerKey })
   });
+  show(out, r.status, await r.text());
+});
 
-  if (hasCycle) {
-    const warn = document.createElement("div");
-    warn.className = "pill bad";
-    warn.style.marginTop = "8px";
-    warn.textContent = "Atenção: ciclo detectado nos pré-requisitos desta trilha.";
-    container.appendChild(warn);
-  }
-};
+// Trilhas
+document.getElementById("createTrack")?.addEventListener("click", async () => {
+  const slug = $("t-slug").value.trim();
+  const title = $("t-title").value.trim();
+  const active = $("t-active").checked;
+  const out = $("listOut");
+  const r = await fetch(`/api/admin/tracks`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeader() },
+    body: JSON.stringify({ slug, title, active })
+  });
+  show(out, r.status, await r.text());
+});
+
+document.getElementById("addTrackCourse")?.addEventListener("click", async () => {
+  const trackId = $("tc-track").value.trim();
+  const courseId = $("tc-course").value.trim();
+  const order = Number($("tc-order").value || 0);
+  const required = $("tc-required").checked;
+  const out = $("listOut");
+  const r = await fetch(`/api/admin/tracks/${encodeURIComponent(trackId)}/courses`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeader() },
+    body: JSON.stringify({ courseId, order, required })
+  });
+  show(out, r.status, await r.text());
+});
+
+// Pré-requisito
+document.getElementById("addPrereq")?.addEventListener("click", async () => {
+  const courseId = $("p-course").value.trim();
+  const requiredCourseId = $("p-req").value.trim();
+  const out = $("listOut");
+  const r = await fetch(`/api/admin/courses/${encodeURIComponent(courseId)}/prerequisites`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeader() },
+    body: JSON.stringify({ requiredCourseId })
+  });
+  show(out, r.status, await r.text());
+});
