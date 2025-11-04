@@ -38,6 +38,7 @@
   <section>
     <h2>Lista básica</h2>
     <button id="listCourses">Listar cursos</button>
+    <button id="listCoursesCounts">Listar cursos + contagens</button>
     <button id="listTracks">Listar trilhas</button>
     <pre id="listOut" style="white-space:pre-wrap;border:1px solid #ddd;padding:8px;"></pre>
   </section>
@@ -145,5 +146,22 @@
   </section>
 
   <script src="/admin.js"></script>
+  <script>
+    // Handler extra só para o resumo com contagens.
+    (function () {
+      var btn = document.getElementById("listCoursesCounts");
+      if (!btn) return;
+      btn.addEventListener("click", async function () {
+        var out = document.getElementById("listOut");
+        var jwtEl = document.getElementById("jwt");
+        var jwt = (jwtEl && "value" in jwtEl) ? jwtEl.value.trim() : "";
+        var r = await fetch("/api/admin/courses/summary", {
+          headers: jwt ? { "Authorization": "Bearer " + jwt } : {}
+        });
+        var txt = await r.text();
+        out.textContent = "HTTP " + r.status + "\n" + txt;
+      });
+    })();
+  </script>
 </body>
 </html>
