@@ -1,3 +1,6 @@
+const API_BASE = "/api";
+const FN_BASE = "/.netlify/functions";
+
 async function call(url, method="GET", body) {
   const token = document.getElementById("token").value.trim();
   const res = await fetch(url, {
@@ -14,13 +17,13 @@ async function call(url, method="GET", body) {
 }
 document.getElementById("getJwt").addEventListener("click", async () => {
   const email = document.getElementById("email").value.trim();
-  const r = await fetch(`/.netlify/functions/dev-jwt?email=${encodeURIComponent(email)}`);
+  const r = await fetch(`${FN_BASE}/dev-jwt?email=${encodeURIComponent(email)}`);
   const data = await r.json();
   document.getElementById("token").value = data.token || "";
 });
 
 document.getElementById("catalog").onclick = async () => {
-  const data = await call("/api/catalog");
+  const data = await call(`${API_BASE}/catalog`);
   if (data.courses && data.courses[0]) {
     document.getElementById("courseId").value = data.courses[0].id;
   }
@@ -29,5 +32,5 @@ document.getElementById("catalog").onclick = async () => {
 document.getElementById("modules").onclick = async () => {
   const c = document.getElementById("courseId").value.trim();
   if (!c) return alert("Defina courseId");
-  await call(`/api/catalog/courses/${c}/modules`);
+  await call(`${API_BASE}/catalog/courses/${c}/modules`);
 };

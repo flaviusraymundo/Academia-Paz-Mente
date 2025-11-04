@@ -5,6 +5,22 @@ import { z } from "zod";
 
 const router = Router();
 
+// Listar cursos com contagens (admin)
+router.get("/admin/courses", async (_req: Request, res: Response) => {
+  const q = await pool.query(`
+    select
+      c.id, c.slug, c.title, c.summary, c.level, c.active,
+      count(distinct m.id) as module_count,
+      count(mi.id)          as item_count
+    from courses c
+    left join modules m on m.course_id = c.id
+    left join module_items mi on mi.module_id = m.id
+    group by c.id, c.slug, c.title, c.summary, c.level, c.active
+    order by c.title asc
+  `);
+  res.json({ courses: q.rows });
+});
+
 // ===== Schemas =====
 const CourseBody = z.object({
   slug: z.string().min(3),
