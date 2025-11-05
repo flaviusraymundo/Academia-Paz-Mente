@@ -65,6 +65,73 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Modules' }
+  /api/me/items:
+    get:
+      summary: Listar itens dos módulos de um curso para o usuário atual
+      description: Requer o ID do curso. Retorna módulos com `unlocked`, `progress` e `items`.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: courseId
+          required: true
+          description: UUID do curso
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string, format: uuid }
+                        title: { type: string }
+                        order: { type: integer }
+                        unlocked: { type: boolean }
+                        itemCount: { type: integer }
+                        progress:
+                          type: object
+                          properties:
+                            status: { type: string, enum: [not_started, started, passed, failed] }
+                            score:  { type: number }
+                            timeSpentSecs: { type: integer }
+                        items:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              item_id:   { type: string, format: uuid }
+                              module_id: { type: string, format: uuid }
+                              type:      { type: string, enum: [video, text, quiz] }
+                              order:     { type: integer }
+                              payload_ref:
+                                type: object
+        '400': { description: Missing `courseId` }
+        '401': { description: Unauthorized }
+
+  /api/me/modules:
+    get:
+      summary: Alias de /api/me/items
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: courseId
+          required: true
+          description: UUID do curso
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200': { description: OK (mesmo payload de /api/me/items) }
+        '400': { description: Missing `courseId` }
+        '401': { description: Unauthorized }
   /quizzes/{quizId}/submit:
     post:
       summary: Submete respostas do quiz do módulo

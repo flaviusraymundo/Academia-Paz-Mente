@@ -3,8 +3,118 @@ import { Router, Request, Response } from "express";
 import { pool } from "../lib/db.js";
 import { z } from "zod";
 import { ulid } from "ulid";
+import { requireAuth } from "../middleware/auth.js";
 
 const router = Router();
+
+type ModuleRow = {
+  module_id: string;
+  title: string;
+  order: number;
+  status: string | null;
+  score: number | null;
+  time_spent_secs: number | null;
+};
+
+type ItemRow = {
+  item_id: string;
+  module_id: string;
+  type: string;
+  order: number;
+  payload_ref: any;
+};
+
+async function meItemsHandler(req: Request, res: Response) {
+  const userId = req.auth?.userId ?? req.user?.id ?? null;
+  const courseId = String(req.query.courseId ?? "").trim();
+  if (!userId) return res.status(401).json({ error: "unauthorized" });
+  if (!courseId) return res.status(400).json({ error: "missing_courseId" });
+
+  try {
+    const { rows: modules } = await pool.query<ModuleRow>(
+      `
+      select
+        m.id as module_id,
+        m.title,
+        m."order",
+        p.status,
+        p.score,
+        p.time_spent_secs
+      from modules m
+      left join progress p on p.module_id = m.id and p.user_id = $1
+      where m.course_id = $2
+      order by m."order" asc, m.id asc
+      `,
+      [userId, courseId]
+    );
+
+    if (modules.length === 0) {
+      return res.json({ items: [] });
+    }
+
+    const moduleIds = modules.map((m) => m.module_id);
+    const { rows: rawItems } = await pool.query<ItemRow>(
+      `
+      select mi.id as item_id, mi.module_id, mi.type, mi."order", mi.payload_ref
+      from module_items mi
+      where mi.module_id = any($1::uuid[])
+      order by mi.module_id asc, mi."order" asc
+      `,
+      [moduleIds]
+    );
+
+    const itemsByModule = new Map<string, ItemRow[]>();
+    for (const item of rawItems) {
+      const bucket = itemsByModule.get(item.module_id) ?? [];
+      bucket.push(item);
+      itemsByModule.set(item.module_id, bucket);
+    }
+
+    const items = modules
+      .map((mod) => ({
+        id: mod.module_id,
+        title: mod.title,
+        order: Number(mod.order),
+        unlocked: false,
+        itemCount: 0,
+        items: (itemsByModule.get(mod.module_id) ?? []).map((it) => ({
+          item_id: it.item_id,
+          module_id: it.module_id,
+          type: it.type,
+          order: Number(it.order),
+          payload_ref: it.payload_ref,
+        })),
+        progress: {
+          status: mod.status ?? "not_started",
+          score: Number(mod.score ?? 0),
+          timeSpentSecs: Number(mod.time_spent_secs ?? 0),
+        },
+      }))
+      .sort((a, b) => a.order - b.order);
+
+    if (items.length > 0) {
+      items[0].unlocked = true;
+      for (let i = 1; i < items.length; i += 1) {
+        const prev = items[i - 1];
+        items[i].unlocked = prev.progress.status === "passed";
+      }
+    }
+
+    for (const item of items) {
+      item.itemCount = item.items.length;
+    }
+
+    return res.json({ items });
+  } catch (err) {
+    console.error("progress.meItems", err);
+    return res.status(500).json({ error: "items_fetch_failed" });
+  }
+}
+
+router.get("/me/items", requireAuth, meItemsHandler);
+
+// alias opcional (mesmo payload do /me/items)
+router.get("/me/modules", requireAuth, meItemsHandler);
 
 router.get("/me/progress", async (req: Request, res: Response) => {
   const userId = req.auth?.userId;
