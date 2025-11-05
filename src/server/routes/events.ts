@@ -23,11 +23,17 @@ const Body = z.object({
   events: z.array(EventItem).min(1).max(100),
 });
 
+// aceita string vazia => undefined (evita "Invalid uuid" quando input vem vazio)
+const uuidOpt = z.preprocess((v) => {
+  if (typeof v === "string" && v.trim() === "") return undefined;
+  return v;
+}, z.string().uuid().optional());
+
 // corpo flexível: aceita courseId/moduleId/itemId opcionais e ms >= 0
 const PageReadBody = z.object({
-  courseId: z.string().uuid().optional(),
-  moduleId: z.string().uuid().optional(),
-  itemId: z.string().uuid().optional(),
+  courseId: uuidOpt,
+  moduleId: uuidOpt,
+  itemId: uuidOpt,
   ms: z.number().int().min(0),
 });
 
