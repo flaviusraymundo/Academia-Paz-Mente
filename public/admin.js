@@ -382,3 +382,122 @@ if ($btnVideoBeat) {
     setOut("meOut", { status, body });
   });
 }
+
+// -------------------------------
+// Reorder (drag-and-drop)
+// -------------------------------
+(function mountReorder() {
+  const $module = document.getElementById("reorder-module");
+  const $load = document.getElementById("reorder-load");
+  const $box = document.getElementById("reorder-box");
+  const $list = document.getElementById("reorder-list");
+  const $save = document.getElementById("reorder-save");
+  const $cancel = document.getElementById("reorder-cancel");
+  const $out = document.getElementById("reorder-out");
+  if (!$load || !$list) return;
+
+  let moduleId = null;
+
+  function createRow(item) {
+    const li = document.createElement("li");
+    li.draggable = true;
+    li.dataset.itemId = item.item_id || item.id;
+    li.style.border = "1px solid #ddd";
+    li.style.borderRadius = "8px";
+    li.style.padding = "8px 10px";
+    li.style.background = "#fff";
+    li.style.display = "flex";
+    li.style.justifyContent = "space-between";
+    li.style.alignItems = "center";
+
+    const left = document.createElement("div");
+    const type = (item.type && String(item.type).toUpperCase()) || "ITEM";
+    const idLabel = item.item_id || item.id;
+    left.innerHTML = `<div class="title" style="font-weight:600">${type} <span class="muted" style="font-weight:400;color:#666">(${idLabel})</span></div>`;
+    const right = document.createElement("div");
+    right.className = "muted";
+    right.textContent = `order: ${item.order ?? ""}`;
+    li.appendChild(left);
+    li.appendChild(right);
+
+    li.addEventListener("dragstart", (event) => {
+      li.classList.add("dragging");
+      event.dataTransfer.setData("text/plain", li.dataset.itemId || "");
+    });
+    li.addEventListener("dragend", () => li.classList.remove("dragging"));
+    li.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      const dragging = $list.querySelector(".dragging");
+      if (!dragging || dragging === li) return;
+      const rect = li.getBoundingClientRect();
+      const before = event.clientY - rect.top < rect.height / 2;
+      $list.insertBefore(dragging, before ? li : li.nextSibling);
+    });
+
+    return li;
+  }
+
+  function buildAuthHeaders(extra = {}) {
+    return { "Content-Type": "application/json", ...authHeader(), ...extra };
+  }
+
+  async function loadItems() {
+    if (!$module) return;
+    $out.textContent = "";
+    moduleId = ($module.value || "").trim();
+    if (!moduleId) {
+      $out.textContent = "Preencha moduleId";
+      return;
+    }
+
+    try {
+      $list.innerHTML = "";
+      const response = await fetch(`/api/admin/modules/${moduleId}/items`, {
+        headers: buildAuthHeaders()
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        $out.textContent = JSON.stringify({ status: response.status, data }, null, 2);
+        $box.style.display = "none";
+        return;
+      }
+
+      const items = data.items || [];
+      for (const item of items) {
+        $list.appendChild(
+          createRow({ id: item.id, item_id: item.id, type: item.type, order: item.order })
+        );
+      }
+      $box.style.display = "block";
+    } catch (err) {
+      $out.textContent = `Erro ao carregar: ${String(err)}`;
+      $box.style.display = "none";
+    }
+  }
+
+  async function saveOrder() {
+    if (!moduleId) {
+      $out.textContent = "Sem moduleId.";
+      return;
+    }
+    const ids = Array.from($list.querySelectorAll("li"), (li) => li.dataset.itemId).filter(Boolean);
+    const response = await fetch(`/api/admin/modules/${moduleId}/reorder`, {
+      method: "PATCH",
+      headers: buildAuthHeaders(),
+      body: JSON.stringify({ itemIds: ids })
+    });
+    const text = await response.text();
+    try {
+      $out.textContent = JSON.stringify({ status: response.status, data: JSON.parse(text) }, null, 2);
+    } catch (err) {
+      $out.textContent = JSON.stringify({ status: response.status, data: text }, null, 2);
+    }
+  }
+
+  $load.addEventListener("click", loadItems);
+  $save?.addEventListener("click", saveOrder);
+  $cancel?.addEventListener("click", () => {
+    $box.style.display = "none";
+    $out.textContent = "";
+  });
+})();
