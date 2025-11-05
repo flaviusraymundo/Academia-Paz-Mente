@@ -7,7 +7,16 @@
   const btnLoad = $('#load');
   const btnSave = $('#save');
 
-  const token = ()=> (localStorage.getItem('lms_jwt')||'').trim();
+  function readJWT(){
+    const raw = localStorage.getItem('lms_jwt') || '';
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.token) return String(parsed.token).trim();
+    } catch {}
+    return raw.trim();
+  }
+
+  const token = ()=> readJWT();
   const auth = ()=> token()? { Authorization:`Bearer ${token()}` } : {};
   const show = (obj)=> out.textContent = JSON.stringify(obj,null,2);
   const isUuid = (s)=> /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s||'');
@@ -34,7 +43,7 @@
   // Load courses for select
   async function loadCourses(){
     if(!ensureToken()) return;
-    const r = await api('/api/admin/courses/summary');
+    const r = await api('/api/admin/courses/_summary');
     if(r.status!==200){ show(r); return; }
     const courses = r.body.courses||[];
     selCourse.innerHTML = '';
@@ -125,5 +134,9 @@
   selCourse.addEventListener('change', loadModules);
 
   // bootstrap
+  (function(){
+    const tok = token();
+    if (!tok || tok.split('.').length !== 3) console.warn('JWT ausente ou inválido');
+  })();
   ensureToken() && loadCourses().then(loadModules);
 })();
