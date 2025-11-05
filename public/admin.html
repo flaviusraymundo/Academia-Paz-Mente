@@ -188,17 +188,26 @@
 
   <section>
     <h2>Reordenar itens do módulo (drag-and-drop)</h2>
-    <p>Informe o <span class="code">moduleId</span>, carregue os itens, arraste para reordenar e clique em salvar.</p>
-    <input id="reorder-module" placeholder="moduleId" style="min-width:360px" />
-    <button id="reorder-load">Carregar itens</button>
-    <div id="reorder-box" style="margin-top:10px; display:none;">
-      <ol id="reorder-list" style="list-style: none; padding:0; margin:0; display:grid; gap:8px;"></ol>
-      <div style="margin-top:8px; display:flex; gap:8px;">
-        <button id="reorder-save">Salvar ordem</button>
-        <button id="reorder-cancel" class="muted">Cancelar</button>
+    <p style="margin-bottom:8px;">1) Escolha o curso → 2) Escolha o módulo → 3) Arraste os itens pelo ⣿⣿ e salve.</p>
+    <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:flex-end;">
+      <div style="display:flex; flex-direction:column; min-width:240px;">
+        <label for="reorder-course">Curso</label>
+        <select id="reorder-course"></select>
+      </div>
+      <div style="display:flex; flex-direction:column; min-width:240px;">
+        <label for="reorder-module">Módulo</label>
+        <select id="reorder-module"></select>
+      </div>
+      <button id="reorder-load">Carregar itens</button>
+    </div>
+    <div id="reorder-box" style="margin-top:12px; display:none; border:1px solid #c1e7dd; border-radius:12px; padding:12px; background:#f8fffd;">
+      <p style="margin:0 0 8px 0; font-size:14px; color:#055;">Arraste as linhas pelo ⣿⣿, solte sobre a posição desejada (ela fica verde) e clique em salvar.</p>
+      <div id="reorder-list" style="display:flex; flex-direction:column; gap:8px;"></div>
+      <div style="margin-top:12px; display:flex; gap:8px;">
+        <button id="reorder-save" style="background:#0a7661; color:white; border:none; border-radius:8px; padding:8px 14px; font-weight:600;">Salvar ordem</button>
       </div>
     </div>
-    <pre id="reorder-out" style="white-space:pre-wrap;border:1px solid #ddd;padding:8px; margin-top:10px;"></pre>
+    <pre id="reorder-out" style="white-space:pre-wrap;border:1px solid #ddd;padding:8px; margin-top:12px;"></pre>
   </section>
 
   <script src="/admin.js"></script>

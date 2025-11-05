@@ -46,6 +46,23 @@ router.get("/courses/_summary", async (_req: Request, res: Response) => {
   res.json({ courses: q.rows });
 });
 
+// === Courses: módulos de um curso (para o dropdown do Studio/DnD)
+router.get("/courses/:courseId/modules", async (req: Request, res: Response) => {
+  const { courseId } = req.params;
+  if (!isUuid(courseId)) {
+    return res.status(400).json({ error: "invalid_course_id", courseId });
+  }
+
+  const mods = await pool.query(
+    `SELECT id, title, "order"
+       FROM modules
+      WHERE course_id = $1
+      ORDER BY "order" ASC, title ASC`,
+    [courseId]
+  );
+  res.json({ modules: mods.rows });
+});
+
 // GET /admin/modules/:id/items  → lista itens (id, type, order) do módulo
 router.get("/modules/:id/items", async (req, res) => {
   const moduleId = String(req.params.id || "");

@@ -394,117 +394,208 @@ if ($btnVideoBeat) {
 // Reorder (drag-and-drop)
 // -------------------------------
 (function mountReorder() {
+  const $course = document.getElementById("reorder-course");
   const $module = document.getElementById("reorder-module");
   const $load = document.getElementById("reorder-load");
   const $box = document.getElementById("reorder-box");
   const $list = document.getElementById("reorder-list");
   const $save = document.getElementById("reorder-save");
-  const $cancel = document.getElementById("reorder-cancel");
   const $out = document.getElementById("reorder-out");
-  if (!$load || !$list) return;
+  if (!$course || !$module || !$load || !$list || !$save) return;
 
-  let moduleId = null;
+  const baseBg = "#ffffff";
+  const highlightBg = "#c8ffe9";
+  let currentModuleId = null;
 
-  function createRow(item) {
-    const li = document.createElement("li");
-    li.draggable = true;
-    li.dataset.itemId = item.item_id || item.id;
-    li.style.border = "1px solid #ddd";
-    li.style.borderRadius = "8px";
-    li.style.padding = "8px 10px";
-    li.style.background = "#fff";
-    li.style.display = "flex";
-    li.style.justifyContent = "space-between";
-    li.style.alignItems = "center";
-
-    const left = document.createElement("div");
-    const type = (item.type && String(item.type).toUpperCase()) || "ITEM";
-    const idLabel = item.item_id || item.id;
-    left.innerHTML = `<div class="title" style="font-weight:600">${type} <span class="muted" style="font-weight:400;color:#666">(${idLabel})</span></div>`;
-    const right = document.createElement("div");
-    right.className = "muted";
-    right.textContent = `order: ${item.order ?? ""}`;
-    li.appendChild(left);
-    li.appendChild(right);
-
-    li.addEventListener("dragstart", (event) => {
-      li.classList.add("dragging");
-      event.dataTransfer.setData("text/plain", li.dataset.itemId || "");
-    });
-    li.addEventListener("dragend", () => li.classList.remove("dragging"));
-    li.addEventListener("dragover", (event) => {
-      event.preventDefault();
-      const dragging = $list.querySelector(".dragging");
-      if (!dragging || dragging === li) return;
-      const rect = li.getBoundingClientRect();
-      const before = event.clientY - rect.top < rect.height / 2;
-      $list.insertBefore(dragging, before ? li : li.nextSibling);
-    });
-
-    return li;
+  function dragHandleStyle() {
+    return "cursor:grab;font-weight:600;padding:4px 8px;background:#0a7661;color:#fff;border-radius:6px;margin-right:8px;user-select:none;";
   }
 
-  function buildAuthHeaders(extra = {}) {
-    return { "Content-Type": "application/json", ...authHeader(), ...extra };
+  function clearHighlights() {
+    Array.from($list.children).forEach((child) => {
+      child.style.background = baseBg;
+    });
+  }
+
+  function createRow(item) {
+    const row = document.createElement("div");
+    row.draggable = true;
+    row.dataset.itemId = item.item_id || item.id;
+    row.style.border = "1px solid #0a766133";
+    row.style.borderRadius = "10px";
+    row.style.padding = "10px 12px";
+    row.style.background = baseBg;
+    row.style.display = "flex";
+    row.style.alignItems = "flex-start";
+    row.style.gap = "10px";
+    row.style.boxShadow = "0 2px 4px rgb(0 0 0 / 0.06)";
+
+    const handle = document.createElement("span");
+    handle.textContent = "⣿⣿";
+    handle.style.cssText = dragHandleStyle();
+
+    const order = document.createElement("span");
+    order.textContent = `#${item.order ?? ""}`;
+    order.style.cssText = "font-size:12px;color:#0a7661;width:32px;font-weight:600;";
+
+    const body = document.createElement("div");
+    const type = (item.type && String(item.type).toUpperCase()) || "ITEM";
+    const idLabel = item.item_id || item.id;
+    body.innerHTML = `
+      <div style="font-weight:600;color:#033;">${type}</div>
+      <div style="font-size:11px;color:#555;word-break:break-all;">${idLabel}</div>
+    `;
+
+    row.append(handle, order, body);
+
+    row.addEventListener("dragstart", (event) => {
+      row.classList.add("dragging");
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", row.dataset.itemId || "");
+      row.style.opacity = "0.5";
+      clearHighlights();
+    });
+
+    row.addEventListener("dragend", () => {
+      row.classList.remove("dragging");
+      row.style.opacity = "1";
+      clearHighlights();
+    });
+
+    row.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      const dragging = $list.querySelector(".dragging");
+      if (!dragging || dragging === row) return;
+      const rect = row.getBoundingClientRect();
+      const before = event.clientY - rect.top < rect.height / 2;
+      $list.insertBefore(dragging, before ? row : row.nextSibling);
+      clearHighlights();
+      row.style.background = highlightBg;
+    });
+
+    row.addEventListener("drop", (event) => {
+      event.preventDefault();
+      clearHighlights();
+    });
+
+    row.addEventListener("dragleave", () => {
+      row.style.background = baseBg;
+    });
+
+    return row;
+  }
+
+  function resetUI() {
+    $list.innerHTML = "";
+    $box.style.display = "none";
+  }
+
+  async function loadCourses() {
+    setOut("reorder-out", "");
+    $course.innerHTML = "";
+    $module.innerHTML = "";
+    currentModuleId = null;
+    resetUI();
+
+    const { status, body } = await api("/api/admin/courses/_summary");
+    if (status !== 200 || typeof body !== "object" || !body) {
+      setOut("reorder-out", { status, body });
+      return;
+    }
+
+    const courses = Array.isArray(body.courses) ? body.courses : [];
+    if (courses.length === 0) {
+      setOut("reorder-out", "Nenhum curso encontrado.");
+      return;
+    }
+
+    for (const course of courses) {
+      const option = document.createElement("option");
+      option.value = course.id;
+      option.textContent = `${course.title} (${course.slug})`;
+      $course.appendChild(option);
+    }
+
+    await loadModulesOfCourse();
+  }
+
+  async function loadModulesOfCourse() {
+    setOut("reorder-out", "");
+    $module.innerHTML = "";
+    currentModuleId = null;
+    resetUI();
+
+    const courseId = $course.value;
+    if (!courseId) {
+      setOut("reorder-out", "Escolha um curso válido.");
+      return;
+    }
+
+    const { status, body } = await api(`/api/admin/courses/${encodeURIComponent(courseId)}/modules`);
+    if (status !== 200 || typeof body !== "object" || !body) {
+      setOut("reorder-out", { status, body });
+      return;
+    }
+
+    const modules = Array.isArray(body.modules) ? body.modules : [];
+    if (modules.length === 0) {
+      setOut("reorder-out", "Nenhum módulo encontrado para o curso.");
+      return;
+    }
+
+    for (const mod of modules) {
+      const option = document.createElement("option");
+      option.value = mod.id;
+      option.textContent = `#${mod.order} ${mod.title}`;
+      $module.appendChild(option);
+    }
   }
 
   async function loadItems() {
-    if (!$module) return;
-    $out.textContent = "";
-    moduleId = ($module.value || "").trim();
-    if (!moduleId) {
-      $out.textContent = "Preencha moduleId";
+    setOut("reorder-out", "");
+    currentModuleId = $module.value || null;
+    if (!currentModuleId) {
+      setOut("reorder-out", "Escolha um módulo.");
       return;
     }
 
-    try {
-      $list.innerHTML = "";
-      const response = await fetch(`/api/admin/modules/${moduleId}/items`, {
-        headers: buildAuthHeaders()
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        $out.textContent = JSON.stringify({ status: response.status, data }, null, 2);
-        $box.style.display = "none";
-        return;
-      }
+    resetUI();
 
-      const items = data.items || [];
-      for (const item of items) {
-        $list.appendChild(
-          createRow({ id: item.id, item_id: item.id, type: item.type, order: item.order })
-        );
-      }
-      $box.style.display = "block";
-    } catch (err) {
-      $out.textContent = `Erro ao carregar: ${String(err)}`;
-      $box.style.display = "none";
+    const { status, body } = await api(`/api/admin/modules/${encodeURIComponent(currentModuleId)}/items`);
+    if (status !== 200 || typeof body !== "object" || !body) {
+      setOut("reorder-out", { status, body });
+      return;
     }
+
+    const items = Array.isArray(body.items) ? body.items : [];
+    for (const item of items) {
+      $list.appendChild(
+        createRow({ id: item.id, item_id: item.id, type: item.type, order: item.order })
+      );
+    }
+
+    $box.style.display = "block";
   }
 
   async function saveOrder() {
-    if (!moduleId) {
-      $out.textContent = "Sem moduleId.";
+    if (!currentModuleId) {
+      setOut("reorder-out", "Nenhum módulo carregado.");
       return;
     }
-    const ids = Array.from($list.querySelectorAll("li"), (li) => li.dataset.itemId).filter(Boolean);
-    const response = await fetch(`/api/admin/modules/${moduleId}/reorder`, {
+
+    const itemIds = Array.from($list.children, (child) => child.dataset.itemId).filter(Boolean);
+    const { status, body } = await api(`/api/admin/modules/${encodeURIComponent(currentModuleId)}/reorder`, {
       method: "PATCH",
-      headers: buildAuthHeaders(),
-      body: JSON.stringify({ itemIds: ids })
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ itemIds })
     });
-    const text = await response.text();
-    try {
-      $out.textContent = JSON.stringify({ status: response.status, data: JSON.parse(text) }, null, 2);
-    } catch (err) {
-      $out.textContent = JSON.stringify({ status: response.status, data: text }, null, 2);
-    }
+
+    setOut("reorder-out", { status, body });
   }
 
+  $course.addEventListener("change", loadModulesOfCourse);
   $load.addEventListener("click", loadItems);
-  $save?.addEventListener("click", saveOrder);
-  $cancel?.addEventListener("click", () => {
-    $box.style.display = "none";
-    $out.textContent = "";
-  });
+  $save.addEventListener("click", saveOrder);
+
+  loadCourses();
 })();
