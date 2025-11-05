@@ -23,6 +23,14 @@ const Body = z.object({
   events: z.array(EventItem).min(1).max(100),
 });
 
+// corpo flexível: aceita courseId/moduleId/itemId opcionais e ms >= 0
+const PageReadBody = z.object({
+  courseId: z.string().uuid().optional(),
+  moduleId: z.string().uuid().optional(),
+  itemId: z.string().uuid().optional(),
+  ms: z.number().int().min(0),
+});
+
 router.post("/", async (req: Request, res: Response) => {
   const authed = Boolean(req.auth?.userId);
   if (!authed && !ALLOW_PUBLIC) {
@@ -61,6 +69,42 @@ router.post("/", async (req: Request, res: Response) => {
     return res.status(500).json({ error: "event_write_failed" });
   } finally {
     client.release();
+  }
+});
+
+// POST /events/page-read   (montado também como /api/events/page-read)
+router.post("/page-read", async (req: Request, res: Response) => {
+  try {
+    const userId = req.auth?.userId || null;
+    if (!ALLOW_PUBLIC && !userId) {
+      return res.status(401).json({ error: "unauthorized" });
+    }
+    const parsed = PageReadBody.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.flatten() });
+    }
+    const { courseId, moduleId, itemId, ms } = parsed.data;
+    const ua = (req.headers["user-agent"] as string) || null;
+    const ip =
+      (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.ip || null;
+    const payload = {
+      courseId: courseId ?? null,
+      moduleId: moduleId ?? null,
+      itemId: itemId ?? null,
+      ms,
+      ua,
+      ts: new Date().toISOString(),
+    };
+
+    await pool.query(
+      `insert into event_log(event_id, topic, actor_user_id, occurred_at, received_at, source, ip, ua, payload)
+       values ($1,$2,$3, now(), now(), 'app', $4, $5, $6)`,
+      [ulid(), "page_read", userId, ip, ua, payload]
+    );
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("page-read error", err);
+    return res.status(500).json({ error: "server_error" });
   }
 });
 
