@@ -224,6 +224,9 @@ document.getElementById("addPrereq")?.addEventListener("click", async () => {
 // Aluno (teste)
 // =========================
 const $btnMeItems = document.getElementById("btnMeItems");
+const $btnMeModules = document.getElementById("btnMeModules");
+const $btnMeModulesSummary = document.getElementById("btnMeModulesSummary");
+const $btnMeProgressSummary = document.getElementById("btnMeProgressSummary");
 const $btnSubmitQ = document.getElementById("btnSubmitQuiz");
 const $btnPageRead = document.getElementById("btnPageRead");
 const $btnVideoBeat = document.getElementById("btnVideoBeat");
@@ -244,6 +247,80 @@ if ($btnMeItems) {
     const { status, body } = await api(`/api/me/items?courseId=${encodeURIComponent(courseId)}`);
     const text = typeof body === "string" ? body : JSON.stringify(body, null, 2);
     setOut("meOut", `HTTP ${status}\n${text}`);
+  });
+}
+
+if ($btnMeModules) {
+  $btnMeModules.addEventListener("click", async () => {
+    const courseId = ($meCourse?.value || "").trim();
+    if (!isUuid(courseId)) {
+      setOut("meOut", { error: "Informe um courseId válido (UUID)." });
+      return;
+    }
+    const { status, body } = await api(
+      `/api/me/modules?courseId=${encodeURIComponent(courseId)}`
+    );
+    if (status === 200 && Array.isArray(body?.items)) {
+      const compact = body.items.map((m) => ({
+        id: m.id ?? m.module_id,
+        title: m.title,
+        unlocked: m.unlocked,
+        status: m.progress?.status,
+        score: m.progress?.score,
+        itemCount: m.itemCount ?? (Array.isArray(m.items) ? m.items.length : undefined),
+      }));
+      setOut("meOut", { status, compact, raw: body });
+    } else {
+      setOut("meOut", { status, body });
+    }
+  });
+}
+
+if ($btnMeModulesSummary) {
+  $btnMeModulesSummary.addEventListener("click", async () => {
+    const courseId = ($meCourse?.value || "").trim();
+    if (!isUuid(courseId)) {
+      setOut("meOut", { error: "Informe um courseId válido (UUID)." });
+      return;
+    }
+    const { status, body } = await api(
+      `/api/me/modules-summary?courseId=${encodeURIComponent(courseId)}`
+    );
+    if (status === 200 && Array.isArray(body?.items)) {
+      const compact = body.items.map((m) => ({
+        id: m.id,
+        title: m.title,
+        unlocked: m.unlocked,
+        status: m.progress?.status,
+        score: m.progress?.score,
+      }));
+      setOut("meOut", { status, compact, raw: body });
+    } else {
+      setOut("meOut", { status, body });
+    }
+  });
+}
+
+if ($btnMeProgressSummary) {
+  $btnMeProgressSummary.addEventListener("click", async () => {
+    const courseId = ($meCourse?.value || "").trim();
+    if (!isUuid(courseId)) {
+      setOut("meOut", { error: "Informe um courseId válido (UUID)." });
+      return;
+    }
+    const { status, body } = await api(
+      `/api/me/progress-summary?courseId=${encodeURIComponent(courseId)}`
+    );
+    if (status === 200 && body && body.totals) {
+      setOut("meOut", {
+        status,
+        totals: body.totals,
+        percent: body.percent,
+        raw: body,
+      });
+    } else {
+      setOut("meOut", { status, body });
+    }
   });
 }
 

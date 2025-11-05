@@ -24,6 +24,18 @@ type ItemRow = {
   payload_ref: any;
 };
 
+type ModuleProgressRow = {
+  module_id: string;
+  status: string | null;
+  score: number | null;
+  time_spent_secs: number | null;
+};
+
+type ModuleStatusRow = {
+  module_id: string;
+  status: string | null;
+};
+
 async function meItemsHandler(req: Request, res: Response) {
   const userId = req.auth?.userId ?? req.user?.id ?? null;
   const courseId = String(req.query.courseId ?? "").trim();
@@ -219,6 +231,121 @@ router.patch("/me/progress", async (req: Request, res: Response) => {
     return res.status(500).json({ error: "progress_update_failed" });
   } finally {
     client.release();
+  }
+});
+
+router.get("/me/modules-summary", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const userId = req.auth?.userId ?? (req as any)?.user?.id ?? null;
+    if (!userId) return res.status(401).json({ error: "unauthorized" });
+
+    const courseId = String(req.query.courseId ?? "").trim();
+    const Q = z.object({ courseId: z.string().uuid() });
+    const parsed = Q.safeParse({ courseId });
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+    const { rows: modules } = await pool.query<{
+      id: string;
+      title: string;
+      order: number;
+    }>(
+      `select id, title, "order" from modules where course_id = $1 order by "order", id`,
+      [parsed.data.courseId]
+    );
+
+    if (modules.length === 0) {
+      return res.json({ items: [] });
+    }
+
+    const moduleIds = modules.map((m) => m.id);
+    const { rows: progressRows } = await pool.query<ModuleProgressRow>(
+      `
+        select module_id, status, score, time_spent_secs
+          from progress
+         where user_id = $1 and module_id = any($2::uuid[])
+      `,
+      [userId, moduleIds]
+    );
+    const progressById = new Map<string, ModuleProgressRow>();
+    progressRows.forEach((row) => {
+      progressById.set(row.module_id, row);
+    });
+
+    const unlockedById = new Map<string, boolean>();
+    modules.forEach((mod, index) => {
+      if (index === 0) {
+        unlockedById.set(mod.id, true);
+      } else {
+        const prev = modules[index - 1];
+        const prevProgress = progressById.get(prev.id);
+        unlockedById.set(mod.id, prevProgress?.status === "passed");
+      }
+    });
+
+    const items = modules.map((mod) => {
+      const p = progressById.get(mod.id);
+      return {
+        id: mod.id,
+        title: mod.title,
+        order: Number(mod.order),
+        unlocked: Boolean(unlockedById.get(mod.id)),
+        progress: {
+          status: p?.status ?? "not_started",
+          score: Number(p?.score ?? 0),
+          timeSpentSecs: Number(p?.time_spent_secs ?? 0),
+        },
+      };
+    });
+
+    return res.json({ items });
+  } catch (err) {
+    console.error("me/modules-summary error", err);
+    return res.status(500).json({ error: "server_error" });
+  }
+});
+
+router.get("/me/progress-summary", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const userId = req.auth?.userId ?? (req as any)?.user?.id ?? null;
+    if (!userId) return res.status(401).json({ error: "unauthorized" });
+
+    const courseId = String(req.query.courseId ?? "").trim();
+    const Q = z.object({ courseId: z.string().uuid() });
+    const parsed = Q.safeParse({ courseId });
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+    const { rows: modules } = await pool.query<{ id: string }>(
+      `select id from modules where course_id = $1 order by "order", id`,
+      [parsed.data.courseId]
+    );
+
+    const moduleIds = modules.map((m) => m.id);
+    if (moduleIds.length === 0) {
+      return res.json({ totals: { total: 0, passed: 0, started: 0, not_started: 0 }, percent: 0 });
+    }
+
+    const { rows } = await pool.query<ModuleStatusRow>(
+      `select module_id, status from progress where user_id = $1 and module_id = any($2::uuid[])`,
+      [userId, moduleIds]
+    );
+    const statusByModule = new Map<string, string | null>();
+    rows.forEach((row) => {
+      statusByModule.set(row.module_id, row.status);
+    });
+
+    const totals = { total: moduleIds.length, passed: 0, started: 0, not_started: 0 };
+    modules.forEach((mod) => {
+      const status = statusByModule.get(mod.id) ?? "not_started";
+      if (status === "passed") totals.passed += 1;
+      else if (["started", "failed", "completed"].includes(status)) totals.started += 1;
+      else totals.not_started += 1;
+    });
+
+    const percent = totals.total ? Math.round((totals.passed / totals.total) * 100) : 0;
+    return res.json({ totals, percent });
+  } catch (err) {
+    console.error("me/progress-summary error", err);
+    return res.status(500).json({ error: "server_error" });
   }
 });
 
