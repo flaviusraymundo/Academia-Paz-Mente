@@ -1,9 +1,53 @@
 // src/server/routes/video.ts
 import { Router, Request, Response } from "express";
+import { z } from "zod";
 import jwt, { JwtHeader } from "jsonwebtoken";
 import { pool } from "../lib/db.js";
+import { ulid } from "ulid";
 
 const router = Router();
+
+// POST /video/heartbeat  (montado também como /api/video/heartbeat)
+// registra batimentos de vídeo em event_log (depois podemos consolidar em video_sessions)
+const BeatBody = z.object({
+  courseId: z.string().uuid().optional(),
+  moduleId: z.string().uuid().optional(),
+  itemId: z.string().uuid().optional(),
+  secs: z.number().int().min(1).max(3600), // 1s a 60min
+});
+
+router.post("/heartbeat", async (req: Request, res: Response) => {
+  try {
+    const userId = req.auth?.userId || null; // /video já exige auth via app.ts
+    if (!userId) return res.status(401).json({ error: "unauthorized" });
+    const parsed = BeatBody.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.flatten() });
+    }
+    const { courseId, moduleId, itemId, secs } = parsed.data;
+    const ua = (req.headers["user-agent"] as string) || null;
+    const ip =
+      (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.ip || null;
+    const payload = {
+      courseId: courseId ?? null,
+      moduleId: moduleId ?? null,
+      itemId: itemId ?? null,
+      secs,
+      ua,
+      ts: new Date().toISOString(),
+    };
+
+    await pool.query(
+      `insert into event_log(event_id, topic, actor_user_id, occurred_at, received_at, source, ip, ua, payload)
+       values ($1,$2,$3, now(), now(), 'app', $4, $5, $6)`,
+      [ulid(), "video_beat", userId, ip, ua, payload]
+    );
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("video heartbeat error", err);
+    return res.status(500).json({ error: "server_error" });
+  }
+});
 
 // POST /video/:itemId/playback-token
 // Emite token Mux apenas se usuário tiver entitlement ao curso do itemId
