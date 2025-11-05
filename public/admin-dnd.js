@@ -1,4 +1,7 @@
 (function(){
+  // Executa apenas na página específica (evita rodar por engano em outras telas)
+  if (!window.location.pathname.endsWith('/admin-dnd.html')) return;
+
   const $ = (sel)=>document.querySelector(sel);
   const out = $('#out');
   const list = $('#list');
@@ -7,23 +10,22 @@
   const btnLoad = $('#load');
   const btnSave = $('#save');
 
-  function readJWT(){
-    const raw = localStorage.getItem('lms_jwt') || '';
+  function getJWT(){
+    let token = localStorage.getItem('lms_jwt') || ($('#jwt')?.value || '').trim();
     try {
-      const parsed = JSON.parse(raw);
-      if (parsed && parsed.token) return String(parsed.token).trim();
+      const parsed = JSON.parse(token);
+      if (parsed && parsed.token) token = String(parsed.token);
     } catch {}
-    return raw.trim();
+    return (token || '').trim();
   }
 
-  const token = ()=> readJWT();
-  const auth = ()=> token()? { Authorization:`Bearer ${token()}` } : {};
+  const token = ()=> getJWT();
   const show = (obj)=> out.textContent = JSON.stringify(obj,null,2);
   const isUuid = (s)=> /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s||'');
 
   function ensureToken(){
     if (!token()){
-      show({status:401, body:{error:'no_token', hint:'Defina localStorage.lms_jwt e recarregue'}});
+      show({status:401, body:{error:'no_token', hint:'Defina localStorage.lms_jwt (ou preencha o campo #jwt) e recarregue'}});
       btnLoad.disabled = true;
       btnSave.disabled = true;
       return false;
@@ -33,14 +35,18 @@
   }
 
   async function api(path, init={}){
-    const r = await fetch(path, { ...init, headers:{'Content-Type':'application/json', ...(init.headers||{}), ...auth() }});
+    const jwt = token();
+    const headers = { ...(init.headers||{}) };
+    if (jwt) headers.Authorization = `Bearer ${jwt}`;
+    if (init.body && !('Content-Type' in headers)) headers['Content-Type'] = 'application/json';
+    const r = await fetch(path, { ...init, headers });
     const bodyText = await r.text();
     let body = bodyText;
     try{ body = JSON.parse(bodyText); }catch{}
     return { status:r.status, body };
   }
 
-  // Load courses for select
+  // cursos para o select (rota protegida)
   async function loadCourses(){
     if(!ensureToken()) return;
     const r = await api('/api/admin/courses/_summary');
