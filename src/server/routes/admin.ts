@@ -158,8 +158,7 @@ router.post("/modules/:moduleId/quiz", async (req, res) => {
   try {
     const moduleId = String(req.params.moduleId);
     const passScoreRaw = req.body?.passScore;
-    const passScoreNum = Number(passScoreRaw);
-    const passScore = Number.isFinite(passScoreNum) ? passScoreNum : 70;
+    const passScore = Number.isFinite(passScoreRaw) ? Number(passScoreRaw) : 70;
     if (passScore < 0 || passScore > 100) {
       return res.status(400).json({ error: "invalid_pass_score" });
     }
@@ -173,7 +172,7 @@ router.post("/modules/:moduleId/quiz", async (req, res) => {
       return res.status(404).json({ error: "module_not_found" });
     }
 
-    // upsert por module_id
+    // Upsert por module_id
     let q;
     try {
       q = await pool.query(
@@ -182,7 +181,7 @@ router.post("/modules/:moduleId/quiz", async (req, res) => {
         values ($1, $2)
         on conflict (module_id)
         do update set pass_score = excluded.pass_score
-        returning id, module_id, pass_score, created_at
+        returning id, module_id, pass_score
         `,
         [moduleId, passScore]
       );
@@ -194,17 +193,14 @@ router.post("/modules/:moduleId/quiz", async (req, res) => {
       );
       if (cur.rowCount === 0) {
         q = await pool.query(
-          `insert into quizzes (module_id, pass_score)
-           values ($1,$2)
-           returning id, module_id, pass_score, created_at`,
+          `insert into quizzes (module_id, pass_score) values ($1,$2)
+           returning id, module_id, pass_score`,
           [moduleId, passScore]
         );
       } else {
         q = await pool.query(
-          `update quizzes
-             set pass_score = $2
-           where id = $1
-           returning id, module_id, pass_score, created_at`,
+          `update quizzes set pass_score = $2 where id = $1
+           returning id, module_id, pass_score`,
           [cur.rows[0].id, passScore]
         );
       }
@@ -212,7 +208,8 @@ router.post("/modules/:moduleId/quiz", async (req, res) => {
     return res.json({ quiz: q.rows[0] });
   } catch (err) {
     console.error("admin.createQuiz", err);
-    return res.status(500).json({ error: "server_error" });
+    const detail = process.env.DEV_FAKE ? String((err as any)?.message || err) : undefined;
+    return res.status(500).json({ error: "server_error", detail });
   }
 });
 
@@ -239,14 +236,15 @@ router.post("/quizzes/:quizId/questions", async (req, res) => {
       `
       insert into questions (quiz_id, kind, body, choices, answer_key)
       values ($1, $2, $3::jsonb, $4::jsonb, $5::jsonb)
-      returning id, quiz_id, kind, body, choices, answer_key, created_at
+      returning id, quiz_id, kind, body, choices, answer_key
       `,
       [quizId, kind, JSON.stringify(body), JSON.stringify(choices), JSON.stringify(answerKey)]
     );
     return res.json({ question: ins.rows[0] });
   } catch (err) {
     console.error("admin.addQuestion", err);
-    return res.status(500).json({ error: "server_error" });
+    const detail = process.env.DEV_FAKE ? String((err as any)?.message || err) : undefined;
+    return res.status(500).json({ error: "server_error", detail });
   }
 });
 
