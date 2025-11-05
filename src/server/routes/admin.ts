@@ -6,6 +6,20 @@ import { isUuid, paramUuid } from "../utils/ids.js";
 
 const router = Router();
 
+const AdminEntitlementBody = z
+  .object({
+    userId: z.string().uuid(),
+    courseId: z.string().uuid().optional(),
+    trackId: z.string().uuid().optional(),
+    source: z.string().min(1).default("admin"),
+    startsAt: z.string().datetime().optional(),
+    endsAt: z.string().datetime().optional(),
+    revoke: z.boolean().optional(),
+  })
+  .refine((v) => Boolean(v.courseId || v.trackId), {
+    message: "Either courseId or trackId is required",
+  });
+
 // --- Guards de UUID para todos os paths com :id neste router ---
 // Cursos
 // rotas sem :id primeiro
@@ -40,6 +54,69 @@ router.use("/prerequisites/:id", paramUuid("id"));
 // Entitlements (se houver)
 router.use("/entitlements/:id", paramUuid("id"));
 // --------------------------------------------------------------
+
+router.post("/entitlements", async (req, res) => {
+  try {
+    const data = AdminEntitlementBody.parse(req.body);
+    const { userId, courseId, trackId, source, startsAt, endsAt, revoke } = data;
+
+    if (revoke) {
+      if (courseId) {
+        await pool.query(
+          `UPDATE entitlements
+              SET ends_at = now()
+            WHERE user_id = $1 AND course_id = $2 AND (ends_at IS NULL OR ends_at > now())`,
+          [userId, courseId]
+        );
+      } else if (trackId) {
+        await pool.query(
+          `UPDATE entitlements
+              SET ends_at = now()
+            WHERE user_id = $1 AND track_id = $2 AND (ends_at IS NULL OR ends_at > now())`,
+          [userId, trackId]
+        );
+      }
+      return res.json({ ok: true, action: "revoked" });
+    }
+
+    if (courseId) {
+      await pool.query(
+        `
+        INSERT INTO entitlements (user_id, course_id, source, starts_at, ends_at)
+        VALUES ($1, $2, $3, COALESCE($4::timestamptz, now()), $5::timestamptz)
+        ON CONFLICT (user_id, course_id)
+        DO UPDATE SET
+          source    = EXCLUDED.source,
+          starts_at = EXCLUDED.starts_at,
+          ends_at   = EXCLUDED.ends_at
+        `,
+        [userId, courseId, source, startsAt ?? null, endsAt ?? null]
+      );
+    } else if (trackId) {
+      await pool.query(
+        `
+        INSERT INTO entitlements (user_id, track_id, source, starts_at, ends_at)
+        VALUES ($1, $2, $3, COALESCE($4::timestamptz, now()), $5::timestamptz)
+        ON CONFLICT (user_id, track_id)
+        DO UPDATE SET
+          source    = EXCLUDED.source,
+          starts_at = EXCLUDED.starts_at,
+          ends_at   = EXCLUDED.ends_at
+        `,
+        [userId, trackId, source, startsAt ?? null, endsAt ?? null]
+      );
+    }
+
+    return res.json({ ok: true, action: "granted" });
+  } catch (e: any) {
+    if (e?.name === "ZodError") {
+      const { fieldErrors, formErrors } = e.flatten();
+      return res.status(400).json({ error: { fieldErrors, formErrors } });
+    }
+    console.error("POST /admin/entitlements error:", e);
+    return res.status(500).json({ error: "server_error" });
+  }
+});
 
 // === Courses: módulos de um curso (para o dropdown do Studio/DnD)
 router.get("/courses/:courseId/modules", async (req: Request, res: Response) => {

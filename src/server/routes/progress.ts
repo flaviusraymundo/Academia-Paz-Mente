@@ -237,6 +237,27 @@ router.patch("/me/progress", async (req: Request, res: Response) => {
   }
 });
 
+router.get("/me/entitlements", async (req: Request, res: Response) => {
+  try {
+    const userId = req.auth?.userId ?? (req as any)?.user?.id ?? null;
+    if (!userId) return res.status(401).json({ error: "no_user" });
+
+    const q = `
+      SELECT id, user_id, course_id, track_id, source, starts_at, ends_at, created_at
+        FROM entitlements
+       WHERE user_id = $1
+         AND now() >= starts_at
+         AND now() < COALESCE(ends_at, '9999-12-31'::timestamptz)
+       ORDER BY created_at DESC
+    `;
+    const r = await pool.query(q, [userId]);
+    return res.json({ entitlements: r.rows });
+  } catch (e) {
+    console.error("GET /me/entitlements error:", e);
+    return res.status(500).json({ error: "server_error" });
+  }
+});
+
 router.get("/me/modules-summary", requireAuth, validateQuery(qCourseId), async (req: Request, res: Response) => {
   try {
     const userId = req.auth?.userId ?? (req as any)?.user?.id ?? null;
