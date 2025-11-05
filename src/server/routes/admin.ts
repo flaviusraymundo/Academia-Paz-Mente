@@ -171,7 +171,7 @@ router.put("/modules/:id", async (req, res) => {
 // Body: { itemIds: string[] }  (ordem no array = ordem final 1..n)
 // ==============
 const reorderSchema = z.object({
-  itemIds: z.array(z.string().uuid()).min(1), // ids da tabela module_items.id
+  itemIds: z.array(z.string().uuid()).nonempty(), // ids da tabela module_items.id
 });
 
 router.patch("/modules/:id/reorder", async (req, res) => {
@@ -180,31 +180,74 @@ router.patch("/modules/:id/reorder", async (req, res) => {
   if (!parse.success) {
     return res.status(400).json({ error: parse.error.flatten() });
   }
+
+  const { itemIds } = parse.data;
+
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    // valida que os itens pertencem ao módulo, usando module_items.id
-    const r = await client.query(
+
+    const module = await client.query(`SELECT id FROM modules WHERE id = $1`, [id]);
+    if (module.rowCount === 0) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "module_not_found" });
+    }
+
+    const current = await client.query<{ id: string }>(
       `SELECT id FROM module_items WHERE module_id = $1`,
       [id]
     );
-    const valid = new Set(r.rows.map((x: any) => x.id));
-    for (const it of parse.data.itemIds) {
-      if (!valid.has(it)) throw new Error("item_not_in_module");
+    const currentIds = current.rows.map(row => row.id);
+    const currentSet = new Set(currentIds);
+
+    if (currentIds.length !== itemIds.length) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "length_mismatch" });
     }
-    // aplica a ordem 1..n
-    for (let i = 0; i < parse.data.itemIds.length; i++) {
+
+    if (new Set(itemIds).size !== itemIds.length) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "duplicate_item_ids" });
+    }
+
+    for (const itemId of itemIds) {
+      if (!currentSet.has(itemId)) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ error: "item_not_in_module", id: itemId });
+      }
+    }
+
+    await client.query(
+      `UPDATE module_items SET "order" = NULL WHERE module_id = $1`,
+      [id]
+    );
+
+    for (let index = 0; index < itemIds.length; index++) {
       await client.query(
-        `UPDATE module_items SET "order" = $1 WHERE module_id = $2 AND id = $3`,
-        [i + 1, id, parse.data.itemIds[i]]
+        `UPDATE module_items SET "order" = $1 WHERE id = $2`,
+        [index + 1, itemIds[index]]
       );
     }
+
     await client.query("COMMIT");
-    return res.json({ ok: true });
-  } catch (e) {
-    await client.query("ROLLBACK");
-    const msg = (e as Error).message || "error";
-    return res.status(400).json({ error: msg });
+
+    const reordered = await client.query(
+      `SELECT id, module_id, "order"
+         FROM module_items
+        WHERE module_id = $1
+        ORDER BY "order" ASC, id ASC`,
+      [id]
+    );
+
+    return res.json({ items: reordered.rows });
+  } catch (err) {
+    try {
+      await client.query("ROLLBACK");
+    } catch (rollbackErr) {
+      console.error("admin.reorder.rollback_failed", rollbackErr);
+    }
+    console.error("admin.reorder", err);
+    return res.status(500).json({ error: "server_error" });
   } finally {
     client.release();
   }
