@@ -21,6 +21,37 @@ function authHeader() {
   return t ? { Authorization: `Bearer ${t}` } : {};
 }
 
+function getJWT() {
+  return readToken();
+}
+
+function setOut(id, value) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (typeof value === "string") {
+    el.textContent = value;
+  } else {
+    try {
+      el.textContent = JSON.stringify(value, null, 2);
+    } catch (err) {
+      el.textContent = String(value);
+    }
+  }
+}
+
+async function api(path, init = {}) {
+  const token = getJWT();
+  const headers = { ...(init.headers || {}) };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const response = await fetch(path, { ...init, headers });
+  const text = await response.text();
+  let body = text;
+  try {
+    body = JSON.parse(text);
+  } catch {}
+  return { status: response.status, body };
+}
+
 function show(el, status, text) {
   el.textContent = `HTTP ${status}\n` + text;
 }
@@ -167,3 +198,93 @@ document.getElementById("addPrereq")?.addEventListener("click", async () => {
   });
   show(out, r.status, await r.text());
 });
+
+// =========================
+// Aluno (teste)
+// =========================
+const $btnMeItems = document.getElementById("btnMeItems");
+const $btnSubmitQ = document.getElementById("btnSubmitQuiz");
+const $btnPageRead = document.getElementById("btnPageRead");
+const $btnVideoBeat = document.getElementById("btnVideoBeat");
+
+const $meCourse = document.getElementById("me-course");
+const $meModule = document.getElementById("me-module");
+const $meItem = document.getElementById("me-item");
+const $meQuiz = document.getElementById("me-quiz");
+const $meAnswers = document.getElementById("me-answers");
+
+if ($btnMeItems) {
+  $btnMeItems.addEventListener("click", async () => {
+    const courseId = ($meCourse?.value || "").trim();
+    if (!courseId) {
+      setOut("meOut", "Informe courseId");
+      return;
+    }
+    const { status, body } = await api(`/api/me/items?courseId=${encodeURIComponent(courseId)}`);
+    const text = typeof body === "string" ? body : JSON.stringify(body, null, 2);
+    setOut("meOut", `HTTP ${status}\n${text}`);
+  });
+}
+
+if ($btnSubmitQ) {
+  $btnSubmitQ.addEventListener("click", async () => {
+    const quizId = ($meQuiz?.value || "").trim();
+    if (!quizId) {
+      setOut("meOut", "Informe quizId");
+      return;
+    }
+    let arr;
+    try {
+      arr = JSON.parse($meAnswers?.value || "[]");
+      if (!Array.isArray(arr)) throw new Error("answers deve ser array");
+    } catch (err) {
+      setOut("meOut", "JSON inválido nas respostas: " + err.message);
+      return;
+    }
+    const shapes = [
+      (a) => ({ answers: a.map((x) => ({ questionId: x.questionId, choiceIds: x.choiceIds || x.value || x.choices || [] })) }),
+      (a) => ({ answers: a.map((x) => ({ questionId: x.questionId, value: x.value || x.choiceIds || x.choices || [] })) }),
+      (a) => ({ answers: a.map((x) => ({ questionId: x.questionId, choices: x.choices || x.choiceIds || x.value || [] })) })
+    ];
+    let last = null;
+    for (const build of shapes) {
+      const payload = build(arr);
+      const { status, body } = await api(`/api/quizzes/${quizId}/submit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      last = { status, body, payload };
+      if (status === 200) break;
+    }
+    setOut("meOut", last);
+  });
+}
+
+if ($btnPageRead) {
+  $btnPageRead.addEventListener("click", async () => {
+    const courseId = ($meCourse?.value || "").trim();
+    const moduleId = ($meModule?.value || "").trim();
+    const itemId = ($meItem?.value || "").trim();
+    const { status, body } = await api(`/api/events/page-read`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ courseId, moduleId, itemId, ms: 15000 })
+    });
+    setOut("meOut", { status, body });
+  });
+}
+
+if ($btnVideoBeat) {
+  $btnVideoBeat.addEventListener("click", async () => {
+    const courseId = ($meCourse?.value || "").trim();
+    const moduleId = ($meModule?.value || "").trim();
+    const itemId = ($meItem?.value || "").trim();
+    const { status, body } = await api(`/api/video/heartbeat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ courseId, moduleId, itemId, secs: 15 })
+    });
+    setOut("meOut", { status, body });
+  });
+}
