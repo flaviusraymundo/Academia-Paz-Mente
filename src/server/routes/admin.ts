@@ -26,18 +26,17 @@ router.use("/prerequisites/:id", paramUuid("id"));
 router.use("/entitlements/:id", paramUuid("id"));
 // --------------------------------------------------------------
 
-// Listar cursos com contagens (sem quebrar /api/admin/courses existente)
-router.get("/courses/summary", async (_req: Request, res: Response) => {
+// === Courses: summary (counts) - imune à colisão com :id ===
+router.get("/courses/_summary", async (_req: Request, res: Response) => {
   const q = await pool.query(`
-    select
-      c.id, c.slug, c.title, c.summary, c.level, c.active,
-      count(distinct m.id) as module_count,
-      count(mi.id)          as item_count
-    from courses c
-    left join modules m on m.course_id = c.id
-    left join module_items mi on mi.module_id = m.id
-    group by c.id, c.slug, c.title, c.summary, c.level, c.active
-    order by c.title asc
+    SELECT c.id, c.slug, c.title, c.summary, c.level, c.active,
+           COUNT(DISTINCT m.id) AS module_count,
+           COUNT(mi.id)        AS item_count
+      FROM courses c
+      LEFT JOIN modules m ON m.course_id = c.id
+      LEFT JOIN module_items mi ON mi.module_id = m.id
+     GROUP BY c.id
+     ORDER BY c.title ASC
   `);
   res.json({ courses: q.rows });
 });

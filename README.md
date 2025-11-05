@@ -151,7 +151,7 @@ GET /api/catalog/courses/:id/modules
 Admin (JWT)
 ```
 GET    /api/admin/courses              # lista crua (inclui created_at)
-GET    /api/admin/courses/summary      # lista com contagens module_count/item_count
+GET    /api/admin/courses/_summary     # lista com contagens module_count/item_count
 POST   /api/admin/courses
 POST   /api/admin/modules
 POST   /api/admin/modules/:moduleId/items

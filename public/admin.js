@@ -91,6 +91,13 @@ document.getElementById("listCourses")?.addEventListener("click", async () => {
   show(out, r.status, await r.text());
 });
 
+document.getElementById("listCoursesCounts")?.addEventListener("click", async () => {
+  const out = $("listOut");
+  const { status, body } = await api("/api/admin/courses/_summary");
+  const text = typeof body === "string" ? body : JSON.stringify(body, null, 2);
+  show(out, status, text);
+});
+
 // Público: Listar trilhas/catálogo
 document.getElementById("listTracks")?.addEventListener("click", async () => {
   const out = $("listOut");
