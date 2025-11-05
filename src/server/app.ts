@@ -47,7 +47,7 @@ app.use(["/video", "/api/video"], requireAuth, videoRouter);
 app.use(["/quizzes", "/api/quizzes"], requireAuth, quizzesRouter);
 
 // Perfil/progresso/certificados (autenticado)
-app.use(["/", "/api"], requireAuth, progressRouter);       // /me/progress
+app.use(["/api"], requireAuth, progressRouter);              // escopo /api
 app.use(["/", "/api"], requireAuth, certificatesRouter);   // /certificates/:courseId/issue
 
 // Admin (protegido) — por último, e montado nas duas bases

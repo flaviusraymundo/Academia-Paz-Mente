@@ -65,6 +65,26 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Modules' }
+  /me/items:
+    get:
+      summary: Lista módulos e itens disponíveis para o aluno autenticado
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Modules' }
+  /me/modules:
+    get:
+      summary: Alias de /me/items (mesma resposta)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Modules' }
   /quizzes/{quizId}/submit:
     post:
       summary: Submete respostas do quiz do módulo
