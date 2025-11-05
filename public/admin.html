@@ -99,6 +99,42 @@
     </div>
   </section>
 
+  <hr />
+
+  <section>
+    <h2>Aluno (teste rápido)</h2>
+    <p class="muted">Use o <em>mesmo JWT</em> do topo (ele precisa representar o aluno). Informe os IDs do curso/quiz.</p>
+    <div style="display:grid;gap:6px;max-width:900px">
+      <input id="me-course" placeholder="courseId (UUID)" />
+      <input id="me-module" placeholder="moduleId (opcional, p/ simular leitura/vídeo)" />
+      <input id="me-item"   placeholder="itemId (opcional, p/ simular leitura/vídeo)" />
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0">
+        <button id="btnMeItems">Ver progresso do aluno (GET /api/me/items)</button>
+      </div>
+      <div style="margin-top:8px">
+        <strong>Enviar tentativa de quiz</strong><br/>
+        <input id="me-quiz" placeholder="quizId (UUID)" />
+        <textarea id="me-answers" rows="4" cols="90" placeholder='Ex.: [{"questionId":"Q1","choiceIds":["A","C"]},{"questionId":"Q2","choiceIds":["A"]}]'></textarea>
+        <div class="muted" style="font-size:12px">
+          Dica: o backend aceita <code>choiceIds</code>, <code>value</code> ou <code>choices</code> (sempre arrays).
+          Este botão tenta automaticamente os 3 formatos até obter sucesso (200).
+        </div>
+        <button id="btnSubmitQuiz">Enviar tentativa de quiz (POST /api/quizzes/:id/submit)</button>
+      </div>
+      <div style="margin-top:8px">
+        <strong>Simulações de tempo de uso</strong>
+        <div class="muted" style="font-size:12px">
+          Podem retornar 404 se os endpoints ainda não estiverem ativos no deploy.
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0">
+          <button id="btnPageRead">Simular leitura (page-read 15s)</button>
+          <button id="btnVideoBeat">Simular heartbeat vídeo (15s)</button>
+        </div>
+      </div>
+    </div>
+    <pre id="meOut" style="white-space:pre-wrap;border:1px solid #ddd;padding:8px;"></pre>
+  </section>
+
   <section>
     <h2>Trilhas</h2>
     <div>
