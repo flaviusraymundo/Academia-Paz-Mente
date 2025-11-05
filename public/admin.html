@@ -184,6 +184,23 @@
     <pre id="graphRaw" style="white-space:pre-wrap;border:1px solid #ddd;padding:8px;"></pre>
   </section>
 
+  <hr />
+
+  <section>
+    <h2>Reordenar itens do módulo (drag-and-drop)</h2>
+    <p>Informe o <span class="code">moduleId</span>, carregue os itens, arraste para reordenar e clique em salvar.</p>
+    <input id="reorder-module" placeholder="moduleId" style="min-width:360px" />
+    <button id="reorder-load">Carregar itens</button>
+    <div id="reorder-box" style="margin-top:10px; display:none;">
+      <ol id="reorder-list" style="list-style: none; padding:0; margin:0; display:grid; gap:8px;"></ol>
+      <div style="margin-top:8px; display:flex; gap:8px;">
+        <button id="reorder-save">Salvar ordem</button>
+        <button id="reorder-cancel" class="muted">Cancelar</button>
+      </div>
+    </div>
+    <pre id="reorder-out" style="white-space:pre-wrap;border:1px solid #ddd;padding:8px; margin-top:10px;"></pre>
+  </section>
+
   <script src="/admin.js"></script>
   <script>
     // Handler extra só para o resumo com contagens.
