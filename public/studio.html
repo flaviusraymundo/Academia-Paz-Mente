@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LMS Studio</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-teal-50 text-slate-800">
+  <header class="bg-white/70 backdrop-blur sticky top-0 z-10 border-b">
+    <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+      <h1 class="text-xl font-semibold">LMS Studio</h1>
+      <div class="flex items-center gap-2">
+        <a href="/admin.html" class="text-sm underline">Admin Lite</a>
+        <a href="/api/openapi.yaml" class="text-sm underline">OpenAPI</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-6xl mx-auto px-4 py-6 grid md:grid-cols-3 gap-6">
+    <!-- Coluna 1: Auth + Curso -->
+    <section class="md:col-span-1 space-y-4">
+      <div class="bg-white rounded-2xl shadow p-4">
+        <h2 class="font-semibold mb-2">Auth</h2>
+        <p class="text-sm mb-2">
+          Em DEV_FAKE gere um JWT em
+          <code class="px-1 rounded bg-slate-100">/.netlify/functions/dev-jwt?email=seu@email</code>
+        </p>
+        <textarea id="jwt" rows="3" class="w-full rounded border px-3 py-2 text-sm" placeholder="Cole o JWT aqui"></textarea>
+        <div class="mt-2 flex gap-2">
+          <button id="ping" class="px-3 py-1.5 rounded bg-slate-900 text-white text-sm">Ping /api/health</button>
+          <span id="pingStatus" class="text-sm"></span>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-2xl shadow p-4">
+        <h2 class="font-semibold mb-2">Curso</h2>
+        <div class="flex gap-2">
+          <select id="courseSel" class="w-full rounded border px-3 py-1.5 text-sm"></select>
+          <button id="loadMeItems" class="px-3 py-1.5 rounded bg-emerald-600 text-white text-sm">/api/me/items</button>
+        </div>
+        <p class="text-xs text-slate-500 mt-2">Lista vinda de <code>/api/catalog</code>. Os módulos usam <code>/api/me/items?courseId=...</code>.</p>
+      </div>
+
+      <div class="bg-white rounded-2xl shadow p-4">
+        <h2 class="font-semibold mb-2">Ação rápida</h2>
+        <p class="text-xs text-slate-600 mb-2">Usa o módulo/itens selecionados na coluna direita.</p>
+        <div class="flex flex-col gap-2">
+          <button id="btnPageRead" class="px-3 py-2 rounded bg-teal-700 text-white text-sm">Simular page-read 15s</button>
+          <button id="btnVideoBeat" class="px-3 py-2 rounded bg-cyan-700 text-white text-sm">Simular video heartbeat 15s</button>
+          <button id="btnModulesSummary" class="px-3 py-2 rounded bg-slate-700 text-white text-sm">Ver módulos (summary)</button>
+          <button id="btnProgressSummary" class="px-3 py-2 rounded bg-slate-700 text-white text-sm">Ver progresso (summary)</button>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-2xl shadow p-4">
+        <h2 class="font-semibold mb-2">Saída</h2>
+        <pre id="out" class="text-xs bg-slate-50 border rounded p-2 overflow-auto max-h-80"></pre>
+      </div>
+    </section>
+
+    <!-- Coluna 2-3: Módulos e Itens -->
+    <section class="md:col-span-2 space-y-4">
+      <div class="bg-white rounded-2xl shadow p-4">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="font-semibold">Módulos & Itens</h2>
+          <div class="text-xs text-slate-500" id="selectionHint">Selecione um vídeo e/ou texto para simular tempo.</div>
+        </div>
+        <div id="modules" class="grid gap-4"></div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const $ = (sel) => document.querySelector(sel);
+    const out = $("#out");
+
+    function log(obj){ out.textContent = JSON.stringify(obj, null, 2); }
+    const authHeader = () => {
+      const t = ($("#jwt")?.value || "").trim();
+      return t ? { Authorization: `Bearer ${t}` } : {};
+    };
+    async function jget(url){
+      const r = await fetch(url, { headers: { ...authHeader() } });
+      const body = await r.text();
+      try { return { status:r.status, data: JSON.parse(body) }; }
+      catch { return { status:r.status, data: body }; }
+    }
+    async function jpost(url, payload){
+      const r = await fetch(url, {
+        method:'POST',
+        headers: { 'Content-Type':'application/json', ...authHeader() },
+        body: JSON.stringify(payload || {})
+      });
+      const body = await r.text();
+      try { return { status:r.status, data: JSON.parse(body) }; }
+      catch { return { status:r.status, data: body }; }
+    }
+
+    // estado atual
+    let currentCourseId = null;
+    let selected = { moduleId:null, videoId:null, textId:null };
+
+    // ping
+    $("#ping").addEventListener("click", async () => {
+      const r = await fetch('/api/health');
+      $("#pingStatus").textContent = r.ok ? 'OK' : `Erro ${r.status}`;
+    });
+
+    // carrega cursos
+    async function loadCourses(){
+      const r = await jget('/api/catalog');
+      const sel = $("#courseSel");
+      sel.innerHTML = '';
+      if (r.status === 200 && Array.isArray(r.data?.courses)){
+        r.data.courses.forEach(c => {
+          const opt = document.createElement('option');
+          opt.value = c.id;
+          opt.textContent = c.title;
+          sel.appendChild(opt);
+        });
+        currentCourseId = sel.value;
+      } else {
+        log(r);
+      }
+    }
+
+    $("#courseSel").addEventListener("change", (e) => {
+      currentCourseId = e.target.value;
+    });
+
+    // render módulos + itens
+    async function loadMeItems(){
+      if (!currentCourseId){ log({error:'curso não selecionado'}); return; }
+      const r = await jget(`/api/me/items?courseId=${currentCourseId}`);
+      if (r.status !== 200){ log(r); return; }
+      const wrap = $("#modules");
+      wrap.innerHTML = '';
+      selected = { moduleId:null, videoId:null, textId:null };
+
+      (r.data.items || []).forEach(mod => {
+        const card = document.createElement('div');
+        card.className = 'rounded-xl border p-4';
+        const badge = mod.unlocked ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200';
+        card.innerHTML = `
+          <div class="flex items-center gap-2 mb-2">
+            <h3 class="font-semibold">${mod.title}</h3>
+            <span class="text-xs border px-2 py-0.5 rounded ${badge}">${mod.unlocked ? 'UNLOCKED' : 'LOCKED'}</span>
+            <span class="text-xs text-slate-500">status: ${mod.progress?.status || 'not_started'} · score: ${mod.progress?.score ?? 0}</span>
+          </div>
+          <div class="grid md:grid-cols-2 gap-3"></div>
+        `;
+        const grid = card.querySelector('div.grid');
+
+        (mod.items || []).forEach(it => {
+          const b = document.createElement('div');
+          b.className = 'border rounded-lg p-3';
+          let meta = '';
+          if (it.type === 'video') meta = `mux_playback_id: <code>${it.payload_ref?.mux_playback_id || '-'}</code>`;
+          if (it.type === 'text')  meta = `doc_id: <code>${it.payload_ref?.doc_id || '-'}</code>`;
+          b.innerHTML = `
+            <div class="text-sm font-semibold">${it.type.toUpperCase()} <span class="text-xs text-slate-500">(order ${it.order})</span></div>
+            <div class="text-xs text-slate-500 mb-2">itemId: <code>${it.item_id}</code></div>
+            <div class="text-xs text-slate-600 mb-2">${meta}</div>
+            <button class="selectBtn px-3 py-1.5 rounded bg-slate-900 text-white text-xs">Selecionar</button>
+          `;
+          b.querySelector('.selectBtn').addEventListener('click', () => {
+            selected.moduleId = mod.id;
+            if (it.type === 'video') selected.videoId = it.item_id;
+            if (it.type === 'text')  selected.textId  = it.item_id;
+            document.getElementById('selectionHint').textContent =
+              `Selecionado → módulo: ${selected.moduleId || '-'} · videoId: ${selected.videoId || '-'} · textId: ${selected.textId || '-'}`;
+          });
+          grid.appendChild(b);
+        });
+
+        wrap.appendChild(card);
+      });
+    }
+
+    // ações rápidas
+    $("#loadMeItems").addEventListener("click", loadMeItems);
+
+    $("#btnPageRead").addEventListener("click", async () => {
+      if (!selected.moduleId || !selected.textId){ log({error:'selecione um TEXT'}); return; }
+      const r = await jpost('/api/events/page-read', {
+        courseId: currentCourseId, moduleId: selected.moduleId, itemId: selected.textId, ms: 15000
+      });
+      log(r);
+    });
+
+    $("#btnVideoBeat").addEventListener("click", async () => {
+      if (!selected.moduleId || !selected.videoId){ log({error:'selecione um VIDEO'}); return; }
+      const r = await jpost('/api/video/heartbeat', {
+        courseId: currentCourseId, moduleId: selected.moduleId, itemId: selected.videoId, secs: 15
+      });
+      log(r);
+    });
+
+    $("#btnModulesSummary").addEventListener("click", async () => {
+      const r = await jget(`/api/me/items?courseId=${currentCourseId}`);
+      if (r.status !== 200){ log(r); return; }
+      const summary = (r.data.items||[]).map(m => ({
+        id: m.id, title: m.title, unlocked: m.unlocked, status: m.progress?.status, score: m.progress?.score
+      }));
+      log({status:r.status, summary});
+    });
+
+    $("#btnProgressSummary").addEventListener("click", async () => {
+      const r = await jget(`/api/me/progress?courseId=${currentCourseId}`);
+      log(r);
+    });
+
+    // init
+    loadCourses();
+  </script>
+</body>
+</html>
