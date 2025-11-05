@@ -25,22 +25,24 @@ app.use(cors({ origin: true, credentials: true }));
 app.use(morgan("combined"));
 app.use(json({ limit: "1mb" }));
 
-// CORS consistente para /api/*
-app.use("/api", (req, res, next) => {
-  const origin = (req.headers.origin as string | undefined) ?? "*";
-  res.header("Access-Control-Allow-Origin", origin);
-  res.header("Vary", "Origin");
-  res.header("Access-Control-Allow-Credentials", "true");
-  res.header(
-    "Access-Control-Allow-Methods",
-    "GET,POST,PUT,PATCH,DELETE,OPTIONS"
-  );
-  res.header(
-    "Access-Control-Allow-Headers",
-    "Content-Type,Authorization"
-  );
+// CORS consistente para toda a API
+app.use((req, res, next) => {
+  if (req.path.startsWith("/api")) {
+    const origin = (req.headers.origin as string | undefined) ?? "*";
+    res.header("Access-Control-Allow-Origin", origin);
+    res.header("Vary", "Origin");
+    res.header("Access-Control-Allow-Credentials", "true");
+    res.header(
+      "Access-Control-Allow-Methods",
+      "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+    );
+    res.header(
+      "Access-Control-Allow-Headers",
+      "Content-Type,Authorization"
+    );
+  }
   if (req.method === "OPTIONS") {
-    return res.status(204).end();
+    return res.status(200).end();
   }
   next();
 });
@@ -62,15 +64,15 @@ app.use(["/catalog", "/api/catalog"], catalogRouter);
 app.use(["/events", "/api/events"], eventsRouter);
 
 // Aluno (autenticado)
-app.use(["/checkout", "/api/checkout"], requireAuth, checkoutRouter);
-app.use(["/video", "/api/video"], requireAuth, videoRouter);
-app.use(["/quizzes", "/api/quizzes"], requireAuth, quizzesRouter);
+app.use("/api/checkout", requireAuth, checkoutRouter);
+app.use("/api/video", requireAuth, videoRouter);
+app.use("/api/quizzes", requireAuth, quizzesRouter);
 
 // Perfil/progresso/certificados (autenticado)
-app.use(["/api"], requireAuth, progressRouter);                    // escopo /api
-app.use(["/certificates", "/api/certificates"], requireAuth, certificatesRouter); // /certificates/:courseId/issue
+app.use("/api", requireAuth, progressRouter); // /api/me/items, /api/me/entitlements, /api/me/progress
+app.use("/api/certificates", requireAuth, certificatesRouter); // /api/certificates/:courseId/issue
 
-// Admin (protegido) — por último, e montado nas duas bases
-app.use(["/admin", "/api/admin"], requireAuth, requireAdmin, adminRouter);
+// Admin (protegido) — por último
+app.use("/api/admin", requireAuth, requireAdmin, adminRouter);
 
 export default app;
