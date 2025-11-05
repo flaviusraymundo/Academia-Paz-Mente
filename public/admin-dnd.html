@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Reordenar itens do módulo (drag-and-drop)</title>
+  <style>
+    body{font-family:system-ui,Arial,sans-serif;margin:16px;background:#f7fffd}
+    h1{margin:0 0 12px}
+    select,button{padding:8px 10px;margin:6px 6px 6px 0}
+    #list{list-style:none;padding:0;margin:12px 0;border:1px solid #e5e5e5;border-radius:10px;background:#fff}
+    .row{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid #f0f0f0;cursor:grab}
+    .row:last-child{border-bottom:none}
+    .handle{font:16px/1 ui-monospace,monospace;color:#888}
+    .type{font-size:12px;padding:2px 6px;border-radius:999px;border:1px solid #eee;background:#fafafa}
+    .ghost{opacity:.45}
+    pre{background:#fff;border:1px solid #eee;border-radius:8px;padding:10px;white-space:pre-wrap}
+  </style>
+</head>
+<body>
+  <h1>Reordenar itens do módulo (drag-and-drop)</h1>
+
+  <div>
+    <label>Curso</label>
+    <select id="course"></select>
+    <label>Módulo</label>
+    <select id="module"></select>
+    <button id="load">Carregar itens</button>
+    <button id="save" disabled>Salvar ordem</button>
+  </div>
+
+  <ul id="list"></ul>
+  <pre id="out">{ "hint": "Cole seu JWT com localStorage.lms_jwt = '...'; e recarregue." }</pre>
+
+  <script src="/admin-dnd.js"></script>
+</body>
+</html>
