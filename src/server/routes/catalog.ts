@@ -1,6 +1,7 @@
 // src/server/routes/catalog.ts
 import { Router, Request, Response } from "express";
 import { pool } from "../lib/db.js";
+import { isUuid } from "../utils/ids.js";
 
 const router = Router();
 
@@ -61,6 +62,9 @@ router.get("/", async (_req: Request, res: Response) => {
  */
 router.get("/courses/:courseId/modules", async (req: Request, res: Response) => {
   const { courseId } = req.params;
+  if (!isUuid(courseId)) {
+    return res.status(400).json({ error: "invalid_id", param: "courseId" });
+  }
   const userId = req.auth?.userId || null; // opcional para catálogo público
   const client = await pool.connect();
   try {

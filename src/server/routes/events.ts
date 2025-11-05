@@ -3,6 +3,7 @@ import { Router, Request, Response } from "express";
 import { z } from "zod";
 import { pool } from "../lib/db.js";
 import { ulid } from "ulid";
+import { isUuid } from "../utils/ids.js";
 
 const router = Router();
 
@@ -85,7 +86,28 @@ router.post("/page-read", async (req: Request, res: Response) => {
     if (!ALLOW_PUBLIC && !userId) {
       return res.status(401).json({ error: "unauthorized" });
     }
-    const parsed = PageReadBody.safeParse(req.body);
+    const body = req.body || {};
+    const courseIdValue = body.courseId == null ? "" : String(body.courseId).trim();
+    const moduleIdValue = body.moduleId == null ? "" : String(body.moduleId).trim();
+    const itemIdValue = body.itemId == null ? "" : String(body.itemId).trim();
+    const courseIdNormalized = courseIdValue.length ? courseIdValue : undefined;
+    const moduleIdNormalized = moduleIdValue.length ? moduleIdValue : undefined;
+    const itemIdNormalized = itemIdValue.length ? itemIdValue : undefined;
+    if (courseIdNormalized && !isUuid(courseIdNormalized)) {
+      return res.status(400).json({ error: "invalid_id", param: "courseId" });
+    }
+    if (moduleIdNormalized && !isUuid(moduleIdNormalized)) {
+      return res.status(400).json({ error: "invalid_id", param: "moduleId" });
+    }
+    if (itemIdNormalized && !isUuid(itemIdNormalized)) {
+      return res.status(400).json({ error: "invalid_id", param: "itemId" });
+    }
+    const parsed = PageReadBody.safeParse({
+      ...body,
+      courseId: courseIdNormalized,
+      moduleId: moduleIdNormalized,
+      itemId: itemIdNormalized,
+    });
     if (!parsed.success) {
       return res.status(400).json({ error: parsed.error.flatten() });
     }

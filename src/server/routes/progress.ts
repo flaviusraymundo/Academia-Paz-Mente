@@ -4,7 +4,7 @@ import { pool } from "../lib/db.js";
 import { z } from "zod";
 import { ulid } from "ulid";
 import { requireAuth } from "../middleware/auth.js";
-import { validateQuery, qCourseId } from "../utils/validate.js";
+import { isUuid } from "../utils/ids.js";
 
 const router = Router();
 
@@ -37,13 +37,16 @@ type ModuleStatusRow = {
   status: string | null;
 };
 
-type CourseIdQuery = z.infer<typeof qCourseId>;
-
 async function meItemsHandler(req: Request, res: Response) {
   const userId = req.auth?.userId ?? req.user?.id ?? null;
   if (!userId) return res.status(401).json({ error: "unauthorized" });
+  const courseIdRaw = req.query?.courseId;
+  const courseId = Array.isArray(courseIdRaw) ? courseIdRaw[0] : courseIdRaw;
+  if (!courseId || !isUuid(String(courseId))) {
+    return res.status(400).json({ error: "invalid_id", param: "courseId" });
+  }
 
-  const { courseId } = req.query as CourseIdQuery;
+  const normalizedCourseId = String(courseId);
 
   try {
     const { rows: modules } = await pool.query<ModuleRow>(
@@ -60,7 +63,7 @@ async function meItemsHandler(req: Request, res: Response) {
       where m.course_id = $2
       order by m."order" asc, m.id asc
       `,
-      [userId, courseId]
+      [userId, normalizedCourseId]
     );
 
     if (modules.length === 0) {
@@ -126,14 +129,19 @@ async function meItemsHandler(req: Request, res: Response) {
   }
 }
 
-router.get("/me/items", requireAuth, validateQuery(qCourseId), meItemsHandler);
+router.get("/me/items", requireAuth, meItemsHandler);
 
 // alias opcional (mesmo payload do /me/items)
-router.get("/me/modules", requireAuth, validateQuery(qCourseId), meItemsHandler);
+router.get("/me/modules", requireAuth, meItemsHandler);
 
 router.get("/me/progress", async (req: Request, res: Response) => {
   const userId = req.auth?.userId;
   if (!userId) return res.status(401).json({ error: "unauthorized" });
+  const maybeCourseId = req.query?.courseId;
+  const courseId = Array.isArray(maybeCourseId) ? maybeCourseId[0] : maybeCourseId;
+  if (courseId && !isUuid(String(courseId))) {
+    return res.status(400).json({ error: "invalid_id", param: "courseId" });
+  }
 
   const { rows } = await pool.query(
     `
@@ -258,12 +266,17 @@ router.get("/me/entitlements", async (req: Request, res: Response) => {
   }
 });
 
-router.get("/me/modules-summary", requireAuth, validateQuery(qCourseId), async (req: Request, res: Response) => {
+router.get("/me/modules-summary", requireAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.auth?.userId ?? (req as any)?.user?.id ?? null;
     if (!userId) return res.status(401).json({ error: "unauthorized" });
 
-    const { courseId } = req.query as CourseIdQuery;
+    const courseIdRaw = req.query?.courseId;
+    const courseId = Array.isArray(courseIdRaw) ? courseIdRaw[0] : courseIdRaw;
+    if (!courseId || !isUuid(String(courseId))) {
+      return res.status(400).json({ error: "invalid_id", param: "courseId" });
+    }
+    const normalizedCourseId = String(courseId);
 
     const { rows: modules } = await pool.query<{
       id: string;
@@ -271,7 +284,7 @@ router.get("/me/modules-summary", requireAuth, validateQuery(qCourseId), async (
       order: number;
     }>(
       `select id, title, "order" from modules where course_id = $1 order by "order", id`,
-      [courseId]
+      [normalizedCourseId]
     );
 
     if (modules.length === 0) {
@@ -325,16 +338,21 @@ router.get("/me/modules-summary", requireAuth, validateQuery(qCourseId), async (
   }
 });
 
-router.get("/me/progress-summary", requireAuth, validateQuery(qCourseId), async (req: Request, res: Response) => {
+router.get("/me/progress-summary", requireAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.auth?.userId ?? (req as any)?.user?.id ?? null;
     if (!userId) return res.status(401).json({ error: "unauthorized" });
 
-    const { courseId } = req.query as CourseIdQuery;
+    const courseIdRaw = req.query?.courseId;
+    const courseId = Array.isArray(courseIdRaw) ? courseIdRaw[0] : courseIdRaw;
+    if (!courseId || !isUuid(String(courseId))) {
+      return res.status(400).json({ error: "invalid_id", param: "courseId" });
+    }
+    const normalizedCourseId = String(courseId);
 
     const { rows: modules } = await pool.query<{ id: string }>(
       `select id from modules where course_id = $1 order by "order", id`,
-      [courseId]
+      [normalizedCourseId]
     );
 
     const moduleIds = modules.map((m) => m.id);
