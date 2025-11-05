@@ -4,6 +4,7 @@ import { pool } from "../lib/db.js";
 import { z } from "zod";
 import { ulid } from "ulid";
 import { requireAuth } from "../middleware/auth.js";
+import { validateQuery, qCourseId } from "../utils/validate.js";
 
 const router = Router();
 
@@ -36,11 +37,13 @@ type ModuleStatusRow = {
   status: string | null;
 };
 
+type CourseIdQuery = z.infer<typeof qCourseId>;
+
 async function meItemsHandler(req: Request, res: Response) {
   const userId = req.auth?.userId ?? req.user?.id ?? null;
-  const courseId = String(req.query.courseId ?? "").trim();
   if (!userId) return res.status(401).json({ error: "unauthorized" });
-  if (!courseId) return res.status(400).json({ error: "missing_courseId" });
+
+  const { courseId } = req.query as CourseIdQuery;
 
   try {
     const { rows: modules } = await pool.query<ModuleRow>(
@@ -123,10 +126,10 @@ async function meItemsHandler(req: Request, res: Response) {
   }
 }
 
-router.get("/me/items", requireAuth, meItemsHandler);
+router.get("/me/items", requireAuth, validateQuery(qCourseId), meItemsHandler);
 
 // alias opcional (mesmo payload do /me/items)
-router.get("/me/modules", requireAuth, meItemsHandler);
+router.get("/me/modules", requireAuth, validateQuery(qCourseId), meItemsHandler);
 
 router.get("/me/progress", async (req: Request, res: Response) => {
   const userId = req.auth?.userId;
@@ -234,15 +237,12 @@ router.patch("/me/progress", async (req: Request, res: Response) => {
   }
 });
 
-router.get("/me/modules-summary", requireAuth, async (req: Request, res: Response) => {
+router.get("/me/modules-summary", requireAuth, validateQuery(qCourseId), async (req: Request, res: Response) => {
   try {
     const userId = req.auth?.userId ?? (req as any)?.user?.id ?? null;
     if (!userId) return res.status(401).json({ error: "unauthorized" });
 
-    const courseId = String(req.query.courseId ?? "").trim();
-    const Q = z.object({ courseId: z.string().uuid() });
-    const parsed = Q.safeParse({ courseId });
-    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    const { courseId } = req.query as CourseIdQuery;
 
     const { rows: modules } = await pool.query<{
       id: string;
@@ -250,7 +250,7 @@ router.get("/me/modules-summary", requireAuth, async (req: Request, res: Respons
       order: number;
     }>(
       `select id, title, "order" from modules where course_id = $1 order by "order", id`,
-      [parsed.data.courseId]
+      [courseId]
     );
 
     if (modules.length === 0) {
@@ -304,19 +304,16 @@ router.get("/me/modules-summary", requireAuth, async (req: Request, res: Respons
   }
 });
 
-router.get("/me/progress-summary", requireAuth, async (req: Request, res: Response) => {
+router.get("/me/progress-summary", requireAuth, validateQuery(qCourseId), async (req: Request, res: Response) => {
   try {
     const userId = req.auth?.userId ?? (req as any)?.user?.id ?? null;
     if (!userId) return res.status(401).json({ error: "unauthorized" });
 
-    const courseId = String(req.query.courseId ?? "").trim();
-    const Q = z.object({ courseId: z.string().uuid() });
-    const parsed = Q.safeParse({ courseId });
-    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    const { courseId } = req.query as CourseIdQuery;
 
     const { rows: modules } = await pool.query<{ id: string }>(
       `select id from modules where course_id = $1 order by "order", id`,
-      [parsed.data.courseId]
+      [courseId]
     );
 
     const moduleIds = modules.map((m) => m.id);
