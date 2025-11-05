@@ -1,43 +1,71 @@
 // src/server/routes/video.ts
 import { Router, Request, Response } from "express";
-import { z } from "zod";
 import jwt, { JwtHeader } from "jsonwebtoken";
-import { pool } from "../lib/db.js";
+import { pool, withClient } from "../lib/db.js";
 import { ulid } from "ulid";
+import { isUuid } from "../utils/ids.js";
 
 const router = Router();
 
 // POST /video/heartbeat  (montado também como /api/video/heartbeat)
 // registra batimentos de vídeo em event_log (depois podemos consolidar em video_sessions)
-// aceita string vazia como undefined (alinha com Admin Lite tolerante)
-const uuidOpt = z.preprocess((v) => {
-  if (typeof v === "string" && v.trim() === "") return undefined;
-  return v;
-}, z.string().uuid().optional());
-
-const BeatBody = z.object({
-  courseId: uuidOpt,
-  moduleId: uuidOpt,
-  itemId: uuidOpt,
-  secs: z.number().int().min(1).max(3600), // 1s a 60min
-});
-
 router.post("/heartbeat", async (req: Request, res: Response) => {
   try {
     const userId = req.auth?.userId || null; // /video já exige auth via app.ts
     if (!userId) return res.status(401).json({ error: "unauthorized" });
-    const parsed = BeatBody.safeParse(req.body);
-    if (!parsed.success) {
-      return res.status(400).json({ error: parsed.error.flatten() });
+    const { courseId, moduleId, itemId, secs } = req.body || {};
+    if (!isUuid(courseId)) {
+      return res.status(400).json({ error: "invalid_id", param: "courseId" });
     }
-    const { courseId, moduleId, itemId, secs } = parsed.data;
+    if (!isUuid(moduleId)) {
+      return res.status(400).json({ error: "invalid_id", param: "moduleId" });
+    }
+    if (!isUuid(itemId)) {
+      return res.status(400).json({ error: "invalid_id", param: "itemId" });
+    }
+    if (!Number.isFinite(secs) || secs <= 0) return res.status(400).json({ error: "bad_secs" });
+
+    // Gate de entitlement ativo (opcional via ENV)
+    if (process.env.ENTITLEMENTS_ENFORCE === "1") {
+      const ok = await withClient(async (client) => {
+        const direct = await client.query(
+          `select 1
+             from entitlements
+            where user_id = $1 and course_id = $2
+              and now() >= starts_at
+              and now() < coalesce(ends_at,'9999-12-31'::timestamptz)
+            limit 1`,
+          [userId, courseId]
+        );
+        if (direct.rowCount) return true;
+
+        const tr = await client.query(
+          `select track_id from track_courses where course_id=$1 limit 1`,
+          [courseId]
+        );
+        if (tr.rowCount) {
+          const via = await client.query(
+            `select 1
+               from entitlements
+              where user_id = $1 and track_id = $2
+                and now() >= starts_at
+                and now() < coalesce(ends_at,'9999-12-31'::timestamptz)
+              limit 1`,
+            [userId, tr.rows[0].track_id]
+          );
+          if (via.rowCount) return true;
+        }
+        return false;
+      });
+      if (!ok) return res.status(403).json({ error: "no_entitlement" });
+    }
     const ua = (req.headers["user-agent"] as string) || null;
     const ip =
       (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.ip || null;
     const payload = {
-      courseId: courseId ?? null,
-      moduleId: moduleId ?? null,
-      itemId: itemId ?? null,
+      courseId,
+      moduleId,
+      itemId,
       secs,
       ua,
       ts: new Date().toISOString(),
@@ -66,6 +94,9 @@ router.post("/:itemId/playback-token", async (req: Request, res: Response) => {
   }
 
   const itemId = req.params.itemId;
+  if (!isUuid(itemId)) {
+    return res.status(400).json({ error: "invalid_id", param: "itemId" });
+  }
 
   const client = await pool.connect();
   try {
@@ -82,12 +113,36 @@ router.post("/:itemId/playback-token", async (req: Request, res: Response) => {
     if (rowsMap.length === 0) return res.status(404).json({ error: "item_not_found" });
     const row = rowsMap[0];
 
-    // entitlement ao curso
-    const { rows: ent } = await client.query(
-      `select 1 from entitlements where user_id = $1 and course_id = $2`,
+    // entitlement ao curso (direto ou via trilha, apenas ativos)
+    const direct = await client.query(
+      `select 1
+         from entitlements
+        where user_id = $1 and course_id = $2
+          and now() >= starts_at
+          and now() < coalesce(ends_at,'9999-12-31'::timestamptz)
+        limit 1`,
       [userId, row.course_id]
     );
-    if (ent.length === 0) return res.status(403).json({ error: "no_entitlement" });
+    let hasAccess = direct.rowCount > 0;
+    if (!hasAccess) {
+      const tr = await client.query(
+        `select track_id from track_courses where course_id=$1 limit 1`,
+        [row.course_id]
+      );
+      if (tr.rowCount) {
+        const via = await client.query(
+          `select 1
+             from entitlements
+            where user_id = $1 and track_id = $2
+              and now() >= starts_at
+              and now() < coalesce(ends_at,'9999-12-31'::timestamptz)
+            limit 1`,
+          [userId, tr.rows[0].track_id]
+        );
+        hasAccess = via.rowCount > 0;
+      }
+    }
+    if (!hasAccess) return res.status(403).json({ error: "no_entitlement" });
 
     // pega playback id do payload_ref
     const pr = row.payload_ref as any;
