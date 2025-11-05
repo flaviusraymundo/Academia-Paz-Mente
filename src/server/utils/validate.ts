@@ -1,14 +1,15 @@
 import { z } from "zod";
 import type { Request, Response, NextFunction } from "express";
 
-export const validateQuery = (schema: z.ZodTypeAny) =>
+export const validateQuery = (schema: z.ZodObject<any>) =>
   (req: Request, res: Response, next: NextFunction) => {
     const parsed = schema.safeParse(req.query);
     if (!parsed.success) {
+      const flat = parsed.error.flatten();
       return res.status(400).json({
         error: {
-          formErrors: parsed.error.formErrors.formErrors ?? [],
-          fieldErrors: parsed.error.formErrors.fieldErrors ?? {},
+          formErrors: flat.formErrors ?? [],
+          fieldErrors: flat.fieldErrors ?? {},
         },
       });
     }
