@@ -189,7 +189,7 @@ paths:
         '204': { description: Atualizado }
   /api/admin/modules/{id}:
     put:
-      summary: Atualiza título/ordem/ativo do módulo
+      summary: Atualiza título/ordem do módulo
       security: [{ bearerAuth: [] }]
       tags: [admin]
       parameters:
@@ -206,7 +206,6 @@ paths:
               properties:
                 title: { type: string }
                 order: { type: integer }
-                active: { type: boolean }
       responses:
         '200': { description: OK }
         '400': { description: Erro de validação }
