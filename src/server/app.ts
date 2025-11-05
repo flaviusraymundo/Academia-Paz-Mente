@@ -25,6 +25,26 @@ app.use(cors({ origin: true, credentials: true }));
 app.use(morgan("combined"));
 app.use(json({ limit: "1mb" }));
 
+// CORS consistente para /api/*
+app.use("/api", (req, res, next) => {
+  const origin = (req.headers.origin as string | undefined) ?? "*";
+  res.header("Access-Control-Allow-Origin", origin);
+  res.header("Vary", "Origin");
+  res.header("Access-Control-Allow-Credentials", "true");
+  res.header(
+    "Access-Control-Allow-Methods",
+    "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+  );
+  res.header(
+    "Access-Control-Allow-Headers",
+    "Content-Type,Authorization"
+  );
+  if (req.method === "OPTIONS") {
+    return res.status(204).end();
+  }
+  next();
+});
+
 // Health (público)
 app.get(["/health", "/api/health"], async (_req: Request, res: Response) => {
   await pool.query("select 1");
