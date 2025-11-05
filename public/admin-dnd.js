@@ -10,6 +10,18 @@
   const token = ()=> (localStorage.getItem('lms_jwt')||'').trim();
   const auth = ()=> token()? { Authorization:`Bearer ${token()}` } : {};
   const show = (obj)=> out.textContent = JSON.stringify(obj,null,2);
+  const isUuid = (s)=> /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s||'');
+
+  function ensureToken(){
+    if (!token()){
+      show({status:401, body:{error:'no_token', hint:'Defina localStorage.lms_jwt e recarregue'}});
+      btnLoad.disabled = true;
+      btnSave.disabled = true;
+      return false;
+    }
+    btnLoad.disabled = false;
+    return true;
+  }
 
   async function api(path, init={}){
     const r = await fetch(path, { ...init, headers:{'Content-Type':'application/json', ...(init.headers||{}), ...auth() }});
@@ -21,25 +33,41 @@
 
   // Load courses for select
   async function loadCourses(){
-    if(!token()){ show({status:401, body:{error:'no_token'}}); return; }
+    if(!ensureToken()) return;
     const r = await api('/api/admin/courses/summary');
     if(r.status!==200){ show(r); return; }
     const courses = r.body.courses||[];
-    selCourse.innerHTML = courses.map(c=>`<option value="${c.id}">${c.title}</option>`).join('');
+    selCourse.innerHTML = '';
+    for (const c of courses){
+      const opt = document.createElement('option');
+      opt.value = c.id;
+      opt.textContent = c.title;
+      selCourse.appendChild(opt);
+    }
+    if (selCourse.options.length > 0) selCourse.selectedIndex = 0;
   }
 
   // Load modules from /api/me/items (por curso)
   async function loadModules(){
+    selModule.innerHTML = '';
     const courseId = selCourse.value;
+    if (!isUuid(courseId)){ show({status:400, body:{error:'choose_course'}}); return; }
     const r = await api(`/api/me/items?courseId=${courseId}`);
     if(r.status!==200){ show(r); return; }
     const mods = (r.body.items||[]).map(m=>({id:m.id, title:m.title}));
-    selModule.innerHTML = mods.map(m=>`<option value="${m.id}">${m.title}</option>`).join('');
+    for (const m of mods){
+      const opt = document.createElement('option');
+      opt.value = m.id;
+      opt.textContent = m.title;
+      selModule.appendChild(opt);
+    }
+    if (selModule.options.length > 0) selModule.selectedIndex = 0;
   }
 
   // Load items for module for DnD
   async function loadItems(){
     const moduleId = selModule.value;
+    if (!isUuid(moduleId)) { show({status:400, body:{error:'choose_module'}}); return; }
     const r = await api(`/api/admin/modules/${moduleId}/items`);
     if(r.status!==200){ show(r); return; }
     const items = r.body.items||[];
@@ -97,5 +125,5 @@
   selCourse.addEventListener('change', loadModules);
 
   // bootstrap
-  loadCourses().then(loadModules);
+  ensureToken() && loadCourses().then(loadModules);
 })();

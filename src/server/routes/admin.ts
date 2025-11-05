@@ -8,12 +8,22 @@ const router = Router();
 
 // --- Guards de UUID para todos os paths com :id neste router ---
 // Cursos
-// valida UUID em /courses/:id, mas NÃO casa /courses/_summary
-// usa regex no path para aceitar apenas UUID v1–v5
-router.use(
-  "/courses/:id([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})",
-  paramUuid("id")
-);
+// rotas sem :id primeiro
+router.get("/courses/_summary", async (_req: Request, res: Response) => {
+  const q = await pool.query(`
+    SELECT c.id, c.slug, c.title, c.summary, c.level, c.active,
+           COUNT(DISTINCT m.id) AS module_count,
+           COUNT(mi.id)        AS item_count
+      FROM courses c
+      LEFT JOIN modules m ON m.course_id = c.id
+      LEFT JOIN module_items mi ON mi.module_id = m.id
+     GROUP BY c.id
+     ORDER BY c.title ASC
+  `);
+  res.json({ courses: q.rows });
+});
+// guard só depois, não intercepta _summary
+router.use("/courses/:id", paramUuid("id"));
 // Módulos
 router.use("/modules/:id", paramUuid("id"));
 router.use("/modules/:moduleId/quiz", paramUuid("moduleId"));
@@ -30,21 +40,6 @@ router.use("/prerequisites/:id", paramUuid("id"));
 // Entitlements (se houver)
 router.use("/entitlements/:id", paramUuid("id"));
 // --------------------------------------------------------------
-
-// === Courses: summary (counts) - imune à colisão com :id ===
-router.get("/courses/_summary", async (_req: Request, res: Response) => {
-  const q = await pool.query(`
-    SELECT c.id, c.slug, c.title, c.summary, c.level, c.active,
-           COUNT(DISTINCT m.id) AS module_count,
-           COUNT(mi.id)        AS item_count
-      FROM courses c
-      LEFT JOIN modules m ON m.course_id = c.id
-      LEFT JOIN module_items mi ON mi.module_id = m.id
-     GROUP BY c.id
-     ORDER BY c.title ASC
-  `);
-  res.json({ courses: q.rows });
-});
 
 // === Courses: módulos de um curso (para o dropdown do Studio/DnD)
 router.get("/courses/:courseId/modules", async (req: Request, res: Response) => {
