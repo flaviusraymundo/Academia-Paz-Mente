@@ -8,7 +8,12 @@ const router = Router();
 
 // --- Guards de UUID para todos os paths com :id neste router ---
 // Cursos
-router.use("/courses/:id", paramUuid("id"));
+// valida UUID em /courses/:id, mas NÃO casa /courses/_summary
+// usa regex no path para aceitar apenas UUID v1–v5
+router.use(
+  "/courses/:id([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})",
+  paramUuid("id")
+);
 // Módulos
 router.use("/modules/:id", paramUuid("id"));
 router.use("/modules/:moduleId/quiz", paramUuid("moduleId"));
