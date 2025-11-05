@@ -15,6 +15,7 @@ import authRouter from "./routes/auth.js";
 import certificatesRouter from "./routes/certificates.js";
 import eventsRouter from "./routes/events.js";
 import adminRouter from "./routes/admin.js";
+import entitlementsRouter from "./routes/entitlements.js";
 import { requireAuth } from "./middleware/auth.js";
 import { requireAdmin } from "./middleware/admin.js";
 
@@ -69,6 +70,12 @@ app.use(["/quizzes", "/api/quizzes"], requireAuth, quizzesRouter);
 // Perfil/progresso/certificados (autenticado)
 app.use(["/api"], requireAuth, progressRouter);                    // escopo /api
 app.use(["/certificates", "/api/certificates"], requireAuth, certificatesRouter); // /certificates/:courseId/issue
+
+// Entitlements:
+// - GET /me/entitlements  (apenas autenticado)
+// - POST /admin/entitlements (apenas admin)
+app.use(["/api"], requireAuth, entitlementsRouter);
+app.use(["/api/admin", "/admin"], requireAuth, requireAdmin, entitlementsRouter);
 
 // Admin (protegido) — por último, e montado nas duas bases
 app.use(["/admin", "/api/admin"], requireAuth, requireAdmin, adminRouter);
