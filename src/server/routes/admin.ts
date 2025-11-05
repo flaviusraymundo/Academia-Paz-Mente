@@ -2,7 +2,7 @@
 import { Router, Request, Response } from "express";
 import { pool } from "../lib/db.js";
 import { z } from "zod";
-import { paramUuid } from "../utils/ids.js";
+import { isUuid, paramUuid } from "../utils/ids.js";
 
 const router = Router();
 
@@ -40,6 +40,27 @@ router.get("/courses/summary", async (_req: Request, res: Response) => {
     order by c.title asc
   `);
   res.json({ courses: q.rows });
+});
+
+// GET /admin/modules/:id/items  → lista itens (id, type, order) do módulo
+router.get("/modules/:id/items", async (req, res) => {
+  const moduleId = String(req.params.id || "");
+  if (!isUuid(moduleId)) {
+    return res.status(400).json({ error: "invalid_module_id" });
+  }
+  const mod = await pool.query(`SELECT id FROM modules WHERE id = $1`, [moduleId]);
+  if (mod.rowCount === 0) return res.status(404).json({ error: "module_not_found" });
+
+  const items = await pool.query(
+    `
+    SELECT id, module_id, type, "order"
+      FROM module_items
+     WHERE module_id = $1
+     ORDER BY "order" ASC, id ASC
+    `,
+    [moduleId]
+  );
+  return res.json({ items: items.rows });
 });
 
 // ===== Schemas =====
@@ -217,11 +238,13 @@ router.patch("/modules/:id/reorder", async (req, res) => {
       }
     }
 
+    // Passo 1: desloca ordens atuais para evitar colisão com UNIQUE
     await client.query(
-      `UPDATE module_items SET "order" = NULL WHERE module_id = $1`,
+      `UPDATE module_items SET "order" = "order" + 1000 WHERE module_id = $1`,
       [id]
     );
 
+    // Passo 2: aplica nova ordem 1..N
     for (let index = 0; index < itemIds.length; index++) {
       await client.query(
         `UPDATE module_items SET "order" = $1 WHERE id = $2`,

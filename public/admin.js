@@ -452,30 +452,21 @@ if ($btnVideoBeat) {
 
     try {
       $list.innerHTML = "";
-      const catalog = await fetch("/api/catalog").then((r) => r.json());
-      let foundItems = null;
-      for (const course of catalog?.courses || []) {
-        const response = await fetch(
-          `/api/me/items?courseId=${encodeURIComponent(course.id)}`,
-          { headers: authHeader() }
-        );
-        if (!response.ok) continue;
-        const json = await response.json();
-        const match = (json.items || []).find((module) => module.id === moduleId);
-        if (match) {
-          foundItems = match.items || [];
-          break;
-        }
-      }
-
-      if (!foundItems) {
-        $out.textContent = "Módulo não encontrado em /api/me/items (verifique o moduleId).";
+      const response = await fetch(`/api/admin/modules/${moduleId}/items`, {
+        headers: buildAuthHeaders()
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        $out.textContent = JSON.stringify({ status: response.status, data }, null, 2);
         $box.style.display = "none";
         return;
       }
 
-      for (const item of foundItems) {
-        $list.appendChild(createRow(item));
+      const items = data.items || [];
+      for (const item of items) {
+        $list.appendChild(
+          createRow({ id: item.id, item_id: item.id, type: item.type, order: item.order })
+        );
       }
       $box.style.display = "block";
     } catch (err) {
