@@ -108,12 +108,22 @@ create table if not exists memberships (
 );
 
 create table if not exists entitlements (
+  id uuid primary key default gen_random_uuid(),
   user_id uuid not null references users(id) on delete cascade,
-  course_id uuid not null references courses(id) on delete cascade,
-  source text not null check (source in ('purchase','membership','grant')),
+  course_id uuid references courses(id) on delete cascade,
+  track_id uuid references tracks(id) on delete cascade,
+  source text not null,
+  starts_at timestamptz not null default now(),
+  ends_at timestamptz,
   created_at timestamptz not null default now(),
-  primary key (user_id, course_id)
+  check (course_id is not null or track_id is not null)
 );
+create unique index if not exists ent_user_course_unique
+  on entitlements(user_id, course_id)
+  where course_id is not null;
+create unique index if not exists ent_user_track_unique
+  on entitlements(user_id, track_id)
+  where track_id is not null;
 
 -- ===== Progresso e uso =====
 create table if not exists progress (

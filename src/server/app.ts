@@ -75,9 +75,11 @@ app.use(["/certificates", "/api/certificates"], requireAuth, certificatesRouter)
 // - GET /me/entitlements  (apenas autenticado)
 // - POST /admin/entitlements (apenas admin)
 app.use(["/api"], requireAuth, entitlementsRouter);
-app.use(["/api/admin", "/admin"], requireAuth, requireAdmin, entitlementsRouter);
 
-// Admin (protegido) — por último, e montado nas duas bases
-app.use(["/admin", "/api/admin"], requireAuth, requireAdmin, adminRouter);
+// Admin (protegido) — mantenha APENAS sob /api/admin em produção
+app.use(["/api/admin"], requireAuth, requireAdmin, adminRouter);
+// (se você usa execução local fora da Function e quer /admin também, OK adicionar,
+//  mas NUNCA monte routers admin sob /api sem requireAdmin)
+// app.use("/admin", requireAuth, requireAdmin, adminRouter);
 
 export default app;
