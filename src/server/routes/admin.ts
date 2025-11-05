@@ -110,6 +110,85 @@ router.post("/modules", async (req, res) => {
   res.json(rows[0]);
 });
 
+// ==============
+// PUT /admin/modules/:id  -> update title/order
+// ==============
+const updateModuleSchema = z.object({
+  title: z.string().min(1).optional(),
+  order: z.number().int().min(0).optional(),
+});
+
+router.put("/modules/:id", async (req, res) => {
+  const { id } = req.params;
+  const parse = updateModuleSchema.safeParse(req.body);
+  if (!parse.success) {
+    return res.status(400).json({ error: parse.error.flatten() });
+  }
+  const { title, order } = parse.data;
+  if (title === undefined && order === undefined) {
+    return res.status(400).json({ error: "no_fields" });
+  }
+  const fields: string[] = [];
+  const values: Array<string | number> = [];
+  if (title !== undefined) {
+    fields.push(`title = $${fields.length + 1}`);
+    values.push(title);
+  }
+  if (order !== undefined) {
+    fields.push(`"order" = $${fields.length + 1}`);
+    values.push(order);
+  }
+  values.push(id);
+  const sql = `UPDATE modules SET ${fields.join(", ")} WHERE id = $${values.length} RETURNING id, title, "order", course_id`;
+  const r = await pool.query(sql, values);
+  if (r.rowCount === 0) return res.status(404).json({ error: "not_found" });
+  return res.json({ module: r.rows[0] });
+});
+
+// ==============
+// PATCH /admin/modules/:id/reorder  -> define nova ordem dos itens
+// Body: { itemIds: string[] }  (ordem no array = ordem final 1..n)
+// ==============
+const reorderSchema = z.object({
+  itemIds: z.array(z.string().uuid()).min(1), // ids da tabela module_items.id
+});
+
+router.patch("/modules/:id/reorder", async (req, res) => {
+  const { id } = req.params;
+  const parse = reorderSchema.safeParse(req.body);
+  if (!parse.success) {
+    return res.status(400).json({ error: parse.error.flatten() });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    // valida que os itens pertencem ao módulo, usando module_items.id
+    const r = await client.query(
+      `SELECT id FROM module_items WHERE module_id = $1`,
+      [id]
+    );
+    const valid = new Set(r.rows.map((x: any) => x.id));
+    for (const it of parse.data.itemIds) {
+      if (!valid.has(it)) throw new Error("item_not_in_module");
+    }
+    // aplica a ordem 1..n
+    for (let i = 0; i < parse.data.itemIds.length; i++) {
+      await client.query(
+        `UPDATE module_items SET "order" = $1 WHERE module_id = $2 AND id = $3`,
+        [i + 1, id, parse.data.itemIds[i]]
+      );
+    }
+    await client.query("COMMIT");
+    return res.json({ ok: true });
+  } catch (e) {
+    await client.query("ROLLBACK");
+    const msg = (e as Error).message || "error";
+    return res.status(400).json({ error: msg });
+  } finally {
+    client.release();
+  }
+});
+
 // ===== Itens =====
 router.post("/items", async (req, res) => {
   const parsed = ItemBody.safeParse(req.body);
