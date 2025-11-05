@@ -1,0 +1,200 @@
+<!-- public/learner.html -->
+<!doctype html>
+<html lang="pt-BR">
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Learner — MVP</title>
+<style>
+  body{font-family:system-ui,Arial,sans-serif;max-width:960px;margin:24px auto;padding:0 12px;line-height:1.35}
+  header{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  input,select,button,textarea{padding:6px 8px;margin:4px 0}
+  .row{display:flex;gap:16px;align-items:flex-start}
+  .col{flex:1 1 0}
+  .card{border:1px solid #ddd;border-radius:10px;padding:12px 14px;margin:10px 0}
+  .muted{color:#666;font-size:12px}
+  pre{background:#fafafa;padding:8px;border-radius:8px;overflow:auto}
+  .pill{display:inline-block;border:1px solid #eee;border-radius:999px;padding:2px 8px;font-size:12px;margin-right:6px}
+  .ok{background:#e8f9ee;border-color:#bfe8cd}
+  .warn{background:#fff7e0;border-color:#ffe28a}
+  .bad{background:#ffeaea;border-color:#ffc3c3}
+</style>
+<body>
+  <header>
+    <strong>JWT:</strong>
+    <textarea id="jwt" rows="2" cols="60" placeholder="Cole seu token aqui"></textarea>
+    <button id="btnHealth">/api/health</button>
+    <span id="healthOut" class="muted"></span>
+  </header>
+
+  <section class="card">
+    <h2>Catálogo</h2>
+    <button id="btnLoadCatalog">Carregar /api/catalog</button>
+    <div id="catalog"></div>
+  </section>
+
+  <section class="card">
+    <h2>Curso & Módulos</h2>
+    <div class="row">
+      <div class="col">
+        <label>Curso:</label>
+        <select id="courseSelect"></select>
+        <button id="btnLoadMeItems">Carregar /api/me/items</button>
+        <div id="modules"></div>
+      </div>
+      <div class="col">
+        <label>Ação rápida</label><br/>
+        <button id="btnSimulatePage">Simular page-read 15s</button>
+        <button id="btnSimulateBeat">Simular video heartbeat 15s</button>
+        <div class="muted">Usa o módulo/itens selecionados abaixo.</div>
+        <div id="quickOut"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Quiz (manual)</h2>
+    <div>
+      <input id="quizId" size="46" placeholder="quizId (UUID)"/>
+      <textarea id="answers" rows="5" cols="70" placeholder='JSON ex:
+[
+  {"questionId":"<QID1>","value":["A"]},
+  {"questionId":"<QID2>","choiceIds":["B","C"]}
+]'></textarea><br/>
+      <button id="btnSubmit">Enviar tentativa</button>
+    </div>
+    <pre id="quizOut"></pre>
+  </section>
+
+  <section class="card">
+    <h2>Debug</h2>
+    <pre id="debug"></pre>
+  </section>
+
+<script>
+const $ = s => document.querySelector(s);
+const set = (id, v) => { const el=$(id); if(!el) return; el.innerText = (typeof v==='string')?v:JSON.stringify(v, null, 2); };
+function token(){ return ($('#jwt')?.value||'').trim(); }
+async function api(path, init={}){
+  const headers = Object.assign({ Authorization:`Bearer ${token()}` }, init.headers||{});
+  const r = await fetch(path, Object.assign({}, init, { headers }));
+  const text = await r.text();
+  let body=text; try{ body=JSON.parse(text);}catch{}
+  return {status:r.status, body};
+}
+function isUuid(s){ return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test((s||'').trim()); }
+
+let lastCourse = null;
+let lastMeItems = null;
+let currentModuleId = null;
+let currentTextItemId = null;
+let currentVideoItemId = null;
+
+$('#btnHealth').addEventListener('click', async ()=>{
+  const r = await fetch('/api/health');
+  $('#healthOut').innerText = 'status ' + r.status;
+});
+
+$('#btnLoadCatalog').addEventListener('click', async ()=>{
+  const {status, body} = await api('/api/catalog', { headers:{} });
+  set('#catalog', {status, body});
+  if (status===200 && body?.courses?.length){
+    const sel = $('#courseSelect');
+    sel.innerHTML = body.courses.map(c=>`<option value="${c.id}">${c.title}</option>`).join('');
+    lastCourse = body.courses[0].id;
+    sel.value = lastCourse;
+  }
+});
+
+$('#courseSelect').addEventListener('change', e => {
+  lastCourse = e.target.value;
+});
+
+$('#btnLoadMeItems').addEventListener('click', async ()=>{
+  if (!isUuid(lastCourse)) return set('#modules', 'Escolha um curso válido.');
+  const {status, body} = await api(`/api/me/items?courseId=${lastCourse}`);
+  lastMeItems = (status===200)? body : null;
+  renderModules(body);
+});
+
+function renderModules(data){
+  const box = $('#modules');
+  if (!data || !Array.isArray(data.items)) { box.innerHTML = '<div>Sem dados.</div>'; return; }
+  box.innerHTML = data.items.map(m=>{
+    const tag = m.unlocked ? 'ok' : 'bad';
+    const stat = m.progress?.status || 'not_started';
+    return `
+      <div class="card">
+        <div><strong>${m.title}</strong> <span class="pill ${tag}">${m.unlocked?'UNLOCKED':'LOCKED'}</span>
+          <span class="pill">status: ${stat}</span>
+          <span class="pill">score: ${m.progress?.score ?? 0}</span>
+        </div>
+        <div class="muted">moduleId: ${m.id}</div>
+        <div style="margin-top:6px">
+          ${(m.items||[]).map(it=>`
+            <div class="card" style="margin:6px 0">
+              <div><strong>${it.type.toUpperCase()}</strong> (order ${it.order})</div>
+              <div class="muted">itemId: ${it.item_id}</div>
+              <button onclick="selectContext('${m.id}','${it.item_id}','${it.type}')">Selecionar</button>
+              ${
+                it.type==='video'
+                  ? `<div class="muted">mux_playback_id: ${it.payload_ref?.mux_playback_id||'-'}</div>`
+                  : it.type==='text'
+                    ? `<div class="muted">doc_id: ${it.payload_ref?.doc_id||'-'}</div>`
+                    : ''
+              }
+            </div>
+          `).join('')}
+        </div>
+      </div>`;
+  }).join('');
+  set('#debug', data);
+}
+
+window.selectContext = (moduleId, itemId, type) => {
+  currentModuleId = moduleId;
+  if (type==='text') currentTextItemId = itemId;
+  if (type==='video') currentVideoItemId = itemId;
+  $('#quickOut').innerText = `Contexto: module=${moduleId} text=${currentTextItemId||'-'} video=${currentVideoItemId||'-'}`;
+};
+
+$('#btnSimulatePage').addEventListener('click', async ()=>{
+  if (!isUuid(lastCourse) || !isUuid(currentModuleId) || !isUuid(currentTextItemId))
+    return set('#quickOut', 'Selecione um módulo e um item de texto.');
+  const {status, body} = await api('/api/events/page-read', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ courseId:lastCourse, moduleId:currentModuleId, itemId:currentTextItemId, ms:15000 })
+  });
+  set('#quickOut', {status, body});
+});
+
+$('#btnSimulateBeat').addEventListener('click', async ()=>{
+  if (!isUuid(lastCourse) || !isUuid(currentModuleId) || !isUuid(currentVideoItemId))
+    return set('#quickOut', 'Selecione um módulo e um item de vídeo.');
+  const {status, body} = await api('/api/video/heartbeat', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ courseId:lastCourse, moduleId:currentModuleId, itemId:currentVideoItemId, secs:15 })
+  });
+  set('#quickOut', {status, body});
+});
+
+$('#btnSubmit').addEventListener('click', async ()=>{
+  const quizId = ($('#quizId')?.value||'').trim();
+  const raw = ($('#answers')?.value||'').trim();
+  if (!isUuid(quizId)) return set('#quizOut','quizId inválido');
+  let answers;
+  try {
+    answers = JSON.parse(raw);
+    if (!Array.isArray(answers)) throw new Error('answers deve ser array');
+  } catch(e){ return set('#quizOut', 'JSON inválido: '+e); }
+  const {status, body} = await api(`/api/quizzes/${quizId}/submit`, {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ answers })
+  });
+  set('#quizOut', {status, body});
+});
+</script>
+</body>
+</html>
