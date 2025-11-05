@@ -2,8 +2,29 @@
 import { Router, Request, Response } from "express";
 import { pool } from "../lib/db.js";
 import { z } from "zod";
+import { paramUuid } from "../utils/ids.js";
 
 const router = Router();
+
+// --- Guards de UUID para todos os paths com :id neste router ---
+// Cursos
+router.use("/courses/:id", paramUuid("id"));
+// Módulos
+router.use("/modules/:id", paramUuid("id"));
+router.use("/modules/:moduleId/quiz", paramUuid("moduleId"));
+router.use("/modules/:id/reorder", paramUuid("id"));
+// Itens
+router.use("/items/:id", paramUuid("id"));
+// Quizzes
+router.use("/quizzes/:quizId", paramUuid("quizId"));
+// Trilhas (se existirem aqui)
+router.use("/tracks/:id", paramUuid("id"));
+router.use("/track-courses/:id", paramUuid("id"));
+// Pré-requisitos
+router.use("/prerequisites/:id", paramUuid("id"));
+// Entitlements (se houver)
+router.use("/entitlements/:id", paramUuid("id"));
+// --------------------------------------------------------------
 
 // Listar cursos com contagens (sem quebrar /api/admin/courses existente)
 router.get("/courses/summary", async (_req: Request, res: Response) => {

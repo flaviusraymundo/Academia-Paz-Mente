@@ -2,8 +2,12 @@
 import { Router, Request, Response } from "express";
 import { pool } from "../lib/db.js";
 import { ulid } from "ulid";
+import { paramUuid } from "../utils/ids.js";
 
 const router = Router();
+
+// garante quizId válido para qualquer subrota com :quizId
+router.use("/:quizId", paramUuid("quizId"));
 
 type NormalizedAnswer = { questionId: string; values: string[] };
 
