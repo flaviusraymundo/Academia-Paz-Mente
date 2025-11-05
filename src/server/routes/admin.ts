@@ -255,6 +255,9 @@ const updateModuleSchema = z.object({
 
 router.put("/modules/:id", async (req, res) => {
   const { id } = req.params;
+  if (!isUuid(id)) {
+    return res.status(400).json({ error: "invalid_id", param: "id" });
+  }
   const parse = updateModuleSchema.safeParse(req.body);
   if (!parse.success) {
     return res.status(400).json({ error: parse.error.flatten() });
@@ -290,6 +293,9 @@ const reorderSchema = z.object({
 
 router.patch("/modules/:id/reorder", async (req, res) => {
   const { id } = req.params;
+  if (!isUuid(id)) {
+    return res.status(400).json({ error: "invalid_id", param: "id" });
+  }
   const parse = reorderSchema.safeParse(req.body);
   if (!parse.success) {
     return res.status(400).json({ error: parse.error.flatten() });

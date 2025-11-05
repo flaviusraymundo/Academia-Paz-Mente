@@ -2,12 +2,9 @@
 import { Router, Request, Response } from "express";
 import { pool } from "../lib/db.js";
 import { ulid } from "ulid";
-import { paramUuid } from "../utils/ids.js";
+import { isUuid } from "../utils/ids.js";
 
 const router = Router();
-
-// garante quizId válido para qualquer subrota com :quizId
-router.use("/:quizId", paramUuid("quizId"));
 
 type NormalizedAnswer = { questionId: string; values: string[] };
 
@@ -62,6 +59,9 @@ const normBool = (v: unknown): boolean => {
 
 router.post("/:quizId/submit", async (req: Request, res: Response) => {
   const { quizId } = req.params;
+  if (!isUuid(quizId)) {
+    return res.status(400).json({ error: "invalid_id", param: "quizId" });
+  }
   const answers = normalizeAnswers(req.body);
   if (answers.length === 0 || answers.some((a) => !a.questionId)) {
     return res.status(400).json({ error: { fieldErrors: { answers: ["Required"] } } });
