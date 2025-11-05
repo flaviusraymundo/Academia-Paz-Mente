@@ -165,6 +165,27 @@ GET  /api/me/items?courseId=...        # alias: /api/me/modules?courseId=...
 POST /api/quizzes/:quizId/submit
 ```
 
+## Progresso do Aluno (rotas `/api/me/*`)
+> **Importante:** exigem **`courseId` (UUID)** na **query** e respondem erros de validação no padrão Zod Flatten.
+
+- `GET /api/me/items?courseId=UUID`  
+  Retorna lista de módulos do curso com itens e progresso agregado por módulo.
+
+- `GET /api/me/modules?courseId=UUID`  
+  Variante enxuta por módulo (summary).
+
+**Validação de query (Zod):** erros são **400** com payload:
+```json
+{
+  "error": {
+    "formErrors": [],
+    "fieldErrors": {
+      "courseId": ["Required"] // ou "Invalid uuid"
+    }
+  }
+}
+```
+
 ### `POST /api/quizzes/:id/submit` — payload tolerante
 
 Aceita qualquer um dos formatos por resposta:
