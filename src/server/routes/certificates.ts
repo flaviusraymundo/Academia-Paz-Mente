@@ -3,12 +3,16 @@ import { Router, Request, Response } from "express";
 import crypto from "crypto";
 import { pool } from "../lib/db.js";
 import { ulid } from "ulid";
+import { paramUuid } from "../utils/ids.js";
 
 const router = Router();
 
+// valida o courseId do path
+router.use("/:courseId", paramUuid("courseId"));
+
 // POST /certificates/:courseId/issue
 // Regra: precisa entitlement e todos módulos do curso com status 'passed' ou 'completed'
-router.post("/certificates/:courseId/issue", async (req: Request, res: Response) => {
+router.post("/:courseId/issue", async (req: Request, res: Response) => {
   const userId = req.auth?.userId;
   if (!userId) return res.status(401).json({ error: "unauthorized" });
   const { courseId } = req.params;
