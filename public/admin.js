@@ -52,6 +52,27 @@ async function api(path, init = {}) {
   return { status: response.status, body };
 }
 
+// === UUID helpers (evita enviar campos vazios) ===
+function isUuid(s) {
+  return (
+    typeof s === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      s.trim()
+    )
+  );
+}
+
+function buildUuidPayloadFromInputs() {
+  const courseId = (document.getElementById("me-course")?.value || "").trim();
+  const moduleId = (document.getElementById("me-module")?.value || "").trim();
+  const itemId = (document.getElementById("me-item")?.value || "").trim();
+  const payload = {};
+  if (isUuid(courseId)) payload.courseId = courseId;
+  if (isUuid(moduleId)) payload.moduleId = moduleId;
+  if (isUuid(itemId)) payload.itemId = itemId;
+  return payload;
+}
+
 function show(el, status, text) {
   el.textContent = `HTTP ${status}\n` + text;
 }
@@ -263,13 +284,11 @@ if ($btnSubmitQ) {
 
 if ($btnPageRead) {
   $btnPageRead.addEventListener("click", async () => {
-    const courseId = ($meCourse?.value || "").trim();
-    const moduleId = ($meModule?.value || "").trim();
-    const itemId = ($meItem?.value || "").trim();
+    const base = buildUuidPayloadFromInputs();
     const { status, body } = await api(`/api/events/page-read`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ courseId, moduleId, itemId, ms: 15000 })
+      body: JSON.stringify({ ...base, ms: 15000 })
     });
     setOut("meOut", { status, body });
   });
@@ -277,13 +296,11 @@ if ($btnPageRead) {
 
 if ($btnVideoBeat) {
   $btnVideoBeat.addEventListener("click", async () => {
-    const courseId = ($meCourse?.value || "").trim();
-    const moduleId = ($meModule?.value || "").trim();
-    const itemId = ($meItem?.value || "").trim();
+    const base = buildUuidPayloadFromInputs();
     const { status, body } = await api(`/api/video/heartbeat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ courseId, moduleId, itemId, secs: 15 })
+      body: JSON.stringify({ ...base, secs: 15 })
     });
     setOut("meOut", { status, body });
   });

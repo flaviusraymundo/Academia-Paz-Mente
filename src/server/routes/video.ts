@@ -9,10 +9,16 @@ const router = Router();
 
 // POST /video/heartbeat  (montado também como /api/video/heartbeat)
 // registra batimentos de vídeo em event_log (depois podemos consolidar em video_sessions)
+// aceita string vazia como undefined (alinha com Admin Lite tolerante)
+const uuidOpt = z.preprocess((v) => {
+  if (typeof v === "string" && v.trim() === "") return undefined;
+  return v;
+}, z.string().uuid().optional());
+
 const BeatBody = z.object({
-  courseId: z.string().uuid().optional(),
-  moduleId: z.string().uuid().optional(),
-  itemId: z.string().uuid().optional(),
+  courseId: uuidOpt,
+  moduleId: uuidOpt,
+  itemId: uuidOpt,
   secs: z.number().int().min(1).max(3600), // 1s a 60min
 });
 
