@@ -54,15 +54,20 @@ app.use(["/catalog", "/api/catalog"], catalogRouter);
 // Tracking público (se TRACK_PUBLIC=1, aceita sem JWT)
 app.use(["/events", "/api/events"], eventsRouter);
 
+// *** CERTIFICADOS ***
+// Deixe o router decidir o que é público (verify) e o que precisa de auth (issue).
+// IMPORTANTE: monte ANTES de qualquer guard genérico em "/api"!
+app.use("/api/certificates", certificatesRouter);
+
 // Aluno (autenticado)
 app.use("/api/checkout", requireAuth, checkoutRouter);
 app.use("/api/video", requireAuth, videoRouter);
 app.use("/api/quizzes", requireAuth, quizzesRouter);
 
-// Perfil/progresso/certificados (autenticado)
-app.use("/api", requireAuth, progressRouter); // /api/me/items, /api/me/entitlements, /api/me/progress
+// Perfil/progresso (autenticado): estreita o guard para apenas "/api/me/*"
+// evitando capturar "/api/certificates/verify/*"
+app.use("/api/me", requireAuth, progressRouter); // /api/me/items, /api/me/entitlements, /api/me/progress
 app.use("/api/entitlements", entitlementsRouter);
-app.use("/api/certificates", requireAuth, certificatesRouter); // /api/certificates/:courseId/issue
 
 // Admin (protegido) — por último
 app.use("/api/admin", requireAuth, requireAdmin, adminRouter);

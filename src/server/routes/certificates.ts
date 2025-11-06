@@ -6,6 +6,7 @@ import { hasActiveCourseEntitlement } from "../lib/entitlements.js";
 import { allModulesPassed } from "../lib/progress.js";
 import { ulid } from "ulid";
 import { isUuid } from "../utils/ids.js";
+import { requireAuth } from "../middleware/auth.js";
 
 const router = Router();
 
@@ -37,7 +38,7 @@ router.get("/verify/:serial", async (req: Request, res: Response) => {
 });
 
 // GET /api/certificates — lista certificados emitidos ao aluno
-router.get("/", async (req: Request, res: Response) => {
+router.get("/", requireAuth, async (req: Request, res: Response) => {
   const userId = req.auth?.userId;
   if (!userId) return res.status(401).json({ error: "unauthorized" });
 
@@ -62,7 +63,7 @@ router.get("/", async (req: Request, res: Response) => {
 
 // POST /certificates/:courseId/issue
 // Regra: precisa entitlement e todos módulos do curso com status 'passed' ou 'completed'
-router.post("/:courseId/issue", async (req: Request, res: Response) => {
+router.post("/:courseId/issue", requireAuth, async (req: Request, res: Response) => {
   const userId = req.auth?.userId;
   if (!userId) return res.status(401).json({ error: "unauthorized" });
   const { courseId } = req.params;
