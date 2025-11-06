@@ -110,8 +110,8 @@ async function upsertEntitlement(client: PoolClient, args: UpsertEntitlementArgs
   }
 
   const conflictClause = courseId
-    ? "on conflict (user_id, course_id) do update set source = excluded.source, starts_at = excluded.starts_at, ends_at = excluded.ends_at"
-    : "on conflict (user_id, track_id) do update set source = excluded.source, starts_at = excluded.starts_at, ends_at = excluded.ends_at";
+    ? "on conflict (user_id, course_id) do update set source = excluded.source"
+    : "on conflict (user_id, track_id) do update set source = excluded.source";
 
   await client.query(
     `insert into entitlements(id, user_id, course_id, track_id, source, starts_at, ends_at, created_at)
@@ -278,6 +278,20 @@ export const handler: Handler = async (event) => {
   }
 
   try {
+    await withClient(async (client) => {
+      const inserted = await client.query(
+        `insert into stripe_webhook_events(id, type)
+           values ($1, $2)
+         on conflict (id) do nothing`,
+        [stripeEvent.id, stripeEvent.type]
+      );
+      if (inserted.rowCount === 0) {
+        const err = new Error("already_processed") as Error & { code?: string };
+        err.code = "ALREADY";
+        throw err;
+      }
+    });
+
     if (stripeEvent.type === "checkout.session.completed") {
       const session = stripeEvent.data.object as Stripe.Checkout.Session;
       const email = session.customer_details?.email || session.customer_email || "";
@@ -314,6 +328,9 @@ export const handler: Handler = async (event) => {
       }
     }
   } catch (err) {
+    if ((err as any)?.code === "ALREADY") {
+      return { statusCode: 200, body: JSON.stringify({ received: true, dedup: true }) };
+    }
     console.error("stripe-webhook entitlement error", err);
   }
 
