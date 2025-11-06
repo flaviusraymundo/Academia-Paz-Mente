@@ -62,7 +62,15 @@ function resolveMetadata(...sources: StripeMeta[]): EntitlementMetadata {
     return undefined;
   };
 
-  const durationRaw = first("duration_days");
+  const firstOf = (keys: string[]): string | undefined => {
+    for (const key of keys) {
+      const value = first(key);
+      if (value) return value;
+    }
+    return undefined;
+  };
+
+  const durationRaw = firstOf(["entitlement_days", "duration_days"]);
   const duration = durationRaw ? Number(durationRaw) : NaN;
 
   return {
@@ -444,18 +452,45 @@ export const handler: Handler = async (event) => {
         await upsertFromEmail(metadata, email);
       }
     }
- 
-    if (evt.type === "charge.refunded") {
-      const charge = evt.data.object as Stripe.Charge;
-      let email = charge.billing_details?.email || charge.receipt_email || "";
-      if (!email) {
-        email = await getCustomerEmail(charge.customer as any);
+    
+    // Unificado: revogação por reembolso (charge.refunded OU refund.updated)
+    if (evt.type === "charge.refunded" || evt.type === "refund.updated") {
+      let charge: Stripe.Charge | null = null;
+
+      if (evt.type === "charge.refunded") {
+        charge = evt.data.object as Stripe.Charge;
+      } else {
+        const refund = evt.data.object as Stripe.Refund;
+        if (refund.charge) {
+          try {
+            charge =
+              typeof refund.charge === "string"
+                ? ((await stripe.charges.retrieve(refund.charge)) as Stripe.Charge)
+                : (refund.charge as Stripe.Charge);
+          } catch (err) {
+            console.error("stripe-webhook refund charge retrieve error", err);
+          }
+        }
       }
-      if (email) {
-        const metadata = await metadataFromCharge(charge);
-        await revokeEntitlementByEmail(metadata, email);
+
+      if (charge) {
+        let email =
+          (charge.billing_details?.email as string | undefined) ||
+          (charge.receipt_email as string | undefined) ||
+          "";
+        if (!email) {
+          email = await getCustomerEmail(charge.customer as any);
+        }
+
+        if (email) {
+          // Usa a cadeia completa de metadados (charge → invoice → subscription → payment_intent/checkout)
+          const meta = await metadataFromCharge(charge);
+          // Revoga somente entitlements criados pelo Stripe (source='stripe')
+          await revokeEntitlementByEmail(meta, email);
+        }
       }
-    }
+    }      
+    
   } catch (err) {
     console.error("stripe-webhook entitlement error", err);
   }
