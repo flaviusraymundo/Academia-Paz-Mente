@@ -1,0 +1,60 @@
+// src/server/routes/entitlements.ts
+import { Router, Request, Response } from "express";
+import { withClient } from "../lib/db.js";
+import { requireAuth } from "../middleware/auth.js";
+import { isUuid } from "../utils/ids.js";
+import {
+  getActiveEntitlements,
+  hasActiveCourseEntitlement,
+  hasActiveTrackEntitlement,
+} from "../lib/entitlements.js";
+
+const router = Router();
+
+// GET /api/entitlements → lista entitlements ativos do usuário autenticado
+router.get("/", requireAuth, async (req: Request, res: Response) => {
+  const userId = req.auth?.userId ?? req.user?.id ?? null;
+  if (!userId) return res.status(401).json({ error: "unauthorized" });
+
+  try {
+    const entitlements = await withClient((client) =>
+      getActiveEntitlements(client, userId)
+    );
+    return res.json({ entitlements });
+  } catch (err) {
+    console.error("GET /api/entitlements error:", err);
+    return res.status(500).json({ error: "server_error" });
+  }
+});
+
+// POST /api/entitlements/check → verifica acesso ativo a curso ou trilha
+router.post("/check", requireAuth, async (req: Request, res: Response) => {
+  const userId = req.auth?.userId ?? req.user?.id ?? null;
+  if (!userId) return res.status(401).json({ error: "unauthorized" });
+
+  const { courseId, trackId } = req.body || {};
+  if (!courseId && !trackId) {
+    return res.status(400).json({ error: "course_or_track_required" });
+  }
+  if (courseId && !isUuid(String(courseId))) {
+    return res.status(400).json({ error: "invalid_courseId" });
+  }
+  if (trackId && !isUuid(String(trackId))) {
+    return res.status(400).json({ error: "invalid_trackId" });
+  }
+
+  try {
+    const ok = await withClient((client) => {
+      if (courseId) {
+        return hasActiveCourseEntitlement(client, userId, String(courseId));
+      }
+      return hasActiveTrackEntitlement(client, userId, String(trackId));
+    });
+    return res.json({ ok });
+  } catch (err) {
+    console.error("POST /api/entitlements/check error:", err);
+    return res.status(500).json({ error: "server_error" });
+  }
+});
+
+export default router;

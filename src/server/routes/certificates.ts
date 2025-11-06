@@ -2,41 +2,11 @@
 import { Router, Request, Response } from "express";
 import crypto from "crypto";
 import { pool } from "../lib/db.js";
+import { hasActiveCourseEntitlement } from "../lib/entitlements.js";
 import { ulid } from "ulid";
 import { isUuid } from "../utils/ids.js";
 
 const router = Router();
-
-async function hasCourseAccess(client: any, userId: string, courseId: string) {
-  const direct = await client.query(
-    `select 1
-       from entitlements
-      where user_id=$1 and course_id=$2
-        and now() >= starts_at
-        and now() < coalesce(ends_at,'9999-12-31'::timestamptz)
-      limit 1`,
-    [userId, courseId]
-  );
-  if (direct.rowCount) return true;
-
-  const tr = await client.query(
-    `select track_id from track_courses where course_id=$1 limit 1`,
-    [courseId]
-  );
-  if (tr.rowCount) {
-    const via = await client.query(
-      `select 1
-         from entitlements
-        where user_id=$1 and track_id=$2
-          and now() >= starts_at
-          and now() < coalesce(ends_at,'9999-12-31'::timestamptz)
-        limit 1`,
-      [userId, tr.rows[0].track_id]
-    );
-    if (via.rowCount) return true;
-  }
-  return false;
-}
 
 // POST /certificates/:courseId/issue
 // Regra: precisa entitlement e todos módulos do curso com status 'passed' ou 'completed'
@@ -54,7 +24,7 @@ router.post("/:courseId/issue", async (req: Request, res: Response) => {
 
     // Gate opcional por entitlement ativo
     if (process.env.ENTITLEMENTS_ENFORCE === "1") {
-      const ok = await hasCourseAccess(client, userId, courseId);
+      const ok = await hasActiveCourseEntitlement(client, userId, courseId);
       if (!ok) {
         await client.query("rollback");
         return res.status(403).json({ error: "no_entitlement" });

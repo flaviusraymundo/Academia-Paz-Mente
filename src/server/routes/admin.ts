@@ -11,7 +11,7 @@ const AdminEntitlementBody = z
     userId: z.string().uuid(),
     courseId: z.string().uuid().optional(),
     trackId: z.string().uuid().optional(),
-    source: z.string().min(1).default("admin"),
+    source: z.string().min(1).default("grant"),
     startsAt: z.string().datetime().optional(),
     endsAt: z.string().datetime().optional(),
     revoke: z.boolean().optional(),
@@ -19,6 +19,10 @@ const AdminEntitlementBody = z
   .refine((v) => Boolean(v.courseId || v.trackId), {
     message: "Either courseId or trackId is required",
   });
+
+const AdminUserBody = z.object({
+  email: z.string().trim().toLowerCase().email(),
+});
 
 // --- Guards de UUID para todos os paths com :id neste router ---
 // Cursos
@@ -93,59 +97,73 @@ router.post("/entitlements", async (req, res) => {
     const { userId, courseId, trackId, source, startsAt, endsAt, revoke } = data;
 
     if (revoke) {
-      if (courseId) {
-        await pool.query(
-          `UPDATE entitlements
-              SET ends_at = now()
-            WHERE user_id = $1 AND course_id = $2 AND (ends_at IS NULL OR ends_at > now())`,
-          [userId, courseId]
-        );
-      } else if (trackId) {
-        await pool.query(
-          `UPDATE entitlements
-              SET ends_at = now()
-            WHERE user_id = $1 AND track_id = $2 AND (ends_at IS NULL OR ends_at > now())`,
-          [userId, trackId]
-        );
-      }
+      await pool.query(
+        `
+        update entitlements
+           set ends_at = now()
+         where user_id = $1
+           and coalesce(course_id::text,'') = coalesce($2, '')
+           and coalesce(track_id::text,'') = coalesce($3, '')
+           and now() < coalesce(ends_at,'9999-12-31'::timestamptz)
+        `,
+        [userId, courseId ?? null, trackId ?? null]
+      );
       return res.json({ ok: true, action: "revoked" });
     }
 
-    if (courseId) {
-      await pool.query(
-        `
-        INSERT INTO entitlements (user_id, course_id, source, starts_at, ends_at)
-        VALUES ($1, $2, $3, COALESCE($4::timestamptz, now()), $5::timestamptz)
-        ON CONFLICT (user_id, course_id)
-        DO UPDATE SET
-          source    = EXCLUDED.source,
-          starts_at = EXCLUDED.starts_at,
-          ends_at   = EXCLUDED.ends_at
-        `,
-        [userId, courseId, source, startsAt ?? null, endsAt ?? null]
-      );
-    } else if (trackId) {
-      await pool.query(
-        `
-        INSERT INTO entitlements (user_id, track_id, source, starts_at, ends_at)
-        VALUES ($1, $2, $3, COALESCE($4::timestamptz, now()), $5::timestamptz)
-        ON CONFLICT (user_id, track_id)
-        DO UPDATE SET
-          source    = EXCLUDED.source,
-          starts_at = EXCLUDED.starts_at,
-          ends_at   = EXCLUDED.ends_at
-        `,
-        [userId, trackId, source, startsAt ?? null, endsAt ?? null]
-      );
-    }
+    const params = [
+      userId,
+      courseId ?? null,
+      trackId ?? null,
+      source ?? null,
+      startsAt ?? null,
+      endsAt ?? null,
+    ] as const;
+    const conflict = courseId
+      ? "on conflict (user_id, course_id) do update set source = excluded.source, starts_at = excluded.starts_at, ends_at = excluded.ends_at"
+      : "on conflict (user_id, track_id) do update set source = excluded.source, starts_at = excluded.starts_at, ends_at = excluded.ends_at";
 
-    return res.json({ ok: true, action: "granted" });
+    const { rows } = await pool.query(
+      `
+      insert into entitlements(id, user_id, course_id, track_id, source, starts_at, ends_at, created_at)
+      values (gen_random_uuid(), $1, $2, $3, coalesce($4,'grant'), coalesce($5::timestamptz, now()), $6::timestamptz, now())
+      ${conflict}
+      returning id, user_id, course_id, track_id, source, starts_at, ends_at, created_at
+      `,
+      params
+    );
+
+    return res.json({ ok: true, entitlement: rows[0] });
   } catch (e: any) {
     if (e?.name === "ZodError") {
       const { fieldErrors, formErrors } = e.flatten();
       return res.status(400).json({ error: { fieldErrors, formErrors } });
     }
     console.error("POST /admin/entitlements error:", e);
+    return res.status(500).json({ error: "server_error" });
+  }
+});
+
+router.post("/users", async (req, res) => {
+  const parsed = AdminUserBody.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  try {
+    const q = await pool.query(
+      `
+      insert into users(id, email)
+      values (gen_random_uuid(), $1)
+      on conflict (email) do update set email = excluded.email
+      returning id, email
+    `,
+      [parsed.data.email]
+    );
+
+    return res.json({ user: q.rows[0] });
+  } catch (err) {
+    console.error("POST /admin/users error:", err);
     return res.status(500).json({ error: "server_error" });
   }
 });
