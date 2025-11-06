@@ -130,17 +130,25 @@ ends_at: 2025-03-01T12:00:00Z
   <hr />
 
   <section>
-    <h2>Certificados (forçar emissão – Admin)</h2>
-    <div style="display:grid;gap:6px;max-width:900px">
-      <input id="cert-user" placeholder="userId (UUID do aluno)" />
-      <div>
-        <label><strong>Curso:</strong></label><br/>
-        <select id="cert-course"></select>
-        <button id="cert-load-courses">Recarregar cursos</button>
-      </div>
-      <button id="btnCertForce">Emitir certificado (force=1)</button>
+    <h2>Certificados (Admin)</h2>
+    <div style="padding:8px;border:1px dashed #bbb;border-radius:8px;background:#fafafa;margin-bottom:8px;font-size:14px">
+      <strong>Metadados / Opções:</strong><br>
+      • <code>fullName</code> (opcional): snapshot do nome a imprimir no PDF.<br>
+      • <code>reissue=1</code> (opcional): reemite o certificado (atualiza arquivo/URL).<br>
+      • <code>keepIssuedAt=1</code> (opcional, com reissue): preserva a data de emissão original.<br>
+      A emissão grava <code>serial</code> (ULID) e <code>serial_hash</code> para verificação pública.
     </div>
-    <pre id="certOut" style="white-space:pre-wrap;border:1px solid #ddd;padding:8px;"></pre>
+    <div style="display:grid;gap:6px;max-width:900px">
+      <input id="cert-user" placeholder="userId (UUID)" />
+      <input id="cert-course" placeholder="courseId (UUID)" />
+      <input id="cert-fullname" placeholder="Nome para imprimir (opcional)" />
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button id="btnIssueCert">Emitir (force=1)</button>
+        <button id="btnReissueCert">Reemitir (force=1&reissue=1)</button>
+        <button id="btnReissueKeepDate">Reemitir mantendo data (force=1&reissue=1&keepIssuedAt=1)</button>
+      </div>
+      <pre id="certOut" style="white-space:pre-wrap;border:1px solid #ddd;padding:8px;"></pre>
+    </div>
   </section>
 
   <hr />

@@ -9,6 +9,33 @@ import { isUuid } from "../utils/ids.js";
 
 const router = Router();
 
+// GET /api/certificates/verify/:serial
+router.get("/verify/:serial", async (req: Request, res: Response) => {
+  const { serial } = req.params;
+  if (!serial || typeof serial !== "string" || serial.length < 10) {
+    return res.status(400).json({ ok: false, error: "invalid_serial" });
+  }
+  const { rows } = await pool.query(
+    `
+    select ci.user_id, ci.course_id, ci.asset_url, ci.issued_at, ci.full_name, ci.serial
+      from certificate_issues ci
+     where ci.serial = $1
+     limit 1
+    `,
+    [serial]
+  );
+  if (!rows.length) return res.status(404).json({ ok: false, error: "not_found" });
+  const row = rows[0];
+  return res.json({
+    ok: true,
+    serial: row.serial,
+    fullName: row.full_name,
+    courseId: row.course_id,
+    issuedAt: row.issued_at,
+    assetUrl: row.asset_url,
+  });
+});
+
 // GET /api/certificates — lista certificados emitidos ao aluno
 router.get("/", async (req: Request, res: Response) => {
   const userId = req.auth?.userId;
