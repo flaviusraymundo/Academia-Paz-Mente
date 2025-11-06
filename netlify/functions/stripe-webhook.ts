@@ -150,18 +150,48 @@ interface UpsertEntitlementArgs extends EntitlementTarget {
 
 async function upsertEntitlement(client: PoolClient, args: UpsertEntitlementArgs) {
   const { userId, courseId = null, trackId = null, source = "stripe", startsAt, endsAt } = args;
-  if (!courseId && !trackId) {
-    throw new Error("courseId_or_trackId_required");
+  if (!courseId && !trackId) throw new Error("courseId_or_trackId_required");
+
+  // Evita “extensão” indevida em replays: mantém starts_at original e só preenche ends_at se ainda for nulo,
+  // mas permite estender explicitamente quando endsAt for reenviado com valor maior.
+  if (courseId) {
+    await client.query(
+      `
+      insert into entitlements(id, user_id, course_id, track_id, source, starts_at, ends_at, created_at)
+      values (gen_random_uuid(), $1, $2, null, coalesce($4, 'stripe'), $5::timestamptz, $6::timestamptz, now())
+      on conflict (user_id, course_id) do update
+        set source    = excluded.source,
+            starts_at = LEAST(
+                          COALESCE(entitlements.starts_at, excluded.starts_at),
+                          excluded.starts_at
+                        ),
+            ends_at   = CASE
+                          WHEN excluded.ends_at IS NULL THEN NULL                      -- novo vitalício vence
+                          WHEN entitlements.ends_at IS NULL THEN excluded.ends_at      -- já vitalício → mantém NULL? (fica NULL acima)
+                          ELSE GREATEST(entitlements.ends_at, excluded.ends_at)       -- reativação/ extensão
+                        END
+      `,
+      [userId, courseId, trackId, source, startsAt, endsAt]
+    );
+    return;
   }
 
-  const conflictClause = courseId
-    ? "on conflict (user_id, course_id) do update set source = excluded.source, starts_at = excluded.starts_at, ends_at = excluded.ends_at"
-    : "on conflict (user_id, track_id) do update set source = excluded.source, starts_at = excluded.starts_at, ends_at = excluded.ends_at";
-
   await client.query(
-    `insert into entitlements(id, user_id, course_id, track_id, source, starts_at, ends_at, created_at)
-       values (gen_random_uuid(), $1, $2, $3, coalesce($4, 'stripe'), $5::timestamptz, $6::timestamptz, now())
-       ${conflictClause}`,
+    `
+    insert into entitlements(id, user_id, course_id, track_id, source, starts_at, ends_at, created_at)
+    values (gen_random_uuid(), $1, null, $3, coalesce($4, 'stripe'), $5::timestamptz, $6::timestamptz, now())
+    on conflict (user_id, track_id) do update
+      set source    = excluded.source,
+          starts_at = LEAST(
+                        COALESCE(entitlements.starts_at, excluded.starts_at),
+                        excluded.starts_at
+                      ),
+          ends_at   = CASE
+                        WHEN excluded.ends_at IS NULL THEN NULL
+                        WHEN entitlements.ends_at IS NULL THEN excluded.ends_at
+                        ELSE GREATEST(entitlements.ends_at, excluded.ends_at)
+                      END
+    `,
     [userId, courseId, trackId, source, startsAt, endsAt]
   );
 }
