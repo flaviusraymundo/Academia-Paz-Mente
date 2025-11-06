@@ -59,10 +59,12 @@ app.use("/api/checkout", requireAuth, checkoutRouter);
 app.use("/api/video", requireAuth, videoRouter);
 app.use("/api/quizzes", requireAuth, quizzesRouter);
 
-// Perfil/progresso/certificados (autenticado)
+// Perfil/progresso (autenticado)
 app.use("/api", requireAuth, progressRouter); // /api/me/items, /api/me/entitlements, /api/me/progress
 app.use("/api/entitlements", entitlementsRouter);
-app.use("/api/certificates", requireAuth, certificatesRouter); // /api/certificates/:courseId/issue
+
+// Certificados: o router decide o que é público (verify) e o que exige auth (issue)
+app.use("/api/certificates", certificatesRouter);
 
 // Admin (protegido) — por último
 app.use("/api/admin", requireAuth, requireAdmin, adminRouter);

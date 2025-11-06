@@ -21,7 +21,9 @@ router.post(
     const force = String(req.query.force ?? "") === "1";
     const reissue = String(req.query.reissue ?? "") === "1";
     const keepIssuedAt = String(req.query.keepIssuedAt ?? "") === "1";
-    const fullName = typeof req.query.fullName === "string" ? req.query.fullName : undefined;
+    const fullNameRaw =
+      typeof req.query.fullName === "string" ? req.query.fullName.trim() : "";
+    const fullName = fullNameRaw.length > 0 ? fullNameRaw : null;
     if (!isUuid(userId) || !isUuid(courseId)) {
       return res.status(400).json({ error: "invalid_ids" });
     }
@@ -31,7 +33,15 @@ router.post(
 
     try {
       const { certificateUrl, serial } = await withClient((client) =>
-        issueCertificate({ client, userId, courseId, fullName, reissue, keepIssuedAt })
+        issueCertificate({
+          client,
+          userId,
+          courseId,
+          fullName,
+          assetUrl: null,
+          reissue,
+          keepIssuedAt,
+        })
       );
       // (Opcional) evento analytics
       try {
