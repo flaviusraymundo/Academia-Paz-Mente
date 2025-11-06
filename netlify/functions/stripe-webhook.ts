@@ -1,6 +1,7 @@
 import Stripe from "stripe";
 import { Pool } from "pg";
 import type { PoolClient } from "pg";
+import { revokeEntitlementFiltered } from "../../src/server/lib/entitlements.ts";
 
 type Handler = (event: any) => Promise<{ statusCode: number; body: string }>;
 
@@ -65,7 +66,15 @@ function resolveMetadata(...sources: StripeMeta[]): EntitlementMetadata {
     return undefined;
   };
 
-  const durationRaw = first("duration_days");
+  const firstOf = (keys: string[]): string | undefined => {
+    for (const key of keys) {
+      const value = first(key);
+      if (value) return value;
+    }
+    return undefined;
+  };
+
+  const durationRaw = firstOf(["entitlement_days", "duration_days"]);
   const duration = durationRaw ? Number(durationRaw) : NaN;
 
   return {
@@ -110,8 +119,8 @@ async function upsertEntitlement(client: PoolClient, args: UpsertEntitlementArgs
   }
 
   const conflictClause = courseId
-    ? "on conflict (user_id, course_id) do update set source = excluded.source"
-    : "on conflict (user_id, track_id) do update set source = excluded.source";
+    ? "on conflict (user_id, course_id) do update set source = excluded.source, starts_at = excluded.starts_at, ends_at = excluded.ends_at"
+    : "on conflict (user_id, track_id) do update set source = excluded.source, starts_at = excluded.starts_at, ends_at = excluded.ends_at";
 
   await client.query(
     `insert into entitlements(id, user_id, course_id, track_id, source, starts_at, ends_at, created_at)
@@ -326,6 +335,84 @@ export const handler: Handler = async (event) => {
         const metadata = await metadataFromSubscription(subscription);
         await upsertFromEmail(metadata, email);
       }
+    }
+
+    if (stripeEvent.type === "charge.refunded" || stripeEvent.type === "refund.updated") {
+      await withClient(async (client) => {
+        let email = "";
+        const metadataSources: StripeMeta[] = [];
+
+        if (stripeEvent.type === "charge.refunded") {
+          const charge = stripeEvent.data.object as Stripe.Charge;
+          metadataSources.push(charge.metadata ?? null);
+          email = (charge.billing_details?.email as string) || "";
+          if (!email) {
+            email = await getCustomerEmail(charge.customer as any);
+          }
+          const paymentIntentId =
+            typeof charge.payment_intent === "string"
+              ? charge.payment_intent
+              : charge.payment_intent?.id;
+          if (paymentIntentId) {
+            try {
+              const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+              metadataSources.push(paymentIntent.metadata ?? null);
+            } catch (err) {
+              console.error("stripe-webhook payment_intent metadata error", err);
+            }
+          }
+        } else {
+          const refund = stripeEvent.data.object as Stripe.Refund;
+          metadataSources.push(refund.metadata ?? null);
+          if (refund.charge) {
+            try {
+              const charge =
+                typeof refund.charge === "string"
+                  ? await stripe.charges.retrieve(refund.charge)
+                  : (refund.charge as Stripe.Charge);
+              metadataSources.push(charge.metadata ?? null);
+              email = (charge.billing_details?.email as string) || "";
+              if (!email) {
+                email = await getCustomerEmail(charge.customer as any);
+              }
+              const paymentIntentId =
+                typeof charge.payment_intent === "string"
+                  ? charge.payment_intent
+                  : charge.payment_intent?.id;
+              if (paymentIntentId) {
+                try {
+                  const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+                  metadataSources.push(paymentIntent.metadata ?? null);
+                } catch (err) {
+                  console.error("stripe-webhook payment_intent metadata error", err);
+                }
+              }
+            } catch (err) {
+              console.error("stripe-webhook refund charge retrieve error", err);
+            }
+          }
+        }
+
+        const metadata = resolveMetadata(...metadataSources);
+        const { courseId, trackId } = metadata;
+        if (!email || (!courseId && !trackId)) {
+          return;
+        }
+
+        const { rows } = await client.query<{ id: string }>(
+          `select id from users where lower(email) = lower($1) limit 1`,
+          [email.trim()]
+        );
+        const userId = rows[0]?.id;
+        if (!userId) return;
+
+        await revokeEntitlementFiltered(client, {
+          userId,
+          courseId,
+          trackId,
+          sources: ["stripe"],
+        });
+      });
     }
   } catch (err) {
     if ((err as any)?.code === "ALREADY") {
