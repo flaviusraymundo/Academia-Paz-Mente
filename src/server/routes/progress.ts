@@ -52,6 +52,15 @@ async function meItemsHandler(req: Request, res: Response) {
 
   const normalizedCourseId = String(courseId);
 
+  if (process.env.ENTITLEMENTS_ENFORCE === "1") {
+    const entitled = await withClient((client) =>
+      hasActiveCourseEntitlement(client, userId, normalizedCourseId)
+    );
+    if (!entitled) {
+      return res.status(403).json({ error: "no_entitlement" });
+    }
+  }
+
   try {
     if (process.env.ENTITLEMENTS_ENFORCE === "1") {
       const ok = await withClient((client) =>

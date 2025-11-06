@@ -165,6 +165,28 @@
   </section>
 
   <section>
+    <h2>Entitlements (Conceder/Revogar acesso)</h2>
+    <div style="display:grid;gap:6px;max-width:900px">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <input id="grant-email" placeholder="buscar aluno por e-mail" style="min-width:280px"/>
+        <button id="grant-find-user">Buscar aluno</button>
+        <span id="grant-found" style="font:12px/1.2 sans-serif;color:#555"></span>
+      </div>
+      <input id="grant-user" placeholder="userId (UUID do aluno)" />
+      <div>
+        <label><strong>Curso:</strong></label><br/>
+        <select id="grant-course"></select>
+        <button id="grant-load-courses">Recarregar cursos</button>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0">
+        <button id="btnGrant">Conceder acesso (POST /api/admin/entitlements)</button>
+        <button id="btnRevoke">Revogar acesso (POST /api/admin/entitlements)</button>
+      </div>
+    </div>
+    <pre id="grantOut" style="white-space:pre-wrap;border:1px solid #ddd;padding:8px;"></pre>
+  </section>
+
+  <section>
     <h2>Trilhas</h2>
     <div>
       <strong>Criar/atualizar trilha</strong><br/>
