@@ -102,7 +102,7 @@ document.getElementById("listCoursesCounts")?.addEventListener("click", async ()
 // ADMIN: Listar trilhas
 document.getElementById("listTracks")?.addEventListener("click", async () => {
   const out = $("listOut");
-  const { status, body } = await api("/api/admin/tracks");
+  const { status, body } = await api("/api/admin/tracks/_summary");
   const text = typeof body === "string" ? body : JSON.stringify(body, null, 2);
   show(out, status, text);
 });
