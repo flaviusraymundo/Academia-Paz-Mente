@@ -100,9 +100,38 @@ document.getElementById("btnGrant")?.addEventListener("click", async () => {
   const courseId = ($("grant-course")?.value || "").trim();
   if (!isUuid(userId)) return setOut("grantOut", { error: "userId inválido" });
   if (!isUuid(courseId)) return setOut("grantOut", { error: "courseId inválido" });
+  const startsAtRaw = (document.getElementById("grant-startsAt")?.value || "").trim();
+  const endsAtRaw = (document.getElementById("grant-endsAt")?.value || "").trim();
+  const durDaysRaw = (document.getElementById("grant-durationDays")?.value || "").trim();
+
+  const toIso = (s) => {
+    if (!s) return undefined;
+    const d = new Date(s);
+    if (Number.isNaN(d.getTime())) return undefined;
+    return d.toISOString();
+  };
+
+  let startsAt = toIso(startsAtRaw);
+  let endsAt = toIso(endsAtRaw);
+
+  if (!endsAt && durDaysRaw) {
+    const n = parseInt(durDaysRaw, 10);
+    if (!Number.isNaN(n) && n > 0) {
+      const base = startsAt ? new Date(startsAt) : new Date();
+      const end = new Date(base.getTime());
+      end.setUTCDate(end.getUTCDate() + n);
+      endsAt = end.toISOString();
+      if (!startsAt) startsAt = new Date().toISOString();
+    }
+  }
+
+  const payload = { userId, courseId, source: "grant" };
+  if (startsAt) payload.startsAt = startsAt;
+  if (endsAt) payload.endsAt = endsAt;
+
   const { status, body } = await api("/api/admin/entitlements", {
     method: "POST",
-    body: JSON.stringify({ userId, courseId, source: "grant" }),
+    body: JSON.stringify(payload),
   });
   setOut("grantOut", { status, body });
 });

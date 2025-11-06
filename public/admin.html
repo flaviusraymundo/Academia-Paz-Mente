@@ -71,6 +71,20 @@
         <select id="grant-course"></select>
         <button id="grant-load-courses">Recarregar cursos</button>
       </div>
+      <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">
+        <div>
+          <label>Início (opcional)</label><br/>
+          <input id="grant-startsAt" type="datetime-local" />
+        </div>
+        <div>
+          <label>Fim (opcional)</label><br/>
+          <input id="grant-endsAt" type="datetime-local" />
+        </div>
+        <div>
+          <label>Duração (dias, opcional)</label><br/>
+          <input id="grant-durationDays" type="number" min="1" step="1" placeholder="ex.: 365" />
+        </div>
+      </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0">
         <button id="btnGrant">Conceder acesso (POST /api/admin/entitlements)</button>
         <button id="btnRevoke">Revogar acesso (POST /api/admin/entitlements)</button>
