@@ -1,40 +1,58 @@
 // src/server/routes/certificates.ts
 import { Router, Request, Response } from "express";
-import crypto from "crypto";
 import { pool, withClient } from "../lib/db.js";
 import { hasActiveCourseEntitlement } from "../lib/entitlements.js";
 import { allModulesPassed } from "../lib/progress.js";
-import { ulid } from "ulid";
 import { isUuid } from "../utils/ids.js";
 import { requireAuth } from "../middleware/auth.js";
+import { issueCertificate } from "../lib/certificates.js";
 
 const router = Router();
 
-// GET /api/certificates/verify/:serial
+// GET /api/certificates/verify/:serial (público)
 router.get("/verify/:serial", async (req: Request, res: Response) => {
-  const { serial } = req.params;
-  if (!serial || typeof serial !== "string" || serial.length < 10) {
-    return res.status(400).json({ ok: false, error: "invalid_serial" });
-  }
+  const serial = String(req.params.serial || "").trim();
+  if (!serial) return res.status(400).json({ error: "invalid_serial" });
+
   const { rows } = await pool.query(
-    `
-    select ci.user_id, ci.course_id, ci.asset_url, ci.issued_at, ci.full_name, ci.serial
-      from certificate_issues ci
-     where ci.serial = $1
-     limit 1
-    `,
-    [serial]
+    `select id,
+            user_id,
+            course_id,
+            issued_at,
+            full_name,
+            asset_url as pdf_url,
+            serial,
+            serial_hash as hash
+       from certificate_issues
+      where serial = $1
+      limit 1`,
+    [serial],
   );
-  if (!rows.length) return res.status(404).json({ ok: false, error: "not_found" });
-  const row = rows[0];
-  return res.json({
-    ok: true,
-    serial: row.serial,
-    fullName: row.full_name,
-    courseId: row.course_id,
-    issuedAt: row.issued_at,
-    assetUrl: row.asset_url,
-  });
+  if (!rows.length) return res.status(404).json({ error: "not_found" });
+  return res.json(rows[0]);
+});
+
+// GET /api/certificates/verify?hash=... (público)
+router.get("/verify", async (req: Request, res: Response) => {
+  const hash = String(req.query.hash || "").trim();
+  if (!hash) return res.status(400).json({ error: "missing_hash" });
+
+  const { rows } = await pool.query(
+    `select id,
+            user_id,
+            course_id,
+            issued_at,
+            full_name,
+            asset_url as pdf_url,
+            serial,
+            serial_hash as hash
+       from certificate_issues
+      where serial_hash = $1
+      limit 1`,
+    [hash],
+  );
+  if (!rows.length) return res.status(404).json({ error: "not_found" });
+  return res.json(rows[0]);
 });
 
 // GET /api/certificates — lista certificados emitidos ao aluno
@@ -100,42 +118,65 @@ router.post("/:courseId/issue", requireAuth, async (req: Request, res: Response)
       return res.status(422).json({ error: "not_eligible" });
     }
 
-    // já existe?
-    const { rows: existing } = await client.query(
-      `select id, user_id, course_id, issued_at, hash, pdf_url
-       from certificates
-       where user_id = $1 and course_id = $2`,
+    await issueCertificate({
+      client,
+      userId,
+      courseId,
+      assetUrl: null,
+      fullName: null,
+      reissue: false,
+      keepIssuedAt: false,
+    });
+
+    const { rows } = await client.query(
+      `select id,
+              user_id,
+              course_id,
+              issued_at,
+              full_name,
+              asset_url,
+              serial,
+              serial_hash
+         from certificate_issues
+        where user_id = $1 and course_id = $2
+        limit 1`,
       [userId, courseId]
     );
-    if (existing.length > 0) {
-      await client.query("commit");
-      return res.json(existing[0]);
+
+    if (!rows.length) {
+      await client.query("rollback");
+      return res.status(500).json({ error: "issue_failed" });
     }
 
-    // gera hash e stub de URL do PDF
-    const issuedAt = new Date();
-    const payloadToHash = JSON.stringify({ userId, courseId, issuedAt: issuedAt.toISOString() });
-    const hash = crypto.createHash("sha256").update(payloadToHash).digest("hex");
-
-    // TODO: gerar PDF real e obter URL de storage assinado
-    const pdfUrl = `https://storage.seudominio.com/certs/${hash}.pdf`;
-
-    const { rows: certs } = await client.query(
-      `insert into certificates(user_id, course_id, issued_at, hash, pdf_url)
-       values ($1,$2,$3,$4,$5)
-       returning id, user_id, course_id, issued_at, hash, pdf_url`,
-      [userId, courseId, issuedAt, hash, pdfUrl]
-    );
-
-    const eventId = ulid();
-    await client.query(
-      `insert into event_log(event_id, topic, actor_user_id, entity_type, entity_id, occurred_at, source, payload)
-       values ($1,'certificate.issued',$2,'course',$3, now(),'app', $4)`,
-      [eventId, userId, courseId, { certificateId: certs[0].id, hash }]
-    );
-
     await client.query("commit");
-    return res.json(certs[0]);
+
+    const row = rows[0] as any;
+    const serial = typeof row.serial === "string" ? row.serial : null;
+    const rawHash =
+      (typeof row.serial_hash === "string" ? row.serial_hash : null) ??
+      (typeof row.hash === "string" ? row.hash : null);
+    const hash = rawHash ?? null;
+    const rawPdfUrl =
+      (typeof row.asset_url === "string" ? row.asset_url : null) ??
+      (typeof row.pdf_url === "string" ? row.pdf_url : null);
+    const pdfUrl = rawPdfUrl ?? null;
+    const verifyUrl = serial
+      ? `/api/certificates/verify/${serial}`
+      : hash
+        ? `/api/certificates/verify?hash=${encodeURIComponent(hash)}`
+        : null;
+
+    return res.json({
+      id: row.id,
+      userId: row.user_id,
+      courseId: row.course_id,
+      issuedAt: row.issued_at,
+      fullName: row.full_name ?? null,
+      pdfUrl,
+      serial,
+      hash,
+      verifyUrl,
+    });
   } catch (e) {
     await client.query("rollback");
     return res.status(500).json({ error: "issue_failed" });
