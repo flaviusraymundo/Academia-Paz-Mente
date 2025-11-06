@@ -2,10 +2,8 @@ import Stripe from "stripe";
 import type { PoolClient } from "pg";
 import { pool } from "../../src/server/lib/db.ts";
 import { beginIdempotent, finishIdempotent } from "../../src/server/lib/idempotency.ts";
-import { ACTIVE_ENTITLEMENT_CLAUSE } from "../../src/server/lib/entitlements.ts";
+import { revokeEntitlementFiltered } from "../../src/server/lib/entitlements.ts";
 import { ulid } from "ulid";
-
-const ACTIVE_SQL = ACTIVE_ENTITLEMENT_CLAUSE;
 
 type UpsertEntArgs = {
   userId: string;
@@ -65,24 +63,6 @@ async function upsertEntitlement(client: PoolClient, args: UpsertEntArgs) {
        values (gen_random_uuid(), $1, $2, $3, $4, coalesce($5::timestamptz, now()), $6::timestamptz, now())
        ${conflict}`,
     params
-  );
-}
-
-async function revokeEntitlement(
-  client: PoolClient,
-  args: { userId: string; courseId?: string | null; trackId?: string | null }
-) {
-  const { userId, courseId = null, trackId = null } = args;
-  if (!courseId && !trackId) throw new Error("courseId_or_trackId_required");
-
-  await client.query(
-    `update entitlements
-        set ends_at = now()
-      where user_id = $1
-        and coalesce(course_id::text,'') = coalesce($2,'')
-        and coalesce(track_id::text,'') = coalesce($3,'')
-        and ${ACTIVE_SQL}`,
-    [userId, courseId, trackId]
   );
 }
 
@@ -360,10 +340,11 @@ export const handler = async (event: any) => {
           if (email) {
             const existing = await findUserByEmail(client, email);
             if (existing) {
-              await revokeEntitlement(client, {
+              await revokeEntitlementFiltered(client, {
                 userId: existing.id,
                 courseId,
                 trackId,
+                sources: ["stripe"],
               });
             }
           }
