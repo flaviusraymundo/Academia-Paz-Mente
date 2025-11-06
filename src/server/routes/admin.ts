@@ -36,6 +36,38 @@ router.get("/courses/_summary", async (_req: Request, res: Response) => {
   `);
   res.json({ courses: q.rows });
 });
+
+router.get("/tracks/_summary", async (_req: Request, res: Response) => {
+  try {
+    const q = await pool.query(`
+      SELECT
+        t.id,
+        t.slug,
+        t.title,
+        t.active,
+        COUNT(DISTINCT tc.course_id) AS course_count,
+        COUNT(mi.id)                 AS item_count
+      FROM tracks t
+      LEFT JOIN track_courses tc ON tc.track_id = t.id
+      LEFT JOIN modules m        ON m.course_id = tc.course_id
+      LEFT JOIN module_items mi  ON mi.module_id = m.id
+      GROUP BY t.id, t.slug, t.title, t.active
+      ORDER BY t.title ASC
+    `);
+    return res.json({ tracks: q.rows });
+  } catch (err) {
+    if (
+      err &&
+      typeof err === "object" &&
+      "code" in err &&
+      (err as { code?: string }).code === "42P01"
+    ) {
+      return res.json({ tracks: [] });
+    }
+    throw err;
+  }
+});
+
 // guard só depois, não intercepta _summary
 router.use("/courses/:id", paramUuid("id"));
 // Módulos
