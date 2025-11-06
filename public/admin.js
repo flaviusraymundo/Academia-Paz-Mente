@@ -1,70 +1,42 @@
 // public/admin.js
 const $ = (id) => document.getElementById(id);
-
-// Lê o token de forma robusta: aceita JSON {"token":"..."} ou string com/sem aspas
+const isUuid = (s) =>
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    String(s || "")
+  );
 function readToken() {
-  let v = "";
   try {
-    const stored = window?.localStorage?.getItem?.("lms_jwt");
-    if (stored) v = stored.trim();
+    const t = localStorage.getItem("lms_jwt");
+    if (t) return t.trim();
   } catch {}
-  if (!v) v = ($("jwt")?.value || "").trim();
-  // se colou o JSON inteiro
-  if (v.startsWith("{")) {
-    try {
-      const j = JSON.parse(v);
-      if (j && j.token) v = String(j.token);
-    } catch {}
+  return (
+    (document.getElementById("jwt")?.value || "")
+      .trim()
+      .replace(/^['"]+|['"]+$/g, "")
+  );
+}
+async function api(path, init = {}) {
+  const headers = new Headers(init.headers || {});
+  if (!headers.has("Authorization")) headers.set("Authorization", `Bearer ${readToken()}`);
+  headers.set("Content-Type", headers.get("Content-Type") || "application/json");
+  const r = await fetch(path, { ...init, headers });
+  let body;
+  try {
+    body = await r.json();
+  } catch {
+    body = await r.text();
   }
-  // remove aspas simples/duplas de borda
-  v = v.replace(/^['"]+|['"]+$/g, "").trim();
-  return v;
+  return { status: r.status, body };
+}
+function setOut(id, v) {
+  const el = $(id);
+  if (!el) return;
+  el.textContent = typeof v === "string" ? v : JSON.stringify(v, null, 2);
 }
 
 function authHeader() {
   const t = readToken();
   return t ? { Authorization: `Bearer ${t}` } : {};
-}
-
-function getJWT() {
-  return readToken();
-}
-
-function setOut(id, value) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  if (typeof value === "string") {
-    el.textContent = value;
-  } else {
-    try {
-      el.textContent = JSON.stringify(value, null, 2);
-    } catch (err) {
-      el.textContent = String(value);
-    }
-  }
-}
-
-async function api(path, init = {}) {
-  const token = getJWT();
-  const headers = { ...(init.headers || {}) };
-  if (token) headers.Authorization = `Bearer ${token}`;
-  const response = await fetch(path, { ...init, headers });
-  const text = await response.text();
-  let body = text;
-  try {
-    body = JSON.parse(text);
-  } catch {}
-  return { status: response.status, body };
-}
-
-// === UUID helpers (evita enviar campos vazios) ===
-function isUuid(s) {
-  return (
-    typeof s === "string" &&
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-      s.trim()
-    )
-  );
 }
 
 function buildUuidPayloadFromInputs() {
@@ -78,107 +50,108 @@ function buildUuidPayloadFromInputs() {
   return payload;
 }
 
-// === ENTITLEMENTS ADMIN ===
+// =========================
+// Entitlements (grant/revoke)
+// =========================
 async function loadGrantCourses() {
-  const sel = document.getElementById("grant-course");
+  const sel = $("grant-course");
   if (!sel) return;
-  sel.innerHTML = "<option value=''>Carregando...</option>";
-  const { status, body } = await api("/api/admin/courses");
-  if (status !== 200 || !Array.isArray(body)) {
-    sel.innerHTML = "";
+  sel.innerHTML = "";
+  const { status, body } = await api("/api/admin/courses/_summary");
+  if (status !== 200 || !body?.courses) {
     setOut("grantOut", { status, body });
     return;
   }
-  const options = ["<option value=''>-- selecione --</option>"];
-  for (const course of body) {
-    options.push(
-      `<option value="${course.id}">${course.title || course.slug || course.id}</option>`
-    );
+  for (const c of body.courses) {
+    const opt = document.createElement("option");
+    opt.value = c.id;
+    opt.textContent = `${c.title} (${c.slug})`;
+    sel.appendChild(opt);
   }
-  sel.innerHTML = options.join("");
-  setOut("grantOut", `Cursos carregados (${body.length}).`);
+  if (!body.courses.length) {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "— nenhum curso —";
+    sel.appendChild(opt);
+  }
+  setOut("grantOut", `Cursos carregados (${body.courses.length}).`);
 }
 
-document
-  .getElementById("grant-load-courses")
-  ?.addEventListener("click", () => loadGrantCourses().catch((err) => {
-    console.error("loadGrantCourses", err);
-    setOut("grantOut", { error: "failed_to_load_courses" });
-  }));
-
+document.getElementById("grant-load-courses")?.addEventListener("click", loadGrantCourses);
 window.addEventListener("DOMContentLoaded", () => {
-  if (document.getElementById("grant-course")) {
-    loadGrantCourses().catch(() => {});
-  }
+  loadGrantCourses().catch(() => {});
 });
 
-document.getElementById("grant-find-user")?.addEventListener("click", async () => {
-  const emailInput = document.getElementById("grant-email");
-  const email = (emailInput?.value || "").trim();
-  if (!email) {
-    setOut("grantOut", { error: "Informe um e-mail" });
-    return;
-  }
+document.getElementById("grant-search")?.addEventListener("click", async () => {
+  const email = ($("grant-email")?.value || "").trim();
+  if (!email) return setOut("grantOut", { error: "Informe um email" });
   const { status, body } = await api(
-    `/api/admin/users/find?email=${encodeURIComponent(email)}`
+    `/api/admin/users/_search?email=${encodeURIComponent(email)}`
   );
-  if (status !== 200 || !body?.user) {
-    const found = document.getElementById("grant-found");
-    if (found) found.textContent = "";
-    setOut("grantOut", { status, body });
-    return;
-  }
-  const user = body.user;
-  const userInput = document.getElementById("grant-user");
-  if (userInput) userInput.value = user.id;
-  const found = document.getElementById("grant-found");
-  if (found) found.textContent = `Encontrado: ${user.email} (${user.id})`;
-  setOut("grantOut", { ok: true, user });
+  if (status !== 200) return setOut("grantOut", { status, body });
+  const u = body.users?.[0];
+  if (!u) return setOut("grantOut", { info: "Nenhum usuário encontrado" });
+  $("grant-user").value = u.id;
+  setOut("grantOut", u);
 });
 
 document.getElementById("btnGrant")?.addEventListener("click", async () => {
-  const userId = (document.getElementById("grant-user")?.value || "").trim();
-  const courseId = (document.getElementById("grant-course")?.value || "").trim();
-  if (!isUuid(userId)) {
-    setOut("grantOut", { error: "Informe um userId válido (UUID)." });
-    return;
-  }
-  if (!isUuid(courseId)) {
-    setOut("grantOut", { error: "Informe um courseId válido (UUID)." });
-    return;
-  }
-  const payload = { userId, courseId };
+  const userId = ($("grant-user")?.value || "").trim();
+  const courseId = ($("grant-course")?.value || "").trim();
+  if (!isUuid(userId)) return setOut("grantOut", { error: "userId inválido" });
+  if (!isUuid(courseId)) return setOut("grantOut", { error: "courseId inválido" });
   const { status, body } = await api("/api/admin/entitlements", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ userId, courseId, source: "grant" }),
   });
   setOut("grantOut", { status, body });
 });
 
 document.getElementById("btnRevoke")?.addEventListener("click", async () => {
-  const userId = (document.getElementById("grant-user")?.value || "").trim();
-  const courseId = (document.getElementById("grant-course")?.value || "").trim();
-  if (!isUuid(userId)) {
-    setOut("grantOut", { error: "Informe um userId válido (UUID)." });
-    return;
-  }
-  if (!isUuid(courseId)) {
-    setOut("grantOut", { error: "Informe um courseId válido (UUID)." });
-    return;
-  }
-  const payload = { userId, courseId, revoke: true };
+  const userId = ($("grant-user")?.value || "").trim();
+  const courseId = ($("grant-course")?.value || "").trim();
+  if (!isUuid(userId)) return setOut("grantOut", { error: "userId inválido" });
+  if (!isUuid(courseId)) return setOut("grantOut", { error: "courseId inválido" });
   const { status, body } = await api("/api/admin/entitlements", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ userId, courseId, revoke: true }),
   });
   setOut("grantOut", { status, body });
 });
 
-function show(el, status, text) {
-  el.textContent = `HTTP ${status}\n` + text;
+function show(outEl, status, bodyText) {
+  const body = (() => {
+    try {
+      return JSON.parse(bodyText);
+    } catch {
+      return bodyText;
+    }
+  })();
+  setOut(outEl.id, { status, body });
 }
+
+// =========================
+// Criar aluno (admin)
+// =========================
+document.getElementById("createUser")?.addEventListener("click", async () => {
+  const email = (document.getElementById("new-email")?.value || "")
+    .trim()
+    .toLowerCase();
+  if (!email) return setOut("userOut", { error: "informe um email" });
+  const { status, body } = await api("/api/admin/users", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  setOut("userOut", { status, body });
+  if (status === 200 && body?.user?.id) {
+    const grantEmail = document.getElementById("grant-email");
+    const grantUser = document.getElementById("grant-user");
+    if (grantEmail) grantEmail.value = body.user.email || email;
+    if (grantUser) grantUser.value = body.user.id;
+    setOut("grantOut", { hint: "Aluno criado. userId preenchido para concessão." });
+  }
+});
 
 // Ping (público)
 document.getElementById("ping")?.addEventListener("click", async () => {
