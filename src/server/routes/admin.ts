@@ -28,10 +28,37 @@ const AdminUserSearchQuery = z.object({
   email: z.string().trim().min(3, "Informe ao menos 3 caracteres"),
 });
 
-// ========= Rotas “underscore” SEM guards :id =========
+// ========= Rotas "underscore" SEM guards :id =========
 // Mantê-las ANTES de qualquer router.use("/.../:id", paramUuid("id"))
 
 // Cursos com contagens
+router.get("/courses/_summary", async (_req: Request, res: Response) => {
+  const q = await pool.query(`
+    SELECT c.id, c.slug, c.title, c.summary, c.level, c.active,
+           COUNT(DISTINCT m.id) AS module_count,
+           COUNT(mi.id)        AS item_count
+      FROM courses c
+      LEFT JOIN modules m ON m.course_id = c.id
+      LEFT JOIN module_items mi ON mi.module_id = m.id
+     GROUP BY c.id
+     ORDER BY c.title ASC
+  `);
+  res.json({ courses: q.rows });
+});
+
+router.get("/tracks/_summary", async (_req: Request, res: Response) => {
+  const q = await pool.query(`
+    SELECT t.id, t.slug, t.title, t.active,
+           COUNT(tc.course_id) AS course_count
+      FROM tracks t
+      LEFT JOIN track_courses tc ON tc.track_id = t.id
+     GROUP BY t.id
+     ORDER BY t.title ASC
+  `);
+  res.json({ tracks: q.rows });
+});
+
+
 router.get("/courses/_summary", async (_req: Request, res: Response) => {
   const q = await pool.query(`
     SELECT c.id, c.slug, c.title, c.summary, c.level, c.active,
@@ -138,10 +165,58 @@ router.post("/entitlements", async (req, res) => {
   }
 });
 
-// ========= Guards com :id — manter DEPOIS dos “underscore routes” =========
+// --- Underscore extras sem :id ---
+router.get("/users/_search", async (req, res) => {
+  const maybeEmail = Array.isArray(req.query.email) ? req.query.email[0] : req.query.email;
+  const parsed = AdminUserSearchQuery.safeParse({ email: maybeEmail ?? "" });
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+  const term = parsed.data.email.toLowerCase();
+  const sanitized = term.replace(/[%_]/g, "\\$&");
+  const pattern = `%${sanitized}%`;
+
+  const { rows } = await pool.query(
+    `
+      select id, email
+        from users
+       where email ilike $1 escape '\\'
+       order by email asc
+       limit 20
+    `,
+    [pattern]
+  );
+  res.json({ users: rows });
+});
+
+// ========= Guards com :id — manter DEPOIS dos "underscore routes" =========
 router.use("/courses/:id", paramUuid("id"));
-router.use("/tracks/:id", paramUuid("id"));
-router.use("/users/:id", paramUuid("id"));
+router.use("/tracks/:id",  paramUuid("id"));
+router.use("/users/:id",   paramUuid("id"));
+
+
+router.post("/users", async (req, res) => {
+  const parsed = AdminUserBody.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  try {
+    const q = await pool.query(
+      `
+      insert into users(id, email)
+      values (gen_random_uuid(), $1)
+      on conflict (email) do update set email = excluded.email
+      returning id, email
+    `,
+      [parsed.data.email]
+    );
+
+    return res.json({ user: q.rows[0] });
+  } catch (err) {
+    console.error("POST /admin/users error:", err);
+    return res.status(500).json({ error: "server_error" });
+  }
+});
 
 // === Courses: módulos de um curso (para o dropdown do Studio/DnD)
 router.get("/courses/:courseId/modules", async (req: Request, res: Response) => {
