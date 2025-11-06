@@ -13,6 +13,8 @@ router.post(
   "/certificates/:userId/:courseId/issue",
   requireAuth,
   requireAdmin,
+  paramUuid("userId"),
+  paramUuid("courseId"),
   async (req, res) => {
     const { userId, courseId } = req.params as { userId: string; courseId: string };
     const force = String(req.query.force ?? "") === "1";
@@ -26,16 +28,17 @@ router.post(
     try {
       const assetUrl = `https://lifeflourishconsulting.com/certificates/${userId}/${courseId}.pdf`;
       await pool.query(
-        `insert into certificates(id, user_id, course_id, pdf_url, issued_at)
+        `insert into certificate_issues(id, user_id, course_id, asset_url, issued_at)
          values (gen_random_uuid(), $1, $2, $3, now())
          on conflict (user_id, course_id) do update
-           set pdf_url=excluded.pdf_url, issued_at=excluded.issued_at`,
+           set asset_url = excluded.asset_url,
+               issued_at = excluded.issued_at`,
         [userId, courseId, assetUrl]
       );
-      res.json({ certificateUrl: assetUrl, forced: true });
+      return res.json({ certificateUrl: assetUrl, forced: true });
     } catch (e) {
       console.error("POST /api/admin/certificates.../issue error", e);
-      res.status(500).json({ error: "server_error" });
+      return res.status(500).json({ error: "server_error" });
     }
   }
 );
