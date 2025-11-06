@@ -24,16 +24,21 @@ const AdminUserBody = z.object({
   email: z.string().trim().toLowerCase().email(),
 });
 
-// --- Guards de UUID para todos os paths com :id neste router ---
-// Cursos
-// rotas sem :id primeiro
+const AdminUserSearchQuery = z.object({
+  email: z.string().trim().min(3, "Informe ao menos 3 caracteres"),
+});
+
+// ========= Rotas “underscore” SEM guards :id =========
+// Mantê-las ANTES de qualquer router.use("/.../:id", paramUuid("id"))
+
+// Cursos com contagens
 router.get("/courses/_summary", async (_req: Request, res: Response) => {
   const q = await pool.query(`
     SELECT c.id, c.slug, c.title, c.summary, c.level, c.active,
            COUNT(DISTINCT m.id) AS module_count,
            COUNT(mi.id)        AS item_count
       FROM courses c
-      LEFT JOIN modules m ON m.course_id = c.id
+      LEFT JOIN modules m     ON m.course_id = c.id
       LEFT JOIN module_items mi ON mi.module_id = m.id
      GROUP BY c.id
      ORDER BY c.title ASC
@@ -41,153 +46,102 @@ router.get("/courses/_summary", async (_req: Request, res: Response) => {
   res.json({ courses: q.rows });
 });
 
+// Trilhas (tracks) com breve resumo
 router.get("/tracks/_summary", async (_req: Request, res: Response) => {
-  try {
-    const q = await pool.query(`
-      SELECT
-        t.id,
-        t.slug,
-        t.title,
-        t.active,
-        COUNT(DISTINCT tc.course_id) AS course_count,
-        COUNT(mi.id)                 AS item_count
+  const q = await pool.query(`
+    SELECT t.id, t.slug, t.title, t.active,
+           COUNT(tc.course_id) AS course_count
       FROM tracks t
       LEFT JOIN track_courses tc ON tc.track_id = t.id
-      LEFT JOIN modules m        ON m.course_id = tc.course_id
-      LEFT JOIN module_items mi  ON mi.module_id = m.id
-      GROUP BY t.id, t.slug, t.title, t.active
-      ORDER BY t.title ASC
-    `);
-    return res.json({ tracks: q.rows });
-  } catch (err) {
-    if (
-      err &&
-      typeof err === "object" &&
-      "code" in err &&
-      (err as { code?: string }).code === "42P01"
-    ) {
-      return res.json({ tracks: [] });
-    }
-    throw err;
-  }
+     GROUP BY t.id
+     ORDER BY t.title ASC
+  `);
+  res.json({ tracks: q.rows });
 });
 
-// guard só depois, não intercepta _summary
-router.use("/courses/:id", paramUuid("id"));
-// Módulos
-router.use("/modules/:id", paramUuid("id"));
-router.use("/modules/:moduleId/quiz", paramUuid("moduleId"));
-router.use("/modules/:id/reorder", paramUuid("id"));
-// Itens
-router.use("/items/:id", paramUuid("id"));
-// Quizzes
-router.use("/quizzes/:quizId", paramUuid("quizId"));
-// Trilhas (se existirem aqui)
-router.use("/tracks/:id", paramUuid("id"));
-router.use("/track-courses/:id", paramUuid("id"));
-// Pré-requisitos
-router.use("/prerequisites/:id", paramUuid("id"));
-// Entitlements (se houver)
-router.use("/entitlements/:id", paramUuid("id"));
-// --------------------------------------------------------------
+// Busca de usuários por e-mail (autocomplete p/ admin)
+router.get("/users/_search", async (req, res) => {
+  const maybeEmail = Array.isArray(req.query.email) ? req.query.email[0] : req.query.email;
+  const parsed = AdminUserSearchQuery.safeParse({ email: maybeEmail ?? "" });
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
+  const term = parsed.data.email.toLowerCase();
+  const sanitized = term.replace(/[%_]/g, "\\$&");
+  const pattern = `%${sanitized}%`;
+
+  const { rows } = await pool.query(
+    `SELECT id, email
+       FROM users
+      WHERE email ILIKE $1 ESCAPE '\\'
+      ORDER BY email ASC
+      LIMIT 20`,
+    [pattern]
+  );
+  res.json({ users: rows });
+});
+
+// Criação/garantia de usuário (admin cria aluno)
+router.post("/users", async (req, res) => {
+  const parsed = AdminUserBody.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const { rows } = await pool.query(
+    `INSERT INTO users(id, email)
+     VALUES (gen_random_uuid(), $1)
+     ON CONFLICT (email) DO UPDATE SET email = EXCLUDED.email
+     RETURNING id, email`,
+    [parsed.data.email]
+  );
+  res.json({ user: rows[0] });
+});
+
+// Conceder/Revogar entitlements
 router.post("/entitlements", async (req, res) => {
   try {
-    const data = AdminEntitlementBody.parse(req.body);
-    const { userId, courseId, trackId, source, startsAt, endsAt, revoke } = data;
+    const parsed = AdminEntitlementBody.parse(req.body ?? {});
+    const { userId, courseId, trackId, source, startsAt, endsAt, revoke } = parsed;
 
     if (revoke) {
       await pool.query(
-        `
-        update entitlements
-           set ends_at = now()
-         where user_id = $1
-           and coalesce(course_id::text,'') = coalesce($2, '')
-           and coalesce(track_id::text,'') = coalesce($3, '')
-           and now() < coalesce(ends_at,'9999-12-31'::timestamptz)
-        `,
-        [userId, courseId ?? null, trackId ?? null]
+        `UPDATE entitlements
+            SET ends_at = now()
+          WHERE user_id = $1
+            AND COALESCE(course_id::text,'') = COALESCE($2,'')
+            AND COALESCE(track_id::text,'') = COALESCE($3,'')
+            AND now() < COALESCE(ends_at,'9999-12-31'::timestamptz)`,
+        [userId, courseId || null, trackId || null]
       );
       return res.json({ ok: true, action: "revoked" });
     }
 
-    const params = [
-      userId,
-      courseId ?? null,
-      trackId ?? null,
-      source ?? null,
-      startsAt ?? null,
-      endsAt ?? null,
-    ] as const;
-    const conflict = courseId
-      ? "on conflict (user_id, course_id) do update set source = excluded.source, starts_at = excluded.starts_at, ends_at = excluded.ends_at"
-      : "on conflict (user_id, track_id) do update set source = excluded.source, starts_at = excluded.starts_at, ends_at = excluded.ends_at";
+    // UPSERT por (user_id, course_id) quando há curso; senão, por (user_id, track_id)
+    const conflict =
+      courseId
+        ? "ON CONFLICT (user_id, course_id) DO UPDATE SET source=EXCLUDED.source, starts_at=EXCLUDED.starts_at, ends_at=EXCLUDED.ends_at"
+        : "ON CONFLICT (user_id, track_id) DO UPDATE SET source=EXCLUDED.source, starts_at=EXCLUDED.starts_at, ends_at=EXCLUDED.ends_at";
 
+    const params = [userId, courseId || null, trackId || null, source || "grant", startsAt || null, endsAt || null];
     const { rows } = await pool.query(
-      `
-      insert into entitlements(id, user_id, course_id, track_id, source, starts_at, ends_at, created_at)
-      values (gen_random_uuid(), $1, $2, $3, coalesce($4,'grant'), coalesce($5::timestamptz, now()), $6::timestamptz, now())
-      ${conflict}
-      returning id, user_id, course_id, track_id, source, starts_at, ends_at, created_at
-      `,
+      `INSERT INTO entitlements(id, user_id, course_id, track_id, source, starts_at, ends_at, created_at)
+       VALUES (gen_random_uuid(), $1, $2, $3, COALESCE($4,'grant'), COALESCE($5::timestamptz, now()), $6::timestamptz, now())
+       ${conflict}
+       RETURNING id, user_id, course_id, track_id, source, starts_at, ends_at, created_at`,
       params
     );
-
-    return res.json({ ok: true, entitlement: rows[0] });
+    res.json({ ok: true, entitlement: rows[0] });
   } catch (e: any) {
     if (e?.name === "ZodError") {
       const { fieldErrors, formErrors } = e.flatten();
       return res.status(400).json({ error: { fieldErrors, formErrors } });
     }
     console.error("POST /admin/entitlements error:", e);
-    return res.status(500).json({ error: "server_error" });
+    res.status(500).json({ error: "server_error" });
   }
 });
 
-router.get("/users/find", async (req, res) => {
-  const email = String(req.query.email || "").trim();
-  if (!email) {
-    return res.status(400).json({ error: "missing_email" });
-  }
-
-  try {
-    const { rows } = await pool.query(
-      `select id, email from users where lower(email) = lower($1) limit 1`,
-      [email]
-    );
-    if (rows.length === 0) {
-      return res.status(404).json({ error: "not_found" });
-    }
-    return res.json({ user: rows[0] });
-  } catch (err) {
-    console.error("GET /admin/users/find error:", err);
-    return res.status(500).json({ error: "server_error" });
-  }
-});
-
-router.post("/users", async (req, res) => {
-  const parsed = AdminUserBody.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ error: parsed.error.flatten() });
-  }
-
-  try {
-    const q = await pool.query(
-      `
-      insert into users(id, email)
-      values (gen_random_uuid(), $1)
-      on conflict (email) do update set email = excluded.email
-      returning id, email
-    `,
-      [parsed.data.email]
-    );
-
-    return res.json({ user: q.rows[0] });
-  } catch (err) {
-    console.error("POST /admin/users error:", err);
-    return res.status(500).json({ error: "server_error" });
-  }
-});
+// ========= Guards com :id — manter DEPOIS dos “underscore routes” =========
+router.use("/courses/:id", paramUuid("id"));
+router.use("/tracks/:id", paramUuid("id"));
+router.use("/users/:id", paramUuid("id"));
 
 // === Courses: módulos de um curso (para o dropdown do Studio/DnD)
 router.get("/courses/:courseId/modules", async (req: Request, res: Response) => {
