@@ -30,8 +30,8 @@ router.post(
     }
 
     try {
-      const { certificateUrl, serial } = await withClient((c) =>
-        issueCertificate(c, { userId, courseId, fullName, reissue, keepIssuedAt })
+      const { certificateUrl, serial } = await withClient((client) =>
+        issueCertificate({ client, userId, courseId, fullName, reissue, keepIssuedAt })
       );
       // (Opcional) evento analytics
       try {
