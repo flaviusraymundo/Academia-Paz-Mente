@@ -130,6 +130,22 @@ ends_at: 2025-03-01T12:00:00Z
   <hr />
 
   <section>
+    <h2>Certificados (forçar emissão – Admin)</h2>
+    <div style="display:grid;gap:6px;max-width:900px">
+      <input id="cert-user" placeholder="userId (UUID do aluno)" />
+      <div>
+        <label><strong>Curso:</strong></label><br/>
+        <select id="cert-course"></select>
+        <button id="cert-load-courses">Recarregar cursos</button>
+      </div>
+      <button id="btnCertForce">Emitir certificado (force=1)</button>
+    </div>
+    <pre id="certOut" style="white-space:pre-wrap;border:1px solid #ddd;padding:8px;"></pre>
+  </section>
+
+  <hr />
+
+  <section>
     <h2>Novo curso</h2>
     <input id="c-slug" placeholder="slug" />
     <input id="c-title" placeholder="título" />

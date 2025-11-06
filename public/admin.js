@@ -54,30 +54,62 @@ function buildUuidPayloadFromInputs() {
 // Entitlements (grant/revoke)
 // =========================
 async function loadGrantCourses() {
-  const sel = $("grant-course");
-  if (!sel) return;
-  sel.innerHTML = "";
+  const grantSel = $("grant-course");
+  const certSel = $("cert-course");
+  if (grantSel) grantSel.innerHTML = "";
+  if (certSel) certSel.innerHTML = "";
   const { status, body } = await api("/api/admin/courses/_summary");
   if (status !== 200 || !body?.courses) {
     setOut("grantOut", { status, body });
+    if (certSel) setOut("certOut", { status, body });
     return;
   }
   for (const c of body.courses) {
-    const opt = document.createElement("option");
-    opt.value = c.id;
-    opt.textContent = `${c.title} (${c.slug})`;
-    sel.appendChild(opt);
+    if (grantSel) {
+      const opt = document.createElement("option");
+      opt.value = c.id;
+      opt.textContent = `${c.title} (${c.slug})`;
+      grantSel.appendChild(opt);
+    }
+    if (certSel) {
+      const opt = document.createElement("option");
+      opt.value = c.id;
+      opt.textContent = `${c.title} (${c.slug})`;
+      certSel.appendChild(opt);
+    }
   }
   if (!body.courses.length) {
-    const opt = document.createElement("option");
-    opt.value = "";
-    opt.textContent = "— nenhum curso —";
-    sel.appendChild(opt);
+    if (grantSel) {
+      const opt = document.createElement("option");
+      opt.value = "";
+      opt.textContent = "— nenhum curso —";
+      grantSel.appendChild(opt);
+    }
+    if (certSel) {
+      const opt = document.createElement("option");
+      opt.value = "";
+      opt.textContent = "— nenhum curso —";
+      certSel.appendChild(opt);
+    }
   }
   setOut("grantOut", `Cursos carregados (${body.courses.length}).`);
+  if (certSel) setOut("certOut", `Cursos carregados (${body.courses.length}).`);
 }
 
 document.getElementById("grant-load-courses")?.addEventListener("click", loadGrantCourses);
+document.getElementById("cert-load-courses")?.addEventListener("click", loadGrantCourses);
+document.getElementById("btnCertForce")?.addEventListener("click", async () => {
+  const userId = ($("cert-user")?.value || "").trim();
+  const courseId =
+    ($("cert-course")?.value || $("grant-course")?.value || "").trim();
+  if (!isUuid(userId)) return setOut("certOut", { error: "userId inválido" });
+  if (!isUuid(courseId)) return setOut("certOut", { error: "courseId inválido" });
+  const { status, body } = await api(
+    `/api/admin/certificates/${userId}/${courseId}/issue?force=1`,
+    { method: "POST" }
+  );
+  setOut("certOut", { status, body });
+});
 window.addEventListener("DOMContentLoaded", () => {
   loadGrantCourses().catch(() => {});
 });

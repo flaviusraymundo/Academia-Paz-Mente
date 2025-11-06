@@ -3,8 +3,45 @@ import { Router, Request, Response } from "express";
 import { pool } from "../lib/db.js";
 import { z } from "zod";
 import { isUuid, paramUuid } from "../utils/ids.js";
+import { requireAuth } from "../middleware/auth.js";
+import { requireAdmin } from "../middleware/admin.js";
 
 const router = Router();
+
+// POST /api/admin/certificates/:userId/:courseId/issue?force=1
+router.post(
+  "/certificates/:userId/:courseId/issue",
+  requireAuth,
+  requireAdmin,
+  paramUuid("userId"),
+  paramUuid("courseId"),
+  async (req, res) => {
+    const { userId, courseId } = req.params as { userId: string; courseId: string };
+    const force = String(req.query.force ?? "") === "1";
+    if (!isUuid(userId) || !isUuid(courseId)) {
+      return res.status(400).json({ error: "invalid_ids" });
+    }
+    if (!force) {
+      return res.status(400).json({ error: "force_required" });
+    }
+
+    try {
+      const assetUrl = `https://lifeflourishconsulting.com/certificates/${userId}/${courseId}.pdf`;
+      await pool.query(
+        `insert into certificate_issues(id, user_id, course_id, asset_url, issued_at)
+         values (gen_random_uuid(), $1, $2, $3, now())
+         on conflict (user_id, course_id) do update
+           set asset_url = excluded.asset_url,
+               issued_at = excluded.issued_at`,
+        [userId, courseId, assetUrl]
+      );
+      return res.json({ certificateUrl: assetUrl, forced: true });
+    } catch (e) {
+      console.error("POST /api/admin/certificates.../issue error", e);
+      return res.status(500).json({ error: "server_error" });
+    }
+  }
+);
 
 const AdminEntitlementBody = z
   .object({
