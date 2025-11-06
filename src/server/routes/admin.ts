@@ -24,6 +24,10 @@ const AdminUserBody = z.object({
   email: z.string().trim().toLowerCase().email(),
 });
 
+const AdminUserSearchQuery = z.object({
+  email: z.string().trim().min(3, "Informe ao menos 3 caracteres"),
+});
+
 // --- Guards de UUID para todos os paths com :id neste router ---
 // Cursos
 // rotas sem :id primeiro
@@ -142,6 +146,33 @@ router.post("/entitlements", async (req, res) => {
     console.error("POST /admin/entitlements error:", e);
     return res.status(500).json({ error: "server_error" });
   }
+});
+
+router.get("/users/_search", async (req, res) => {
+  const maybeEmail = Array.isArray(req.query.email)
+    ? req.query.email[0]
+    : req.query.email;
+  const parsed = AdminUserSearchQuery.safeParse({ email: maybeEmail ?? "" });
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  const term = parsed.data.email.toLowerCase();
+  const sanitized = term.replace(/[%_]/g, "\\$&");
+  const pattern = `%${sanitized}%`;
+
+  const { rows } = await pool.query(
+    `
+      select id, email
+        from users
+       where email ilike $1 escape '\\'
+       order by email asc
+       limit 20
+    `,
+    [pattern]
+  );
+
+  return res.json({ users: rows });
 });
 
 router.post("/users", async (req, res) => {
