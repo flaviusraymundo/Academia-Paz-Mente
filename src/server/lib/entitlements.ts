@@ -78,3 +78,32 @@ export async function getActiveEntitlements(
   );
   return rows;
 }
+
+// Revoga entitlements filtrando pela origem, sem afetar concessões manuais
+export async function revokeEntitlementFiltered(
+  client: PoolClient,
+  params: {
+    userId: string;
+    courseId?: string | null;
+    trackId?: string | null;
+    sources?: string[];
+  }
+): Promise<number> {
+  const { userId, courseId = null, trackId = null, sources = ["stripe"] } = params;
+  if (!courseId && !trackId) throw new Error("courseId_or_trackId_required");
+
+  const whereKey = courseId ? "course_id" : "track_id";
+  const whereVal = courseId ?? trackId;
+  const q = await client.query(
+    `
+      update entitlements
+         set ends_at = now()
+       where user_id = $1
+         and ${whereKey} = $2
+         and ${ACTIVE_ENTITLEMENT_CLAUSE}
+         and source = any($3::text[])
+    `,
+    [userId, whereVal, sources]
+  );
+  return q.rowCount;
+}

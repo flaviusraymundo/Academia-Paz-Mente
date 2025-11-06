@@ -1,6 +1,7 @@
 import Stripe from "stripe";
 import { Pool } from "pg";
 import type { PoolClient } from "pg";
+import { revokeEntitlementFiltered } from "../../src/server/lib/entitlements.ts";
 
 type Handler = (event: any) => Promise<{ statusCode: number; body: string }>;
 
@@ -65,7 +66,15 @@ function resolveMetadata(...sources: StripeMeta[]): EntitlementMetadata {
     return undefined;
   };
 
-  const durationRaw = first("duration_days");
+  const firstOf = (keys: string[]): string | undefined => {
+    for (const key of keys) {
+      const value = first(key);
+      if (value) return value;
+    }
+    return undefined;
+  };
+
+  const durationRaw = firstOf(["entitlement_days", "duration_days"]);
   const duration = durationRaw ? Number(durationRaw) : NaN;
 
   return {
@@ -110,8 +119,8 @@ async function upsertEntitlement(client: PoolClient, args: UpsertEntitlementArgs
   }
 
   const conflictClause = courseId
-    ? "on conflict (user_id, course_id) do update set source = excluded.source"
-    : "on conflict (user_id, track_id) do update set source = excluded.source";
+    ? "on conflict (user_id, course_id) do update set source = excluded.source, starts_at = excluded.starts_at, ends_at = excluded.ends_at"
+    : "on conflict (user_id, track_id) do update set source = excluded.source, starts_at = excluded.starts_at, ends_at = excluded.ends_at";
 
   await client.query(
     `insert into entitlements(id, user_id, course_id, track_id, source, starts_at, ends_at, created_at)
@@ -326,6 +335,164 @@ export const handler: Handler = async (event) => {
         const metadata = await metadataFromSubscription(subscription);
         await upsertFromEmail(metadata, email);
       }
+    }
+
+    if (stripeEvent.type === "charge.refunded" || stripeEvent.type === "refund.updated") {
+      await withClient(async (client) => {
+        let email = "";
+        const metadataSources: StripeMeta[] = [];
+        let paymentIntentId: string | undefined;
+
+        if (stripeEvent.type === "charge.refunded") {
+          const charge = stripeEvent.data.object as Stripe.Charge;
+          metadataSources.push(charge.metadata ?? null);
+          email = (charge.billing_details?.email as string) || "";
+          if (!email) {
+            email = await getCustomerEmail(charge.customer as any);
+          }
+          const foundPaymentIntentId =
+            typeof charge.payment_intent === "string"
+              ? charge.payment_intent
+              : charge.payment_intent?.id;
+          // manter no escopo externo para tentativas de invoice/checkout
+          if (foundPaymentIntentId) paymentIntentId = foundPaymentIntentId;
+          if (paymentIntentId) {
+            try {
+              const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+              metadataSources.push(paymentIntent.metadata ?? null);
+              // 1) Tente metadata via INVOICE do pagamento (mais confiável para produtos/price)
+              const invoiceId =
+                typeof (paymentIntent as any).invoice === "string"
+                  ? ((paymentIntent as any).invoice as string)
+                  : (paymentIntent as any).invoice?.id;
+              if (invoiceId) {
+                try {
+                  const invoice = (await stripe.invoices.retrieve(invoiceId)) as Stripe.Invoice;
+                  const metadata = await metadataFromInvoice(invoice);
+                  if (metadata.courseId || metadata.trackId || metadata.durationDays) {
+                    metadataSources.push({
+                      course_id: metadata.courseId ?? undefined,
+                      track_id: metadata.trackId ?? undefined,
+                      duration_days: metadata.durationDays ? String(metadata.durationDays) : undefined,
+                    } as Stripe.Metadata);
+                  }
+                } catch (err) {
+                  console.error("stripe-webhook refund -> invoice metadata error", err);
+                }
+              } else if (paymentIntentId) {
+                // 2) Sem invoice: tente localizar a Checkout Session pelo payment_intent
+                try {
+                  const sessions = await stripe.checkout.sessions.list({ payment_intent: paymentIntentId, limit: 1 });
+                  const session = sessions.data?.[0];
+                  if (session) {
+                    const metadata = await metadataFromCheckoutSession(session);
+                    if (metadata.courseId || metadata.trackId || metadata.durationDays) {
+                      metadataSources.push({
+                        course_id: metadata.courseId ?? undefined,
+                        track_id: metadata.trackId ?? undefined,
+                        duration_days: metadata.durationDays ? String(metadata.durationDays) : undefined,
+                      } as Stripe.Metadata);
+                    }
+                  }
+                } catch (err) {
+                  console.error("stripe-webhook refund -> checkout.session metadata error", err);
+                }
+              }
+            } catch (err) {
+              console.error("stripe-webhook payment_intent metadata error", err);
+            }
+          }
+        } else {
+          const refund = stripeEvent.data.object as Stripe.Refund;
+          metadataSources.push(refund.metadata ?? null);
+          if (refund.charge) {
+            try {
+              const charge =
+                typeof refund.charge === "string"
+                  ? await stripe.charges.retrieve(refund.charge)
+                  : (refund.charge as Stripe.Charge);
+              metadataSources.push(charge.metadata ?? null);
+              email = (charge.billing_details?.email as string) || "";
+              if (!email) {
+                email = await getCustomerEmail(charge.customer as any);
+              }
+              const foundPaymentIntentId =
+                typeof charge.payment_intent === "string"
+                  ? charge.payment_intent
+                  : charge.payment_intent?.id;
+              if (foundPaymentIntentId) paymentIntentId = foundPaymentIntentId;
+              if (paymentIntentId) {
+                try {
+                  const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+                  metadataSources.push(paymentIntent.metadata ?? null);
+                  // 1) Tente metadata via INVOICE
+                  const invoiceId =
+                    typeof (paymentIntent as any).invoice === "string"
+                      ? ((paymentIntent as any).invoice as string)
+                      : (paymentIntent as any).invoice?.id;
+                  if (invoiceId) {
+                    try {
+                      const invoice = (await stripe.invoices.retrieve(invoiceId)) as Stripe.Invoice;
+                      const metadata = await metadataFromInvoice(invoice);
+                      if (metadata.courseId || metadata.trackId || metadata.durationDays) {
+                        metadataSources.push({
+                          course_id: metadata.courseId ?? undefined,
+                          track_id: metadata.trackId ?? undefined,
+                          duration_days: metadata.durationDays ? String(metadata.durationDays) : undefined,
+                        } as Stripe.Metadata);
+                      }
+                    } catch (err) {
+                      console.error("stripe-webhook refund -> invoice metadata error", err);
+                    }
+                  } else if (paymentIntentId) {
+                    // 2) Sem invoice: tente Checkout Session via payment_intent
+                    try {
+                      const sessions = await stripe.checkout.sessions.list({ payment_intent: paymentIntentId, limit: 1 });
+                      const session = sessions.data?.[0];
+                      if (session) {
+                        const metadata = await metadataFromCheckoutSession(session);
+                        if (metadata.courseId || metadata.trackId || metadata.durationDays) {
+                          metadataSources.push({
+                            course_id: metadata.courseId ?? undefined,
+                            track_id: metadata.trackId ?? undefined,
+                            duration_days: metadata.durationDays ? String(metadata.durationDays) : undefined,
+                          } as Stripe.Metadata);
+                        }
+                      }
+                    } catch (err) {
+                      console.error("stripe-webhook refund -> checkout.session metadata error", err);
+                    }
+                  }
+                } catch (err) {
+                  console.error("stripe-webhook payment_intent metadata error", err);
+                }
+              }
+            } catch (err) {
+              console.error("stripe-webhook refund charge retrieve error", err);
+            }
+          }
+        }
+
+        const metadata = resolveMetadata(...metadataSources);
+        const { courseId, trackId } = metadata;
+        if (!email || (!courseId && !trackId)) {
+          return;
+        }
+
+        const { rows } = await client.query<{ id: string }>(
+          `select id from users where lower(email) = lower($1) limit 1`,
+          [email.trim()]
+        );
+        const userId = rows[0]?.id;
+        if (!userId) return;
+
+        await revokeEntitlementFiltered(client, {
+          userId,
+          courseId,
+          trackId,
+          sources: ["stripe"],
+        });
+      });
     }
   } catch (err) {
     if ((err as any)?.code === "ALREADY") {
