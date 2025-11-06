@@ -2,6 +2,7 @@
 import { Router, Request, Response } from "express";
 import jwt, { JwtHeader } from "jsonwebtoken";
 import { pool, withClient } from "../lib/db.js";
+import { hasActiveCourseEntitlement } from "../lib/entitlements.js";
 import { ulid } from "ulid";
 import { isUuid } from "../utils/ids.js";
 
@@ -27,36 +28,9 @@ router.post("/heartbeat", async (req: Request, res: Response) => {
 
     // Gate de entitlement ativo (opcional via ENV)
     if (process.env.ENTITLEMENTS_ENFORCE === "1") {
-      const ok = await withClient(async (client) => {
-        const direct = await client.query(
-          `select 1
-             from entitlements
-            where user_id = $1 and course_id = $2
-              and now() >= starts_at
-              and now() < coalesce(ends_at,'9999-12-31'::timestamptz)
-            limit 1`,
-          [userId, courseId]
-        );
-        if (direct.rowCount) return true;
-
-        const tr = await client.query(
-          `select track_id from track_courses where course_id=$1 limit 1`,
-          [courseId]
-        );
-        if (tr.rowCount) {
-          const via = await client.query(
-            `select 1
-               from entitlements
-              where user_id = $1 and track_id = $2
-                and now() >= starts_at
-                and now() < coalesce(ends_at,'9999-12-31'::timestamptz)
-              limit 1`,
-            [userId, tr.rows[0].track_id]
-          );
-          if (via.rowCount) return true;
-        }
-        return false;
-      });
+      const ok = await withClient((client) =>
+        hasActiveCourseEntitlement(client, userId, courseId)
+      );
       if (!ok) return res.status(403).json({ error: "no_entitlement" });
     }
     const ua = (req.headers["user-agent"] as string) || null;
@@ -114,34 +88,11 @@ router.post("/:itemId/playback-token", async (req: Request, res: Response) => {
     const row = rowsMap[0];
 
     // entitlement ao curso (direto ou via trilha, apenas ativos)
-    const direct = await client.query(
-      `select 1
-         from entitlements
-        where user_id = $1 and course_id = $2
-          and now() >= starts_at
-          and now() < coalesce(ends_at,'9999-12-31'::timestamptz)
-        limit 1`,
-      [userId, row.course_id]
+    const hasAccess = await hasActiveCourseEntitlement(
+      client,
+      userId,
+      row.course_id
     );
-    let hasAccess = direct.rowCount > 0;
-    if (!hasAccess) {
-      const tr = await client.query(
-        `select track_id from track_courses where course_id=$1 limit 1`,
-        [row.course_id]
-      );
-      if (tr.rowCount) {
-        const via = await client.query(
-          `select 1
-             from entitlements
-            where user_id = $1 and track_id = $2
-              and now() >= starts_at
-              and now() < coalesce(ends_at,'9999-12-31'::timestamptz)
-            limit 1`,
-          [userId, tr.rows[0].track_id]
-        );
-        hasAccess = via.rowCount > 0;
-      }
-    }
     if (!hasAccess) return res.status(403).json({ error: "no_entitlement" });
 
     // pega playback id do payload_ref

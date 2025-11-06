@@ -1,7 +1,6 @@
 // src/server/app.ts
 import express, { Request, Response } from "express";
 import helmet from "helmet";
-import cors from "cors";
 import morgan from "morgan";
 import { json } from "express";
 import { pool } from "./lib/db.js";
@@ -17,32 +16,24 @@ import eventsRouter from "./routes/events.js";
 import adminRouter from "./routes/admin.js";
 import { requireAuth } from "./middleware/auth.js";
 import { requireAdmin } from "./middleware/admin.js";
+import entitlementsRouter from "./routes/entitlements.js";
 
 const app = express();
 
 app.use(helmet());
-app.use(cors({ origin: true, credentials: true }));
 app.use(morgan("combined"));
 app.use(json({ limit: "1mb" }));
 
 // CORS consistente para toda a API
 app.use((req, res, next) => {
-  if (req.path.startsWith("/api")) {
-    const origin = (req.headers.origin as string | undefined) ?? "*";
-    res.header("Access-Control-Allow-Origin", origin);
-    res.header("Vary", "Origin");
-    res.header("Access-Control-Allow-Credentials", "true");
-    res.header(
-      "Access-Control-Allow-Methods",
-      "GET,POST,PUT,PATCH,DELETE,OPTIONS"
-    );
-    res.header(
-      "Access-Control-Allow-Headers",
-      "Content-Type,Authorization"
-    );
-  }
+  const origin = (req.headers.origin as string | undefined) ?? "*";
+  res.header("Access-Control-Allow-Origin", origin);
+  res.header("Vary", "Origin");
+  res.header("Access-Control-Allow-Credentials", "true");
+  res.header("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type,Authorization");
   if (req.method === "OPTIONS") {
-    return res.status(200).end();
+    return res.status(200).json({ ok: true });
   }
   next();
 });
@@ -70,6 +61,7 @@ app.use("/api/quizzes", requireAuth, quizzesRouter);
 
 // Perfil/progresso/certificados (autenticado)
 app.use("/api", requireAuth, progressRouter); // /api/me/items, /api/me/entitlements, /api/me/progress
+app.use("/api/entitlements", requireAuth, entitlementsRouter);
 app.use("/api/certificates", requireAuth, certificatesRouter); // /api/certificates/:courseId/issue
 
 // Admin (protegido) — por último

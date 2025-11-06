@@ -1,10 +1,11 @@
 // src/server/routes/progress.ts
 import { Router, Request, Response } from "express";
-import { pool } from "../lib/db.js";
+import { pool, withClient } from "../lib/db.js";
 import { z } from "zod";
 import { ulid } from "ulid";
 import { requireAuth } from "../middleware/auth.js";
 import { isUuid } from "../utils/ids.js";
+import { getActiveEntitlements } from "../lib/entitlements.js";
 
 const router = Router();
 
@@ -245,21 +246,15 @@ router.patch("/me/progress", async (req: Request, res: Response) => {
   }
 });
 
-router.get("/me/entitlements", async (req: Request, res: Response) => {
+router.get("/me/entitlements", requireAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.auth?.userId ?? (req as any)?.user?.id ?? null;
     if (!userId) return res.status(401).json({ error: "no_user" });
 
-    const q = `
-      SELECT id, user_id, course_id, track_id, source, starts_at, ends_at, created_at
-        FROM entitlements
-       WHERE user_id = $1
-         AND now() >= starts_at
-         AND now() < COALESCE(ends_at, '9999-12-31'::timestamptz)
-       ORDER BY created_at DESC
-    `;
-    const r = await pool.query(q, [userId]);
-    return res.json({ entitlements: r.rows });
+    const entitlements = await withClient((client) =>
+      getActiveEntitlements(client, userId)
+    );
+    return res.json({ entitlements });
   } catch (e) {
     console.error("GET /me/entitlements error:", e);
     return res.status(500).json({ error: "server_error" });
