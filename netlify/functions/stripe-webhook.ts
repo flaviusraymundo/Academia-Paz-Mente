@@ -154,14 +154,17 @@ async function upsertEntitlement(client: PoolClient, args: UpsertEntitlementArgs
     throw new Error("courseId_or_trackId_required");
   }
 
-  const conflictClause = courseId
-    ? "on conflict (user_id, course_id) do update set source = excluded.source, starts_at = excluded.starts_at, ends_at = excluded.ends_at"
-    : "on conflict (user_id, track_id) do update set source = excluded.source, starts_at = excluded.starts_at, ends_at = excluded.ends_at";
-
   await client.query(
-    `insert into entitlements(id, user_id, course_id, track_id, source, starts_at, ends_at, created_at)
-       values (gen_random_uuid(), $1, $2, $3, coalesce($4, 'stripe'), $5::timestamptz, $6::timestamptz, now())
-       ${conflictClause}`,
+    `
+    insert into entitlements
+      (id, user_id, course_id, track_id, source, starts_at, ends_at, created_at)
+    values
+      (gen_random_uuid(), $1, $2, $3, coalesce($4, 'stripe'), $5::timestamptz, $6::timestamptz, now())
+    on conflict (user_id, course_id) where $2 is not null do update
+      set source = excluded.source, starts_at = excluded.starts_at, ends_at = excluded.ends_at
+    on conflict (user_id, track_id)  where $3 is not null do update
+      set source = excluded.source, starts_at = excluded.starts_at, ends_at = excluded.ends_at
+    `,
     [userId, courseId, trackId, source, startsAt, endsAt]
   );
 }
