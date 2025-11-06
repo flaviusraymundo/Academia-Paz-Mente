@@ -1,6 +1,6 @@
 // src/server/routes/certificates.ts
 import { Router, Request, Response } from "express";
-import { pool, withClient } from "../lib/db.js";
+import { pool } from "../lib/db.js";
 import { hasActiveCourseEntitlement } from "../lib/entitlements.js";
 import { allModulesPassed } from "../lib/progress.js";
 import { isUuid } from "../utils/ids.js";
@@ -55,28 +55,44 @@ router.get("/verify", async (req: Request, res: Response) => {
   return res.json(rows[0]);
 });
 
-// GET /api/certificates — lista certificados emitidos ao aluno
+// GET /api/certificates — lista certificados emitidos ao aluno (lê de certificate_issues)
 router.get("/", requireAuth, async (req: Request, res: Response) => {
   const userId = req.auth?.userId;
   if (!userId) return res.status(401).json({ error: "unauthorized" });
 
-  const certificates = await withClient(async (client) => {
-    const { rows } = await client.query<{
-      course_id: string;
-      asset_url: string;
-      issued_at: string;
-      title: string;
-    }>(
-      `select c.course_id, c.pdf_url as asset_url, c.issued_at, crs.title
-         from certificates c
-         join courses crs on crs.id = c.course_id
-        where c.user_id = $1
-        order by c.issued_at desc`,
-      [userId]
-    );
-    return rows;
-  });
-  return res.json({ certificates });
+  // Padrão atual: certificate_issues (novo) + compat com 'certificates' (legado).
+  // Campos padronizados na resposta: course_id, pdf_url, issued_at, serial, hash
+  const { rows } = await pool.query<{
+    course_id: string;
+    pdf_url: string | null;
+    issued_at: string;
+    serial: string | null;
+    hash: string | null;
+  }>(
+    `
+    select
+      ci.course_id,
+      ci.asset_url                     as pdf_url,
+      ci.issued_at,
+      ci.serial,
+      ci.serial_hash                   as hash
+    from certificate_issues ci
+    where ci.user_id = $1
+    union all
+    select
+      c.course_id,
+      c.pdf_url,
+      c.issued_at,
+      null::text                       as serial,
+      null::text                       as hash
+    from certificates c
+    where c.user_id = $1
+    order by issued_at desc
+    `,
+    [userId]
+  );
+
+  return res.json({ certificates: rows });
 });
 
 // POST /certificates/:courseId/issue
