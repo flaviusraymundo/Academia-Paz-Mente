@@ -55,13 +55,10 @@ function buildUuidPayloadFromInputs() {
 // =========================
 async function loadGrantCourses() {
   const grantSel = $("grant-course");
-  const certSel = $("cert-course");
   if (grantSel) grantSel.innerHTML = "";
-  if (certSel) certSel.innerHTML = "";
   const { status, body } = await api("/api/admin/courses/_summary");
   if (status !== 200 || !body?.courses) {
     setOut("grantOut", { status, body });
-    if (certSel) setOut("certOut", { status, body });
     return;
   }
   for (const c of body.courses) {
@@ -71,12 +68,6 @@ async function loadGrantCourses() {
       opt.textContent = `${c.title} (${c.slug})`;
       grantSel.appendChild(opt);
     }
-    if (certSel) {
-      const opt = document.createElement("option");
-      opt.value = c.id;
-      opt.textContent = `${c.title} (${c.slug})`;
-      certSel.appendChild(opt);
-    }
   }
   if (!body.courses.length) {
     if (grantSel) {
@@ -85,27 +76,48 @@ async function loadGrantCourses() {
       opt.textContent = "— nenhum curso —";
       grantSel.appendChild(opt);
     }
-    if (certSel) {
-      const opt = document.createElement("option");
-      opt.value = "";
-      opt.textContent = "— nenhum curso —";
-      certSel.appendChild(opt);
-    }
   }
   setOut("grantOut", `Cursos carregados (${body.courses.length}).`);
-  if (certSel) setOut("certOut", `Cursos carregados (${body.courses.length}).`);
 }
 
 document.getElementById("grant-load-courses")?.addEventListener("click", loadGrantCourses);
-document.getElementById("cert-load-courses")?.addEventListener("click", loadGrantCourses);
-document.getElementById("btnCertForce")?.addEventListener("click", async () => {
-  const userId = ($("cert-user")?.value || "").trim();
-  const courseId =
-    ($("cert-course")?.value || $("grant-course")?.value || "").trim();
-  if (!isUuid(userId)) return setOut("certOut", { error: "userId inválido" });
-  if (!isUuid(courseId)) return setOut("certOut", { error: "courseId inválido" });
+document.getElementById("btnIssueCert")?.addEventListener("click", async () => {
+  const userId = (document.getElementById("cert-user")?.value || "").trim();
+  const courseId = (document.getElementById("cert-course")?.value || "").trim();
+  const fullName = (document.getElementById("cert-fullname")?.value || "").trim();
+  if (!userId || !courseId) return setOut("certOut", { error: "informe userId e courseId" });
+  const qs = new URLSearchParams({ force: "1" });
+  if (fullName) qs.set("fullName", fullName);
   const { status, body } = await api(
-    `/api/admin/certificates/${userId}/${courseId}/issue?force=1`,
+    `/api/admin/certificates/${encodeURIComponent(userId)}/${encodeURIComponent(courseId)}/issue?${qs.toString()}`,
+    { method: "POST" }
+  );
+  setOut("certOut", { status, body });
+});
+
+document.getElementById("btnReissueCert")?.addEventListener("click", async () => {
+  const userId = (document.getElementById("cert-user")?.value || "").trim();
+  const courseId = (document.getElementById("cert-course")?.value || "").trim();
+  const fullName = (document.getElementById("cert-fullname")?.value || "").trim();
+  if (!userId || !courseId) return setOut("certOut", { error: "informe userId e courseId" });
+  const qs = new URLSearchParams({ force: "1", reissue: "1" });
+  if (fullName) qs.set("fullName", fullName);
+  const { status, body } = await api(
+    `/api/admin/certificates/${encodeURIComponent(userId)}/${encodeURIComponent(courseId)}/issue?${qs.toString()}`,
+    { method: "POST" }
+  );
+  setOut("certOut", { status, body });
+});
+
+document.getElementById("btnReissueKeepDate")?.addEventListener("click", async () => {
+  const userId = (document.getElementById("cert-user")?.value || "").trim();
+  const courseId = (document.getElementById("cert-course")?.value || "").trim();
+  const fullName = (document.getElementById("cert-fullname")?.value || "").trim();
+  if (!userId || !courseId) return setOut("certOut", { error: "informe userId e courseId" });
+  const qs = new URLSearchParams({ force: "1", reissue: "1", keepIssuedAt: "1" });
+  if (fullName) qs.set("fullName", fullName);
+  const { status, body } = await api(
+    `/api/admin/certificates/${encodeURIComponent(userId)}/${encodeURIComponent(courseId)}/issue?${qs.toString()}`,
     { method: "POST" }
   );
   setOut("certOut", { status, body });
