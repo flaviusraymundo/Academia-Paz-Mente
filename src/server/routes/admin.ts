@@ -144,6 +144,27 @@ router.post("/entitlements", async (req, res) => {
   }
 });
 
+router.get("/users/find", async (req, res) => {
+  const email = String(req.query.email || "").trim();
+  if (!email) {
+    return res.status(400).json({ error: "missing_email" });
+  }
+
+  try {
+    const { rows } = await pool.query(
+      `select id, email from users where lower(email) = lower($1) limit 1`,
+      [email]
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ error: "not_found" });
+    }
+    return res.json({ user: rows[0] });
+  } catch (err) {
+    console.error("GET /admin/users/find error:", err);
+    return res.status(500).json({ error: "server_error" });
+  }
+});
+
 router.post("/users", async (req, res) => {
   const parsed = AdminUserBody.safeParse(req.body);
   if (!parsed.success) {

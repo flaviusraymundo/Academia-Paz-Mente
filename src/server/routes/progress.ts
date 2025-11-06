@@ -5,7 +5,10 @@ import { z } from "zod";
 import { ulid } from "ulid";
 import { requireAuth } from "../middleware/auth.js";
 import { isUuid } from "../utils/ids.js";
-import { getActiveEntitlements } from "../lib/entitlements.js";
+import {
+  getActiveEntitlements,
+  hasActiveCourseEntitlement,
+} from "../lib/entitlements.js";
 
 const router = Router();
 
@@ -48,6 +51,15 @@ async function meItemsHandler(req: Request, res: Response) {
   }
 
   const normalizedCourseId = String(courseId);
+
+  if (process.env.ENTITLEMENTS_ENFORCE === "1") {
+    const entitled = await withClient((client) =>
+      hasActiveCourseEntitlement(client, userId, normalizedCourseId)
+    );
+    if (!entitled) {
+      return res.status(403).json({ error: "no_entitlement" });
+    }
+  }
 
   try {
     const { rows: modules } = await pool.query<ModuleRow>(

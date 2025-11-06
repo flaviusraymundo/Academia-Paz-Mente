@@ -73,6 +73,104 @@ function buildUuidPayloadFromInputs() {
   return payload;
 }
 
+// === ENTITLEMENTS ADMIN ===
+async function loadGrantCourses() {
+  const sel = document.getElementById("grant-course");
+  if (!sel) return;
+  sel.innerHTML = "<option value=''>Carregando...</option>";
+  const { status, body } = await api("/api/admin/courses");
+  if (status !== 200 || !Array.isArray(body)) {
+    sel.innerHTML = "";
+    setOut("grantOut", { status, body });
+    return;
+  }
+  const options = ["<option value=''>-- selecione --</option>"];
+  for (const course of body) {
+    options.push(
+      `<option value="${course.id}">${course.title || course.slug || course.id}</option>`
+    );
+  }
+  sel.innerHTML = options.join("");
+  setOut("grantOut", `Cursos carregados (${body.length}).`);
+}
+
+document
+  .getElementById("grant-load-courses")
+  ?.addEventListener("click", () => loadGrantCourses().catch((err) => {
+    console.error("loadGrantCourses", err);
+    setOut("grantOut", { error: "failed_to_load_courses" });
+  }));
+
+window.addEventListener("DOMContentLoaded", () => {
+  if (document.getElementById("grant-course")) {
+    loadGrantCourses().catch(() => {});
+  }
+});
+
+document.getElementById("grant-find-user")?.addEventListener("click", async () => {
+  const emailInput = document.getElementById("grant-email");
+  const email = (emailInput?.value || "").trim();
+  if (!email) {
+    setOut("grantOut", { error: "Informe um e-mail" });
+    return;
+  }
+  const { status, body } = await api(
+    `/api/admin/users/find?email=${encodeURIComponent(email)}`
+  );
+  if (status !== 200 || !body?.user) {
+    const found = document.getElementById("grant-found");
+    if (found) found.textContent = "";
+    setOut("grantOut", { status, body });
+    return;
+  }
+  const user = body.user;
+  const userInput = document.getElementById("grant-user");
+  if (userInput) userInput.value = user.id;
+  const found = document.getElementById("grant-found");
+  if (found) found.textContent = `Encontrado: ${user.email} (${user.id})`;
+  setOut("grantOut", { ok: true, user });
+});
+
+document.getElementById("btnGrant")?.addEventListener("click", async () => {
+  const userId = (document.getElementById("grant-user")?.value || "").trim();
+  const courseId = (document.getElementById("grant-course")?.value || "").trim();
+  if (!isUuid(userId)) {
+    setOut("grantOut", { error: "Informe um userId válido (UUID)." });
+    return;
+  }
+  if (!isUuid(courseId)) {
+    setOut("grantOut", { error: "Informe um courseId válido (UUID)." });
+    return;
+  }
+  const payload = { userId, courseId };
+  const { status, body } = await api("/api/admin/entitlements", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  setOut("grantOut", { status, body });
+});
+
+document.getElementById("btnRevoke")?.addEventListener("click", async () => {
+  const userId = (document.getElementById("grant-user")?.value || "").trim();
+  const courseId = (document.getElementById("grant-course")?.value || "").trim();
+  if (!isUuid(userId)) {
+    setOut("grantOut", { error: "Informe um userId válido (UUID)." });
+    return;
+  }
+  if (!isUuid(courseId)) {
+    setOut("grantOut", { error: "Informe um courseId válido (UUID)." });
+    return;
+  }
+  const payload = { userId, courseId, revoke: true };
+  const { status, body } = await api("/api/admin/entitlements", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  setOut("grantOut", { status, body });
+});
+
 function show(el, status, text) {
   el.textContent = `HTTP ${status}\n` + text;
 }

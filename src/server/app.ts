@@ -61,7 +61,7 @@ app.use("/api/quizzes", requireAuth, quizzesRouter);
 
 // Perfil/progresso/certificados (autenticado)
 app.use("/api", requireAuth, progressRouter); // /api/me/items, /api/me/entitlements, /api/me/progress
-app.use("/api/entitlements", requireAuth, entitlementsRouter);
+app.use("/api/entitlements", entitlementsRouter);
 app.use("/api/certificates", requireAuth, certificatesRouter); // /api/certificates/:courseId/issue
 
 // Admin (protegido) — por último

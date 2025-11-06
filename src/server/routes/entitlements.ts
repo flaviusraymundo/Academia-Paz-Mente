@@ -1,6 +1,6 @@
 // src/server/routes/entitlements.ts
 import { Router, Request, Response } from "express";
-import { withClient } from "../lib/db.js";
+import { withClient } from "../db";
 import { requireAuth } from "../middleware/auth.js";
 import { isUuid } from "../utils/ids.js";
 import {
