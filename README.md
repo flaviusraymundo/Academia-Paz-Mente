@@ -133,6 +133,26 @@ Acesse `https://SEU_SITE/admin.html`:
 2. Cole o token no topo da página.
 3. Use os botões para listar cursos, trilhas, criar módulos, itens e quizzes.
 
+## Stripe Webhook (Entitlements)
+
+- Function: `/.netlify/functions/stripe-webhook` (rota pública: `/webhooks/stripe`)
+- ENV obrigatórias:
+  - `STRIPE_SECRET_KEY`
+  - `STRIPE_WEBHOOK_SECRET`
+  - `DATABASE_URL`
+  - `PGSSL=1` (se precisar SSL relaxado no Neon)
+  - `ADMIN_EMAILS` (já usado no dev-jwt)
+
+### Metadados lidos (precedência)
+1. **Price metadata** → `duration_days`, `course_id`, `track_id`
+2. **Product metadata** → `duration_days`, `course_id`, `track_id`
+3. **Session/Invoice metadata** → `duration_days`, `course_id`, `track_id`
+
+### Regras
+- Se `duration_days` estiver ausente → **vitalício** (sem `ends_at`).
+- Se presente → `starts_at = now()`, `ends_at = now() + duration_days`.
+- Faz **upsert** em `users` por e-mail e **upsert** em `entitlements` por `(user_id, course_id)` ou `(user_id, track_id)`.
+
 ---
 
 ## Endpoints
