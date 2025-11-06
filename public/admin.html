@@ -60,6 +60,30 @@
 
   <section>
     <h2>Entitlements (Conceder/Revogar acesso)</h2>
+    <details style="margin:8px 0">
+      <summary><strong>Como configurar os produtos/preços no Stripe (metadata)</strong></summary>
+      <div style="border:1px solid #ddd;padding:10px;border-radius:8px;margin-top:8px;background:#fafafa">
+        <p>Para a <em>concessão automática</em> via webhook, defina <code>metadata</code> no <strong>Price</strong> (assinatura) ou na <strong>Checkout Session</strong> (one-time):</p>
+        <ul style="margin:6px 0 10px 20px">
+          <li><code>course_id</code> <em>(UUID)</em> <strong>ou</strong> <code>track_id</code> <em>(UUID)</em></li>
+          <li><code>entitlement_days</code> <em>(opcional; número de dias)</em> — se ausente, o acesso é vitalício</li>
+        </ul>
+        <p><strong>Exemplo (Price metadata):</strong></p>
+<pre style="white-space:pre-wrap;background:#fff;border:1px solid #eee;padding:8px;border-radius:6px">
+{
+  "course_id": "90db6f02-205f-43b6-a919-a7c01a559177",
+  "entitlement_days": "365"
+}
+</pre>
+        <p><strong>Exemplo (Checkout Session metadata):</strong></p>
+<pre style="white-space:pre-wrap;background:#fff;border:1px solid #eee;padding:8px;border-radius:6px">
+{
+  "track_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+}
+</pre>
+        <p><strong>Reembolso:</strong> no evento <code>charge.refunded</code> / <code>refund.updated</code> o webhook marca o entitlement como encerrado ( <code>ends_at = now()</code> ).</p>
+      </div>
+    </details>
     <div style="display:grid;gap:6px;max-width:980px">
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <input id="grant-email" placeholder="email do aluno" style="flex:1" />
