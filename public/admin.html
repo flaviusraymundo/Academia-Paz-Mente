@@ -60,30 +60,6 @@
 
   <section>
     <h2>Entitlements (Conceder/Revogar acesso)</h2>
-    <details style="margin:8px 0">
-      <summary><strong>Como configurar os produtos/preços no Stripe (metadata)</strong></summary>
-      <div style="border:1px solid #ddd;padding:10px;border-radius:8px;margin-top:8px;background:#fafafa">
-        <p>Para a <em>concessão automática</em> via webhook, defina <code>metadata</code> no <strong>Price</strong> (assinatura) ou na <strong>Checkout Session</strong> (one-time):</p>
-        <ul style="margin:6px 0 10px 20px">
-          <li><code>course_id</code> <em>(UUID)</em> <strong>ou</strong> <code>track_id</code> <em>(UUID)</em></li>
-          <li><code>entitlement_days</code> <em>(opcional; número de dias)</em> — se ausente, o acesso é vitalício</li>
-        </ul>
-        <p><strong>Exemplo (Price metadata):</strong></p>
-<pre style="white-space:pre-wrap;background:#fff;border:1px solid #eee;padding:8px;border-radius:6px">
-{
-  "course_id": "90db6f02-205f-43b6-a919-a7c01a559177",
-  "entitlement_days": "365"
-}
-</pre>
-        <p><strong>Exemplo (Checkout Session metadata):</strong></p>
-<pre style="white-space:pre-wrap;background:#fff;border:1px solid #eee;padding:8px;border-radius:6px">
-{
-  "track_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
-}
-</pre>
-        <p><strong>Reembolso:</strong> no evento <code>charge.refunded</code> / <code>refund.updated</code> o webhook marca o entitlement como encerrado ( <code>ends_at = now()</code> ).</p>
-      </div>
-    </details>
     <div style="display:grid;gap:6px;max-width:980px">
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <input id="grant-email" placeholder="email do aluno" style="flex:1" />
@@ -115,6 +91,40 @@
       </div>
     </div>
     <pre id="grantOut" style="white-space:pre-wrap;border:1px solid #ddd;padding:8px;"></pre>
+
+    <!-- Infobox: como preencher metadata no Stripe para criar/revogar entitlements -->
+    <details style="margin-top:12px;">
+      <summary style="cursor:pointer;"><strong>Dica:</strong> metadata Stripe → entitlements (clique para expandir)</summary>
+      <div style="border:1px solid #eee;border-radius:8px;padding:12px;margin-top:8px;background:#fafafa;">
+        <p style="margin:0 0 8px 0;">
+          O webhook lê <em>metadata</em> nestas fontes (nesta ordem): <code>Price</code> → <code>Product</code> → <code>Checkout Session</code> / <code>Invoice</code> / <code>Subscription</code>.
+          Use as chaves abaixo para conceder acesso após pagamento:
+        </p>
+        <ul style="margin:0 0 8px 18px;">
+          <li><code>course_id</code> (UUID) — concede acesso a um curso específico.</li>
+          <li><code>track_id</code> (UUID) — alternativa ao <code>course_id</code>, para trilhas.</li>
+          <li><code>duration_days</code> (inteiro) — janela em dias (ex.: <code>30</code>). Se ausente → acesso vitalício (<code>ends_at = NULL</code>).</li>
+          <li><code>starts_at</code> (ISO 8601) — opcional; início customizado (ex.: <code>2025-01-10T09:00:00Z</code>).</li>
+          <li><code>ends_at</code> (ISO 8601) — opcional; fim customizado. Se for usado, ignora <code>duration_days</code>.</li>
+        </ul>
+        <p style="margin:0 0 8px 0;"><strong>Exemplo (Price → Metadata):</strong></p>
+<pre style="white-space:pre;border:1px solid #ddd;padding:8px;background:#fff;margin:0 0 8px 0;">
+course_id: 90db6f02-205f-43b6-a919-a7c01a559177
+duration_days: 30
+</pre>
+        <p style="margin:0 0 8px 0;"><strong>Exemplo (Checkout Session → Metadata):</strong></p>
+<pre style="white-space:pre;border:1px solid #ddd;padding:8px;background:#fff;margin:0 0 8px 0;">
+track_id: 1b9c8e6a-3a02-4c7d-9f4f-5a9e1f2c3d4e
+starts_at: 2025-02-01T12:00:00Z
+ends_at: 2025-03-01T12:00:00Z
+</pre>
+        <ul style="margin:0 0 8px 18px;">
+          <li>Reembolso (<code>charge.refunded/refund.updated</code>): webhook revoga somente entitlements com <code>source='stripe'</code> (admin grants não são afetados).</li>
+          <li>Recompra/reativação: uma nova compra ajusta a janela (<code>ends_at</code>) para frente ou volta a vitalício, conforme os metadados.</li>
+        </ul>
+        <p style="margin:0;">Dica: Prefira colocar metadata no <strong>Price</strong> (replicado entre produtos/itens) para reduzir erros.</p>
+      </div>
+    </details>
   </section>
 
   <hr />
