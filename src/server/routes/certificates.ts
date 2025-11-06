@@ -1,12 +1,37 @@
 // src/server/routes/certificates.ts
 import { Router, Request, Response } from "express";
 import crypto from "crypto";
-import { pool } from "../lib/db.js";
+import { pool, withClient } from "../lib/db.js";
 import { hasActiveCourseEntitlement } from "../lib/entitlements.js";
+import { allModulesPassed } from "../lib/progress.js";
 import { ulid } from "ulid";
 import { isUuid } from "../utils/ids.js";
 
 const router = Router();
+
+// GET /api/certificates — lista certificados emitidos ao aluno
+router.get("/", async (req: Request, res: Response) => {
+  const userId = req.auth?.userId;
+  if (!userId) return res.status(401).json({ error: "unauthorized" });
+
+  const certificates = await withClient(async (client) => {
+    const { rows } = await client.query<{
+      course_id: string;
+      asset_url: string;
+      issued_at: string;
+      title: string;
+    }>(
+      `select c.course_id, c.pdf_url as asset_url, c.issued_at, crs.title
+         from certificates c
+         join courses crs on crs.id = c.course_id
+        where c.user_id = $1
+        order by c.issued_at desc`,
+      [userId]
+    );
+    return rows;
+  });
+  return res.json({ certificates });
+});
 
 // POST /certificates/:courseId/issue
 // Regra: precisa entitlement e todos módulos do curso com status 'passed' ou 'completed'
@@ -31,26 +56,20 @@ router.post("/:courseId/issue", async (req: Request, res: Response) => {
       }
     }
 
-    // módulos do curso e progresso
-    const { rows: mods } = await client.query(
-      `
-      select m.id as module_id,
-             coalesce(p.status,'started') as status
-      from modules m
-      left join progress p on p.module_id = m.id and p.user_id = $1
-      where m.course_id = $2
-      order by m."order" asc
-      `,
-      [userId, courseId]
+    // precisa existir ao menos um módulo
+    const hasModules = await client.query(
+      `select 1 from modules where course_id=$1 limit 1`,
+      [courseId]
     );
-    if (mods.length === 0) {
+    if (hasModules.rowCount === 0) {
       await client.query("rollback");
       return res.status(400).json({ error: "course_without_modules" });
     }
-    const allPassed = mods.every((m) => ["passed", "completed"].includes(m.status));
-    if (!allPassed) {
+
+    const passed = await allModulesPassed(client, userId, courseId);
+    if (!passed) {
       await client.query("rollback");
-      return res.status(403).json({ error: "course_not_completed" });
+      return res.status(422).json({ error: "not_eligible" });
     }
 
     // já existe?
