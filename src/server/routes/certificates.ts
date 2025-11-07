@@ -89,7 +89,7 @@ certificatesPrivate.get("/", async (req: AuthReq, res: Response) => {
       from certificate_issues
      where user_id = $1
     union all
-    select course_id, pdf_url, issued_at, null as serial, hash
+    select course_id, pdf_url, issued_at, null::text as serial, hash
       from certificates
      where user_id = $1
      order by issued_at desc
@@ -97,9 +97,9 @@ certificatesPrivate.get("/", async (req: AuthReq, res: Response) => {
 
   try {
     const { rows } = await pool.query(sql, [userId]);
-    res.json(rows);
+    return res.json({ certificates: rows });
   } catch (e: any) {
-    res.status(500).json({
+    return res.status(500).json({
       error: "list_failed",
       ...(DEBUG_CERTS ? { detail: e?.message || String(e) } : {}),
     });
