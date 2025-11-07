@@ -115,31 +115,16 @@ certificatesPrivate.post("/:courseId/issue", async (req: AuthReq, res: Response)
   const fullName = typeof req.query.fullName === "string" ? req.query.fullName : undefined;
 
   try {
-    const row = await withClient(async (client) => {
-      await issueCertificate({
+    const row = await withClient((client) =>
+      issueCertificate({
         client,
         userId,
         courseId,
         reissue,
         keepIssuedAt,
         fullName,
-      });
-
-      const { rows } = await client.query(
-        `select id, user_id, course_id, asset_url as pdf_url, issued_at, serial, serial_hash as hash
-           from certificate_issues
-          where user_id = $1 and course_id = $2
-          order by issued_at desc
-          limit 1`,
-        [userId, courseId]
-      );
-
-      if (!rows.length) {
-        throw new Error("certificate_issue_not_found");
-      }
-
-      return rows[0];
-    });
+      })
+    );
 
     const base =
       process.env.APP_BASE_URL || `${req.protocol}://${req.get("host") ?? ""}`;
@@ -150,9 +135,9 @@ certificatesPrivate.post("/:courseId/issue", async (req: AuthReq, res: Response)
       user_id: row.user_id,
       course_id: row.course_id,
       issued_at: row.issued_at,
-      pdf_url: row.pdf_url,
+      pdf_url: row.asset_url,
       serial: row.serial ?? null,
-      hash: row.hash ?? null,
+      hash: row.serial_hash ?? null,
       verifyUrl,
       reissue,
       keepIssuedAt,

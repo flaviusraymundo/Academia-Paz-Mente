@@ -13,6 +13,21 @@ export type IssueArgs = {
   keepIssuedAt?: boolean; // se true, preserva issued_at original numa reemissão
 };
 
+export type CertificateIssueRow = {
+  id: string;
+  user_id: string;
+  course_id: string;
+  asset_url: string | null;
+  issued_at: Date;
+  full_name: string | null;
+  serial: string | null;
+  serial_hash: string | null;
+};
+
+function defaultCertificateUrl(userId: string, courseId: string): string {
+  return `https://lifeflourishconsulting.com/certificates/${userId}/${courseId}.pdf`;
+}
+
 function sha256(value: string): string {
   return crypto.createHash("sha256").update(value).digest("hex");
 }
@@ -25,73 +40,68 @@ export async function issueCertificate({
   assetUrl = null,
   reissue = false,
   keepIssuedAt = false,
-}: IssueArgs): Promise<{ certificateUrl: string; serial: string }> {
-  // Busca atual (se houver) para decidir preservação de issued_at
-  const cur = await client.query(
-    `select id, asset_url, full_name, serial, serial_hash, issued_at
+}: IssueArgs): Promise<CertificateIssueRow> {
+  const current = await client.query<CertificateIssueRow>(
+    `select id, user_id, course_id, asset_url, issued_at, full_name, serial, serial_hash
        from certificate_issues
-      where user_id=$1 and course_id=$2
+      where user_id = $1 and course_id = $2
       limit 1`,
     [userId, courseId]
   );
 
+  const existing = current.rows[0];
+  const existingIssuedAt = existing?.issued_at ? new Date(existing.issued_at) : null;
   const now = new Date();
+  const normalizedFullName = fullName ?? null;
+  const shouldReissue = Boolean(reissue);
+  const shouldKeepIssuedAt = Boolean(keepIssuedAt);
 
-  // Estratégia de serial/URL:
-  // - Sem reissue: mantém serial/asset_url existentes; só atualiza se for 1ª emissão.
-  // - Com reissue: gera novo serial; asset_url pode ser substituído.
-  let serial: string;
-  let serialHash: string;
-  let finalUrl: string;
+  const needsNewSerial =
+    !existing || shouldReissue || !existing.serial || !existing.serial_hash;
+  const serial = needsNewSerial ? ulid() : (existing.serial as string);
+  const serialHash = needsNewSerial ? sha256(serial) : (existing.serial_hash as string);
 
-  if (cur.rowCount === 0) {
-    // Primeira emissão
-    serial = ulid();
-    serialHash = sha256(serial);
-    // URL default pode continuar por userId/courseId; se quiser por serial, mude aqui.
-    finalUrl =
-      assetUrl ||
-      `https://lifeflourishconsulting.com/certificates/${userId}/${courseId}.pdf`;
+  const fallbackUrl = defaultCertificateUrl(userId, courseId);
+  const finalAssetUrl =
+    assetUrl ??
+    (!existing
+      ? fallbackUrl
+      : shouldReissue
+      ? fallbackUrl
+      : existing.asset_url ?? fallbackUrl);
 
-    await client.query(
-      `insert into certificate_issues
-         (id, user_id, course_id, asset_url, issued_at, full_name, serial, serial_hash)
-       values
-         (gen_random_uuid(), $1, $2, $3, $4::timestamptz, $5, $6, $7)`,
-      [userId, courseId, finalUrl, now.toISOString(), fullName, serial, serialHash]
-    );
-  } else {
-    // Já existe certificado
-    const row = cur.rows[0];
-    if (reissue) {
-      // Reemissão: novo serial; URL nova (ou a fornecida)
-      serial = ulid();
-      serialHash = sha256(serial);
-      finalUrl =
-        assetUrl ||
-        `https://lifeflourishconsulting.com/certificates/${userId}/${courseId}.pdf`;
-    } else {
-      // Idempotente: preserva serial/hash/URL existentes
-      serial = row.serial;
-      serialHash = row.serial_hash;
-      finalUrl = assetUrl || row.asset_url;
-    }
+  const issuedAt = !existing
+    ? now
+    : shouldReissue
+    ? shouldKeepIssuedAt
+      ? existingIssuedAt ?? now
+      : now
+    : existingIssuedAt ?? now;
 
-    const issuedAtClause = keepIssuedAt
-      ? "issued_at=certificate_issues.issued_at"
-      : "issued_at=$8::timestamptz";
+  const { rows } = await client.query<CertificateIssueRow>(
+    `insert into certificate_issues(id, user_id, course_id, asset_url, issued_at, full_name, serial, serial_hash)
+      values (gen_random_uuid(), $1, $2, $3, $4::timestamptz, $5, $6, $7)
+      on conflict (user_id, course_id) do update
+        set asset_url   = excluded.asset_url,
+            issued_at   = CASE WHEN $8::boolean AND $9::boolean THEN certificate_issues.issued_at ELSE excluded.issued_at END,
+            full_name   = COALESCE(excluded.full_name, certificate_issues.full_name),
+            serial      = CASE WHEN $8::boolean THEN excluded.serial ELSE certificate_issues.serial END,
+            serial_hash = CASE WHEN $8::boolean THEN excluded.serial_hash ELSE certificate_issues.serial_hash END
+      returning id, user_id, course_id, asset_url, issued_at, full_name, serial, serial_hash`,
+    [
+      userId,
+      courseId,
+      finalAssetUrl,
+      issuedAt.toISOString(),
+      normalizedFullName,
+      serial,
+      serialHash,
+      shouldReissue,
+      shouldKeepIssuedAt,
+    ]
+  );
 
-    await client.query(
-      `update certificate_issues
-          set asset_url=$3,
-              full_name=$4,
-              serial=$5,
-              serial_hash=$6,
-              ${issuedAtClause}
-        where user_id=$1 and course_id=$2`,
-      [userId, courseId, finalUrl, fullName, serial, serialHash, /*$7*/ null, now.toISOString()]
-    );
-  }
+  const row = rows[0];
 
   // Log de analytics opcional (ignora erro caso não exista tabela/events)
   try {
@@ -102,5 +112,5 @@ export async function issueCertificate({
     );
   } catch {}
 
-  return { certificateUrl: finalUrl, serial };
+  return row;
 }
