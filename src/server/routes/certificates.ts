@@ -4,144 +4,166 @@ import { pool } from "../lib/db.js";
 import { hasActiveCourseEntitlement } from "../lib/entitlements.js";
 import { allModulesPassed } from "../lib/progress.js";
 import { isUuid } from "../utils/ids.js";
-import { requireAuth } from "../middleware/auth.js";
 import { issueCertificate } from "../lib/certificates.js";
 
-const router = Router();
+const DEBUG_CERTS = process.env.DEBUG_CERTS === "1";
+
+// Tipagem simples para req.auth sem precisar de @ts-expect-error
+interface AuthReq extends Request {
+  auth?: { userId?: string; roles?: string[] };
+}
+
+// Separa routers:
+// - Público: apenas /verify
+// - Privado (autenticado): emissão e listagem
+export const certificatesPublic = Router();
+export const certificatesPrivate = Router();
 
 // GET /api/certificates/verify/:serial (público)
-router.get("/verify/:serial", async (req: Request, res: Response) => {
+certificatesPublic.get("/:serial", async (req: Request, res: Response) => {
   const serial = String(req.params.serial || "").trim();
   if (!serial) return res.status(400).json({ error: "invalid_serial" });
 
-  const { rows } = await pool.query(
-    `select id,
-            user_id,
-            course_id,
-            issued_at,
-            full_name,
-            asset_url as pdf_url,
-            serial,
-            serial_hash as hash
-       from certificate_issues
-      where serial = $1
-      limit 1`,
-    [serial],
-  );
-  if (!rows.length) return res.status(404).json({ error: "not_found" });
-  return res.json(rows[0]);
+  try {
+    const { rows } = await pool.query(
+      `select id,
+              user_id,
+              course_id,
+              issued_at,
+              full_name,
+              asset_url as pdf_url,
+              serial,
+              serial_hash as hash
+         from certificate_issues
+        where serial = $1
+        limit 1`,
+      [serial],
+    );
+    if (!rows.length) return res.status(404).json({ error: "not_found" });
+    return res.json(rows[0]);
+  } catch (e: any) {
+    return res.status(500).json({
+      error: "verify_failed",
+      ...(DEBUG_CERTS ? { detail: e?.message || String(e) } : {}),
+    });
+  }
 });
 
 // GET /api/certificates/verify?hash=... (público)
-router.get("/verify", async (req: Request, res: Response) => {
+certificatesPublic.get("/", async (req: Request, res: Response) => {
   const hash = String(req.query.hash || "").trim();
   if (!hash) return res.status(400).json({ error: "missing_hash" });
 
-  const { rows } = await pool.query(
-    `select id,
-            user_id,
-            course_id,
-            issued_at,
-            full_name,
-            asset_url as pdf_url,
-            serial,
-            serial_hash as hash
-       from certificate_issues
-      where serial_hash = $1
-      limit 1`,
-    [hash],
-  );
-  if (!rows.length) return res.status(404).json({ error: "not_found" });
-  return res.json(rows[0]);
+  try {
+    const { rows } = await pool.query(
+      `select id,
+              user_id,
+              course_id,
+              issued_at,
+              full_name,
+              asset_url as pdf_url,
+              serial,
+              serial_hash as hash
+         from certificate_issues
+        where serial_hash = $1
+        limit 1`,
+      [hash],
+    );
+    if (!rows.length) return res.status(404).json({ error: "not_found" });
+    return res.json(rows[0]);
+  } catch (e: any) {
+    return res.status(500).json({
+      error: "verify_failed",
+      ...(DEBUG_CERTS ? { detail: e?.message || String(e) } : {}),
+    });
+  }
 });
 
-// GET /api/certificates — lista certificados emitidos ao aluno (lê de certificate_issues)
-router.get("/", requireAuth, async (req: Request, res: Response) => {
+// GET / — lista certificados emitidos ao aluno (novo + legado)
+certificatesPrivate.get("/", async (req: AuthReq, res: Response) => {
   const userId = req.auth?.userId;
   if (!userId) return res.status(401).json({ error: "unauthorized" });
 
-  // Padrão atual: certificate_issues (novo) + compat com 'certificates' (legado).
-  // Campos padronizados na resposta: course_id, pdf_url, issued_at, serial, hash
-  const { rows } = await pool.query<{
-    course_id: string;
-    pdf_url: string | null;
-    issued_at: string;
-    serial: string | null;
-    hash: string | null;
-  }>(
-    `
-    select
-      ci.course_id,
-      ci.asset_url                     as pdf_url,
-      ci.issued_at,
-      ci.serial,
-      ci.serial_hash                   as hash
-    from certificate_issues ci
-    where ci.user_id = $1
+  const sql = `
+    select course_id, asset_url as pdf_url, issued_at, serial, serial_hash as hash
+      from certificate_issues
+     where user_id = $1
     union all
-    select
-      c.course_id,
-      c.pdf_url,
-      c.issued_at,
-      null::text                       as serial,
-      null::text                       as hash
-    from certificates c
-    where c.user_id = $1
-    order by issued_at desc
-    `,
-    [userId]
-  );
+    select course_id, pdf_url, issued_at, null::text as serial, hash
+      from certificates
+     where user_id = $1
+     order by issued_at desc
+  `;
 
-  return res.json({ certificates: rows });
+  try {
+    const { rows } = await pool.query(sql, [userId]);
+    return res.json({ certificates: rows });
+  } catch (e: any) {
+    return res.status(500).json({
+      error: "list_failed",
+      ...(DEBUG_CERTS ? { detail: e?.message || String(e) } : {}),
+    });
+  }
 });
 
 // POST /certificates/:courseId/issue
 // Regra: precisa entitlement e todos módulos do curso com status 'passed' ou 'completed'
-router.post("/:courseId/issue", requireAuth, async (req: Request, res: Response) => {
+certificatesPrivate.post("/:courseId/issue", async (req: AuthReq, res: Response) => {
   const userId = req.auth?.userId;
-  if (!userId) return res.status(401).json({ error: "unauthorized" });
   const { courseId } = req.params;
+  const reissue = String(req.query.reissue ?? "") === "1";
+  const keepIssuedAt = String(req.query.keepIssuedAt ?? "") === "1";
+
+  if (!userId || !courseId) {
+    return res.status(400).json({ error: "bad_request" });
+  }
+
   if (!isUuid(courseId)) {
     return res.status(400).json({ error: "invalid_id", param: "courseId" });
   }
 
-  const reissue = String(req.query.reissue ?? "") === "1";
-  const keepIssuedAt = String(req.query.keepIssuedAt ?? "") === "1";
-
   const client = await pool.connect();
+  let tx = false;
   try {
     await client.query("begin");
+    tx = true;
 
-    // Gate opcional por entitlement ativo
     if (process.env.ENTITLEMENTS_ENFORCE === "1") {
       const ok = await hasActiveCourseEntitlement(client, userId, courseId);
       if (!ok) {
         await client.query("rollback");
+        tx = false;
         return res.status(403).json({ error: "no_entitlement" });
       }
     }
 
-    // precisa existir ao menos um módulo
     const hasModules = await client.query(
       `select 1 from modules where course_id=$1 limit 1`,
       [courseId]
     );
     if (hasModules.rowCount === 0) {
       await client.query("rollback");
+      tx = false;
       return res.status(400).json({ error: "course_without_modules" });
     }
 
     const passed = await allModulesPassed(client, userId, courseId);
     if (!passed) {
       await client.query("rollback");
+      tx = false;
       return res.status(422).json({ error: "not_eligible" });
     }
 
-    const profileRes = await client.query<{ full_name: string | null }>(
-      `select full_name from profiles where user_id=$1 limit 1`,
-      [userId]
-    );
-    const fullName = profileRes.rows[0]?.full_name ?? null;
+    let fullName: string | null = null;
+    try {
+      const profileRes = await client.query<{ full_name: string | null }>(
+        `select full_name from profiles where user_id=$1 limit 1`,
+        [userId]
+      );
+      fullName = profileRes.rows[0]?.full_name ?? null;
+    } catch {
+      fullName = null;
+    }
 
     await issueCertificate({
       client,
@@ -170,10 +192,12 @@ router.post("/:courseId/issue", requireAuth, async (req: Request, res: Response)
 
     if (!rows.length) {
       await client.query("rollback");
+      tx = false;
       return res.status(500).json({ error: "issue_failed" });
     }
 
     await client.query("commit");
+    tx = false;
 
     const row = rows[0] as any;
     const serial = typeof row.serial === "string" ? row.serial : null;
@@ -202,12 +226,25 @@ router.post("/:courseId/issue", requireAuth, async (req: Request, res: Response)
       hash,
       verifyUrl,
     });
-  } catch (e) {
-    await client.query("rollback");
-    return res.status(500).json({ error: "issue_failed" });
+  } catch (e: any) {
+    if (tx) {
+      try {
+        await client.query("rollback");
+      } catch {
+        // ignore rollback errors
+      }
+    }
+    return res.status(500).json({
+      error: "issue_failed",
+      ...(DEBUG_CERTS ? { detail: e?.message || String(e) } : {}),
+    });
   } finally {
     client.release();
   }
 });
 
-export default router;
+// Exporta ambos
+export default {
+  certificatesPublic,
+  certificatesPrivate,
+};
