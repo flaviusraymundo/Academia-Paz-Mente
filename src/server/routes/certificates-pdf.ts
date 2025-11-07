@@ -1,0 +1,203 @@
+// src/server/routes/certificates-pdf.ts
+import { Router, Request, Response } from "express";
+import { pool } from "../lib/db.js";
+import chromium from "@sparticuz/chromium";
+import puppeteer from "puppeteer-core";
+
+const router = Router();
+
+type Row = {
+  user_id: string;
+  course_id: string;
+  full_name: string | null;
+  issued_at: string; // timestamptz
+  serial: string;
+  course_title: string | null;
+};
+
+function formatPtBrDate(d: Date): string {
+  const parts = new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  }).format(d);
+  // Ex.: "07 de novembro de 2025"
+  return parts;
+}
+
+function buildHtml(params: {
+  fullName: string;
+  courseTitle: string;
+  city: string;
+  issuedAt: Date;
+}): string {
+  const { fullName, courseTitle, city, issuedAt } = params;
+  const issuedStr = `${city}, ${formatPtBrDate(issuedAt)}`;
+
+  // Template fornecido pelo usuário, com placeholders injetados
+  return `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Certificado</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{
+      font-family:'Georgia', serif;
+      background:linear-gradient(135deg,#e0f2f1 0%,#b2dfdb 100%);
+      display:flex;justify-content:center;align-items:center;min-height:100vh;padding:20px;
+    }
+    .certificate{
+      width:900px;background:#fff;padding:60px;position:relative;
+      box-shadow:0 10px 40px rgba(0,0,0,.2);
+    }
+    .certificate::before{
+      content:'';position:absolute;top:20px;left:20px;right:20px;bottom:20px;border:3px solid #26a69a;pointer-events:none;
+    }
+    .certificate::after{
+      content:'';position:absolute;top:30px;left:30px;right:30px;bottom:30px;border:1px solid #80cbc4;pointer-events:none;
+    }
+    .corner{position:absolute;width:80px;height:80px;border:2px solid #26a69a}
+    .corner::before,.corner::after{content:'';position:absolute;background:#4db6ac}
+    .corner-tl{top:25px;left:25px;border-right:none;border-bottom:none}
+    .corner-tl::before{width:30px;height:2px;top:15px;left:-2px}
+    .corner-tl::after{width:2px;height:30px;top:-2px;left:15px}
+    .corner-tr{top:25px;right:25px;border-left:none;border-bottom:none}
+    .corner-tr::before{width:30px;height:2px;top:15px;right:-2px}
+    .corner-tr::after{width:2px;height:30px;top:-2px;right:15px}
+    .corner-bl{bottom:25px;left:25px;border-right:none;border-top:none}
+    .corner-bl::before{width:30px;height:2px;bottom:15px;left:-2px}
+    .corner-bl::after{width:2px;height:30px;bottom:-2px;left:15px}
+    .corner-br{bottom:25px;right:25px;border-left:none;border-top:none}
+    .corner-br::before{width:30px;height:2px;bottom:15px;right:-2px}
+    .corner-br::after{width:2px;height:30px;bottom:-2px;right:15px}
+    .content{position:relative;z-index:1;text-align:center}
+    .header{margin-bottom:30px}
+    .title{font-size:48px;color:#26a69a;font-weight:bold;letter-spacing:4px;margin-bottom:10px;text-transform:uppercase}
+    .subtitle{font-size:18px;color:#4db6ac;font-style:italic}
+    .divider{width:200px;height:2px;background:linear-gradient(to right,transparent,#26a69a,transparent);margin:30px auto}
+    .body-text{font-size:16px;color:#333;line-height:1.8;margin:20px 0}
+    .recipient-name{font-size:36px;color:#26a69a;font-weight:bold;margin:30px 0;font-style:italic;text-decoration:underline;text-decoration-color:#80cbc4;text-underline-offset:8px}
+    .achievement{font-size:18px;color:#555;margin:25px auto;line-height:1.6;max-width:600px}
+    .footer{margin-top:50px;display:flex;justify-content:space-around;align-items:flex-end}
+    .signature-block{text-align:center}
+    .signature-line{width:200px;height:1px;background:#26a69a;margin:40px auto 10px}
+    .signature-name{font-size:16px;color:#333;font-weight:bold}
+    .signature-title{font-size:14px;color:#666;font-style:italic}
+    .date{font-size:14px;color:#666;margin-top:30px}
+    .seal{
+      position:absolute;bottom:50px;right:80px;width:80px;height:80px;border:3px solid #26a69a;border-radius:50%;
+      display:flex;align-items:center;justify-content:center;font-size:12px;color:#26a69a;font-weight:bold;transform:rotate(-15deg);
+      background:rgba(38,166,154,.05)
+    }
+    @page{size:A4;margin:0}
+    html,body{height:auto}
+  </style>
+</head>
+<body>
+  <div class="certificate">
+    <div class="corner corner-tl"></div>
+    <div class="corner corner-tr"></div>
+    <div class="corner corner-bl"></div>
+    <div class="corner corner-br"></div>
+    <div class="content">
+      <div class="header">
+        <div class="title">Certificado</div>
+        <div class="subtitle">de Conclusão</div>
+      </div>
+      <div class="divider"></div>
+      <div class="body-text">Certificamos que</div>
+      <div class="recipient-name">${escapeHtml(fullName)}</div>
+      <div class="achievement">
+        Concluiu com êxito o curso de <strong>${escapeHtml(courseTitle)}</strong>,
+        demonstrando excelente desempenho e dedicação durante o período de aprendizado.
+      </div>
+      <div class="divider"></div>
+      <div class="footer">
+        <div class="signature-block">
+          <div class="signature-line"></div>
+          <div class="signature-name">João Pedro Costa</div>
+          <div class="signature-title">Diretor Acadêmico</div>
+        </div>
+        <div class="signature-block">
+          <div class="signature-line"></div>
+          <div class="signature-name">Ana Carolina Lima</div>
+          <div class="signature-title">Coordenadora do Curso</div>
+        </div>
+      </div>
+      <div class="date">${escapeHtml(issuedStr)}</div>
+    </div>
+    <div class="seal">SELO<br>OFICIAL</div>
+  </div>
+</body>
+</html>`;
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+router.get("/:serial", async (req: Request, res: Response) => {
+  const serial = String(req.params.serial || "").trim();
+  if (!serial) return res.status(400).send("serial_required");
+
+  try {
+    const q = await pool.query<Row>(
+      `
+      select
+        ci.user_id,
+        ci.course_id,
+        ci.full_name,
+        ci.issued_at,
+        ci.serial,
+        coalesce(c.title, '') as course_title
+      from certificate_issues ci
+      left join courses c on c.id = ci.course_id
+      where ci.serial = $1
+      limit 1
+      `,
+      [serial]
+    );
+    const row = q.rows[0];
+    if (!row) return res.status(404).send("not_found");
+
+    const fullName = row.full_name || "Aluno";
+    const courseTitle = row.course_title || "Curso";
+    const issuedAt = new Date(row.issued_at);
+    const city = "Florianópolis"; // sem ENVs, fixo
+
+    const html = buildHtml({ fullName, courseTitle, city, issuedAt });
+
+    const executablePath = await chromium.executablePath();
+    const browser = await puppeteer.launch({
+      args: chromium.args,
+      defaultViewport: chromium.defaultViewport,
+      executablePath,
+      headless: chromium.headless,
+    });
+
+    const page = await browser.newPage();
+    await page.setContent(html, { waitUntil: "networkidle0" });
+    const pdf = await page.pdf({
+      printBackground: true,
+      format: "A4",
+      margin: { top: "0mm", right: "0mm", bottom: "0mm", left: "0mm" },
+    });
+    await browser.close();
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename="cert-${serial}.pdf"`);
+    res.setHeader("Cache-Control", "public, max-age=3600, s-maxage=3600");
+    return res.status(200).send(pdf);
+  } catch (e) {
+    console.error("[certificates-pdf] render error", e);
+    return res.status(500).send("render_failed");
+  }
+});
+
+export default router;
