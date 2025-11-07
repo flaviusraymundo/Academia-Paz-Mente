@@ -24,22 +24,29 @@ certificatesPublic.get("/:serial", async (req: Request, res: Response) => {
   const serial = String(req.params.serial || "").trim();
   if (!serial) return res.status(400).json({ error: "invalid_serial" });
 
-  const { rows } = await pool.query(
-    `select id,
-            user_id,
-            course_id,
-            issued_at,
-            full_name,
-            asset_url as pdf_url,
-            serial,
-            serial_hash as hash
-       from certificate_issues
-      where serial = $1
-      limit 1`,
-    [serial],
-  );
-  if (!rows.length) return res.status(404).json({ error: "not_found" });
-  return res.json(rows[0]);
+  try {
+    const { rows } = await pool.query(
+      `select id,
+              user_id,
+              course_id,
+              issued_at,
+              full_name,
+              asset_url as pdf_url,
+              serial,
+              serial_hash as hash
+         from certificate_issues
+        where serial = $1
+        limit 1`,
+      [serial],
+    );
+    if (!rows.length) return res.status(404).json({ error: "not_found" });
+    return res.json(rows[0]);
+  } catch (e: any) {
+    return res.status(500).json({
+      error: "verify_failed",
+      ...(DEBUG_CERTS ? { detail: e?.message || String(e) } : {}),
+    });
+  }
 });
 
 // GET /api/certificates/verify?hash=... (público)
@@ -47,22 +54,29 @@ certificatesPublic.get("/", async (req: Request, res: Response) => {
   const hash = String(req.query.hash || "").trim();
   if (!hash) return res.status(400).json({ error: "missing_hash" });
 
-  const { rows } = await pool.query(
-    `select id,
-            user_id,
-            course_id,
-            issued_at,
-            full_name,
-            asset_url as pdf_url,
-            serial,
-            serial_hash as hash
-       from certificate_issues
-      where serial_hash = $1
-      limit 1`,
-    [hash],
-  );
-  if (!rows.length) return res.status(404).json({ error: "not_found" });
-  return res.json(rows[0]);
+  try {
+    const { rows } = await pool.query(
+      `select id,
+              user_id,
+              course_id,
+              issued_at,
+              full_name,
+              asset_url as pdf_url,
+              serial,
+              serial_hash as hash
+         from certificate_issues
+        where serial_hash = $1
+        limit 1`,
+      [hash],
+    );
+    if (!rows.length) return res.status(404).json({ error: "not_found" });
+    return res.json(rows[0]);
+  } catch (e: any) {
+    return res.status(500).json({
+      error: "verify_failed",
+      ...(DEBUG_CERTS ? { detail: e?.message || String(e) } : {}),
+    });
+  }
 });
 
 // GET / — lista certificados emitidos ao aluno (novo + legado)
