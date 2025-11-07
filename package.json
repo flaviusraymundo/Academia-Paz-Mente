@@ -10,11 +10,13 @@
     "gen:jwt": "ts-node --transpile-only scripts/generate_jwt.ts"
   },
   "dependencies": {
+    "@sparticuz/chromium": "^127.0.0",
     "cors": "^2.8.5",
     "express": "^4.19.2",
     "helmet": "^7.0.0",
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
+    "puppeteer-core": "^22.10.0",
     "pg": "^8.11.3",
     "serverless-http": "^3.2.0",
     "stripe": "^16.0.0",

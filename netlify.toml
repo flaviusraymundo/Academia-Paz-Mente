@@ -4,7 +4,10 @@
 
 [functions]
   node_bundler = "esbuild"
-  external_node_modules = ["pg"]
+  external_node_modules = ["pg", "puppeteer-core", "@sparticuz/chromium"]
+
+[build.environment]
+  NODE_VERSION = "20"
 
 [[redirects]]
   from = "/api/*"
