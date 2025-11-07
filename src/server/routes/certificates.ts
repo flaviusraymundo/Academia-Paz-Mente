@@ -105,6 +105,9 @@ router.post("/:courseId/issue", requireAuth, async (req: Request, res: Response)
     return res.status(400).json({ error: "invalid_id", param: "courseId" });
   }
 
+  const reissue = String(req.query.reissue ?? "") === "1";
+  const keepIssuedAt = String(req.query.keepIssuedAt ?? "") === "1";
+
   const client = await pool.connect();
   try {
     await client.query("begin");
@@ -134,14 +137,20 @@ router.post("/:courseId/issue", requireAuth, async (req: Request, res: Response)
       return res.status(422).json({ error: "not_eligible" });
     }
 
+    const profileRes = await client.query<{ full_name: string | null }>(
+      `select full_name from profiles where user_id=$1 limit 1`,
+      [userId]
+    );
+    const fullName = profileRes.rows[0]?.full_name ?? null;
+
     await issueCertificate({
       client,
       userId,
       courseId,
       assetUrl: null,
-      fullName: null,
-      reissue: false,
-      keepIssuedAt: false,
+      fullName,
+      reissue,
+      keepIssuedAt,
     });
 
     const { rows } = await client.query(
