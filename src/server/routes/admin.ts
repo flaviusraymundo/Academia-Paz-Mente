@@ -43,15 +43,18 @@ router.post(
         })
       );
 
+      const base = process.env.APP_BASE_URL || `${req.protocol}://${req.get("host") ?? ""}`;
+      const verifyUrl = row.serial ? `${base}/api/certificates/verify/${row.serial}` : null;
+
       res.json({
         id: row.id,
         user_id: row.user_id,
         course_id: row.course_id,
         issued_at: row.issued_at,
-        pdf_url: row.pdf_url,
+        pdf_url: row.asset_url,
         serial: row.serial ?? null,
-        hash: row.hash ?? null,
-        verifyUrl: row.verifyUrl,
+        hash: row.serial_hash ?? null,
+        verifyUrl,
         forced: true,
         reissue,
         keepIssuedAt,
