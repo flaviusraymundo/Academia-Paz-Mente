@@ -69,11 +69,14 @@ export async function issueCertificate({
   const serialHash = needsNewSerial ? sha256(serial) : (existing.serial_hash as string);
 
   // Bases configuráveis
-  const BASE =
-    (process.env.APP_BASE_URL ||
-      process.env.SITE_URL ||
-      process.env.URL ||
-      "https://lifeflourishconsulting.com").replace(/\/+$/, "");
+  const BASE = (
+    process.env.APP_BASE_URL ||
+    process.env.SITE_URL ||
+    process.env.URL ||
+    "https://lifeflourishconsulting.com"
+  )
+    .replace(/\/+$/, "")
+    .replace(/^http:\/\//, "https://"); // força https
   const ASSET_BASE =
     (process.env.CERT_ASSET_BASE || `${BASE}/api/certificates`).replace(/\/+$/, "");
 
