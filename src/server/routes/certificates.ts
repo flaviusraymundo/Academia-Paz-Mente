@@ -137,10 +137,10 @@ certificatesPrivate.post("/:courseId/issue", async (req: AuthReq, res: Response)
       user_id: row.user_id,
       course_id: row.course_id,
       issued_at: row.issued_at,
-      pdf_url: row.asset_url,
+      pdf_url: row.pdf_url,
       serial: row.serial ?? null,
-      hash: row.serial_hash ?? null,
-      verifyUrl,
+      hash: row.hash ?? null,
+      verifyUrl: row.verifyUrl,
       reissue,
       keepIssuedAt,
     });
