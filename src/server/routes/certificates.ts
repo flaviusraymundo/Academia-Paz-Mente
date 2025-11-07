@@ -66,16 +66,30 @@ certificatesPrivate.get("/", async (req: AuthReq, res: Response) => {
   const userId = req.auth?.userId;
   if (!userId) return res.status(401).json({ error: "unauthorized" });
 
-  const sql = `
-    select course_id, asset_url as pdf_url, issued_at, serial, serial_hash as hash
-      from certificate_issues
-     where user_id = $1
-    union all
-    select course_id, pdf_url, issued_at, null::text as serial, hash
-      from certificates
-     where user_id = $1
-     order by issued_at desc
-  `;
+  const unique = String(req.query.unique || "") === "1";
+  const sql = unique
+    ? `
+      with merged as (
+        select course_id, asset_url as pdf_url, issued_at, serial, serial_hash as hash, 1 as prio
+          from certificate_issues where user_id = $1
+        union all
+        select course_id, pdf_url, issued_at, null::text as serial, hash, 2 as prio
+          from certificates where user_id = $1
+      )
+      select distinct on (course_id) course_id, pdf_url, issued_at, serial, hash
+        from merged
+       order by course_id, prio, issued_at desc
+    `
+    : `
+      select course_id, asset_url as pdf_url, issued_at, serial, serial_hash as hash
+        from certificate_issues
+       where user_id = $1
+      union all
+      select course_id, pdf_url, issued_at, null::text as serial, hash
+        from certificates
+       where user_id = $1
+       order by issued_at desc
+    `;
 
   try {
     const { rows } = await pool.query(sql, [userId]);
