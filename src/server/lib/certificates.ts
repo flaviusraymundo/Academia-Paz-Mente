@@ -24,9 +24,16 @@ export type CertificateIssueRow = {
   serial_hash: string | null;
 };
 
-function defaultCertificateUrl(userId: string, courseId: string): string {
-  return `https://lifeflourishconsulting.com/certificates/${userId}/${courseId}.pdf`;
-}
+export type CertificateIssueResult = {
+  id: string;
+  user_id: string;
+  course_id: string;
+  issued_at: Date;
+  pdf_url: string | null;
+  serial: string | null;
+  hash: string | null;
+  verifyUrl: string | null;
+};
 
 function sha256(value: string): string {
   return crypto.createHash("sha256").update(value).digest("hex");
@@ -40,7 +47,7 @@ export async function issueCertificate({
   assetUrl = null,
   reissue = false,
   keepIssuedAt = false,
-}: IssueArgs): Promise<CertificateIssueRow> {
+}: IssueArgs): Promise<CertificateIssueResult> {
   const current = await client.query<CertificateIssueRow>(
     `select id, user_id, course_id, asset_url, issued_at, full_name, serial, serial_hash
        from certificate_issues
@@ -61,7 +68,18 @@ export async function issueCertificate({
   const serial = needsNewSerial ? ulid() : (existing.serial as string);
   const serialHash = needsNewSerial ? sha256(serial) : (existing.serial_hash as string);
 
-  const fallbackUrl = defaultCertificateUrl(userId, courseId);
+  // Bases configuráveis
+  const BASE =
+    (process.env.APP_BASE_URL ||
+      process.env.SITE_URL ||
+      process.env.URL ||
+      "https://lifeflourishconsulting.com").replace(/\/+$/, "");
+  const ASSET_BASE =
+    (process.env.CERT_ASSET_BASE || `${BASE}/certificates`).replace(/\/+$/, "");
+
+  // URL final do PDF
+  const fallbackUrl = `${ASSET_BASE}/${userId}/${courseId}.pdf`;
+  const finalUrl = assetUrl || fallbackUrl;
   const finalAssetUrl =
     assetUrl ??
     (!existing
@@ -101,7 +119,7 @@ export async function issueCertificate({
     ]
   );
 
-  const row = rows[0];
+  const saved = rows[0];
 
   // Log de analytics opcional (ignora erro caso não exista tabela/events)
   try {
@@ -112,5 +130,17 @@ export async function issueCertificate({
     );
   } catch {}
 
-  return row;
+  const rowOut: CertificateIssueResult = {
+    id: saved.id,
+    user_id: saved.user_id,
+    course_id: saved.course_id,
+    issued_at: saved.issued_at,
+    // espelha o valor realmente persistido
+    pdf_url: finalAssetUrl,
+    serial: saved.serial ?? null,
+    hash: saved.serial_hash ?? null,
+    verifyUrl: saved.serial ? `${BASE}/api/certificates/verify/${saved.serial}` : null,
+  };
+
+  return rowOut;
 }

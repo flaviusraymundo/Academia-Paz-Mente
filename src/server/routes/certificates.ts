@@ -112,7 +112,9 @@ certificatesPrivate.post("/:courseId/issue", async (req: AuthReq, res: Response)
 
   const reissue = String(req.query.reissue || "") === "1";
   const keepIssuedAt = String(req.query.keepIssuedAt || "") === "1";
-  const fullName = typeof req.query.fullName === "string" ? req.query.fullName : undefined;
+  const fullNameQ =
+    typeof req.query.fullName === "string" ? req.query.fullName.trim() : undefined;
+  const fullName = fullNameQ && fullNameQ.length > 0 ? fullNameQ : undefined;
 
   try {
     const row = await withClient((client) =>
@@ -135,10 +137,10 @@ certificatesPrivate.post("/:courseId/issue", async (req: AuthReq, res: Response)
       user_id: row.user_id,
       course_id: row.course_id,
       issued_at: row.issued_at,
-      pdf_url: row.asset_url,
+      pdf_url: row.pdf_url,
       serial: row.serial ?? null,
-      hash: row.serial_hash ?? null,
-      verifyUrl,
+      hash: row.hash ?? null,
+      verifyUrl: row.verifyUrl,
       reissue,
       keepIssuedAt,
     });
