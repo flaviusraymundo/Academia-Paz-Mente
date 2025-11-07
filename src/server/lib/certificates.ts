@@ -135,7 +135,8 @@ export async function issueCertificate({
     user_id: saved.user_id,
     course_id: saved.course_id,
     issued_at: saved.issued_at,
-    pdf_url: finalUrl,
+    // espelha o valor realmente persistido
+    pdf_url: finalAssetUrl,
     serial: saved.serial ?? null,
     hash: saved.serial_hash ?? null,
     verifyUrl: saved.serial ? `${BASE}/api/certificates/verify/${saved.serial}` : null,
