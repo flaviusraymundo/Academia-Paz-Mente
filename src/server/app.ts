@@ -64,10 +64,9 @@ app.use("/api/checkout", requireAuth, checkoutRouter);
 app.use("/api/video", requireAuth, videoRouter);
 app.use("/api/quizzes", requireAuth, quizzesRouter);
 
-// Perfil/progresso (autenticado): estreita o guard para apenas "/api/me/*"
-// evitando capturar "/api/certificates/verify/*"
-app.use("/api/me", requireAuth, progressRouter); // /api/me/items, /api/me/entitlements, /api/me/progress
-app.use("/api/entitlements", entitlementsRouter);
+// Perfil/progresso (autenticado)
+app.use("/api", requireAuth, progressRouter);
+app.use("/api/entitlements", requireAuth, entitlementsRouter);
 
 // Admin (protegido) — por último
 app.use("/api/admin", requireAuth, requireAdmin, adminRouter);
