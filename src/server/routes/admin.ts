@@ -32,29 +32,32 @@ router.post(
     }
 
     try {
-      const { certificateUrl, serial } = await withClient((client) =>
-        issueCertificate({
-          client,
-          userId,
-          courseId,
-          fullName,
-          assetUrl: null,
-          reissue,
-          keepIssuedAt,
-        })
+      // 👉 Opcional: delegar para a mesma rotina usada na rota privada (se existir)
+      // import { issueCertificate } from "../lib/certificates.js";
+      // await withClient(async c => issueCertificate(c, { userId, courseId, reissue:false, keepIssuedAt:false }));
+
+      // 👉 Versão simples: upsert direto em certificate_issues (gera/ mantém serial/hash)
+      const { rows } = await pool.query(
+        `insert into certificate_issues(id, user_id, course_id, asset_url, issued_at, full_name, serial, serial_hash)
+         values (gen_random_uuid(), $1, $2, $3, now(), null,
+                 coalesce((select serial from certificate_issues where user_id=$1 and course_id=$2 limit 1),
+                          lpad(upper(to_hex(floor(extract(epoch from now())*1000)::bigint)), 26, '0')),
+                 coalesce((select serial_hash from certificate_issues where user_id=$1 and course_id=$2 limit 1),
+                          encode(digest($1||':'||$2||':'||now()::text,'sha256'),'hex')))
+         on conflict (user_id, course_id) do update
+           set asset_url = excluded.asset_url,
+               issued_at = excluded.issued_at
+         returning asset_url, serial, serial_hash`,
+        [userId, courseId, `https://lifeflourishconsulting.com/certificates/${userId}/${courseId}.pdf`]
       );
-      // (Opcional) evento analytics
-      try {
-        await pool.query(
-          `insert into events(id, kind, user_id, course_id, payload, created_at)
-           values (gen_random_uuid(), 'certificate_issued', $1, $2, $3::jsonb, now())`,
-          [userId, courseId, JSON.stringify({ certificateUrl, serial, reissue, keepIssuedAt })]
-        );
-      } catch {}
-      return res.json({ certificateUrl, serial, forced: true, reissue, keepIssuedAt });
-    } catch (e) {
+      const row = rows[0] || {};
+      res.json({ certificateUrl: row.asset_url || null, serial: row.serial || null, hash: row.serial_hash || null, forced:true });
+    } catch (e: any) {
       console.error("POST /api/admin/certificates.../issue error", e);
-      return res.status(500).json({ error: "server_error" });
+      if (process.env.DEBUG_CERTS === "1") {
+        return res.status(500).json({ error: "server_error", detail: String(e?.message || e) });
+      }
+      res.status(500).json({ error: "server_error" });
     }
   }
 );
