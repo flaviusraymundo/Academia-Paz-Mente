@@ -1,6 +1,6 @@
 // src/server/routes/certificates.ts
 import { Router, Request, Response } from "express";
-import { pool } from "../lib/db.js";
+import { pool, withClient } from "../lib/db.js";
 import { isUuid } from "../utils/ids.js";
 import { issueCertificate } from "../lib/certificates.js";
 
@@ -115,41 +115,38 @@ certificatesPrivate.post("/:courseId/issue", async (req: AuthReq, res: Response)
   const fullName = typeof req.query.fullName === "string" ? req.query.fullName : undefined;
 
   try {
-    await pool.query("begin");
-    await issueCertificate({
-      client: null, // compat: lib usa pool internamente ou recebe client opcional
-      userId,
-      courseId,
-      reissue,
-      keepIssuedAt,
-      fullName,
-    });
-
-    const { rows } = await pool.query(
-      `select id, user_id, course_id, asset_url as pdf_url, issued_at, serial, serial_hash as hash
-         from certificate_issues
-        where user_id = $1 and course_id = $2
-        order by issued_at desc
-        limit 1`,
-      [userId, courseId]
+    const row = await withClient((client) =>
+      issueCertificate({
+        client,
+        userId,
+        courseId,
+        reissue,
+        keepIssuedAt,
+        fullName,
+      })
     );
 
-    if (!rows.length) {
-      await pool.query("rollback");
-      return res.status(500).json({ error: "issue_failed" });
-    }
+    const base =
+      process.env.APP_BASE_URL || `${req.protocol}://${req.get("host") ?? ""}`;
+    const verifyUrl = row.serial ? `${base}/api/certificates/verify/${row.serial}` : null;
 
-    await pool.query("commit");
-    const row = rows[0];
-    const verifyBase = "/api/certificates/verify";
-    const verifyUrl = row.serial
-      ? `${verifyBase}/${row.serial}`
-      : `${verifyBase}?hash=${encodeURIComponent(row.hash)}`;
-
-    return res.json({ ...row, verifyUrl });
+    return res.json({
+      id: row.id,
+      user_id: row.user_id,
+      course_id: row.course_id,
+      issued_at: row.issued_at,
+      pdf_url: row.asset_url,
+      serial: row.serial ?? null,
+      hash: row.serial_hash ?? null,
+      verifyUrl,
+      reissue,
+      keepIssuedAt,
+    });
   } catch (e: any) {
-    try { await pool.query("rollback"); } catch {}
-    const detail = process.env.DEBUG_CERTS ? String(e?.message || e) : undefined;
-    return res.status(500).json(detail ? { error: "issue_failed", detail } : { error: "issue_failed" });
+    const detail = process.env.DEBUG_CERTS === "1" ? String(e?.message || e) : undefined;
+    if (detail) {
+      return res.status(500).json({ error: "issue_failed", detail });
+    }
+    return res.status(500).json({ error: "issue_failed" });
   }
 });
