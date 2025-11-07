@@ -21,9 +21,9 @@ router.post(
     const force = String(req.query.force ?? "") === "1";
     const reissue = String(req.query.reissue ?? "") === "1";
     const keepIssuedAt = String(req.query.keepIssuedAt ?? "") === "1";
-    const fullNameRaw =
-      typeof req.query.fullName === "string" ? req.query.fullName.trim() : "";
-    const fullName = fullNameRaw.length > 0 ? fullNameRaw : null;
+    const fullNameQ =
+      typeof req.query.fullName === "string" ? req.query.fullName.trim() : undefined;
+    const fullName = fullNameQ && fullNameQ.length > 0 ? fullNameQ : undefined;
     if (!isUuid(userId) || !isUuid(courseId)) {
       return res.status(400).json({ error: "invalid_ids" });
     }
@@ -39,22 +39,19 @@ router.post(
           courseId,
           reissue,
           keepIssuedAt,
-          fullName: fullName ?? undefined,
+          fullName,
         })
       );
-
-      const base = process.env.APP_BASE_URL || `${req.protocol}://${req.get("host") ?? ""}`;
-      const verifyUrl = row.serial ? `${base}/api/certificates/verify/${row.serial}` : null;
 
       res.json({
         id: row.id,
         user_id: row.user_id,
         course_id: row.course_id,
         issued_at: row.issued_at,
-        pdf_url: row.asset_url,
+        pdf_url: row.pdf_url,
         serial: row.serial ?? null,
-        hash: row.serial_hash ?? null,
-        verifyUrl,
+        hash: row.hash ?? null,
+        verifyUrl: row.verifyUrl,
         forced: true,
         reissue,
         keepIssuedAt,
