@@ -163,6 +163,106 @@ function escapeHtml(s: string): string {
     .replaceAll("'", "&#39;");
 }
 
+function isAdminRequest(req: Request): boolean {
+  if (process.env.ADMIN_OPEN === "1") return true;
+
+  const email = req.auth?.email?.toLowerCase() || "";
+  if (!email) return false;
+
+  const csv = (process.env.ADMIN_EMAILS || "").toLowerCase();
+  const allow = csv
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return allow.includes(email);
+}
+
+async function renderCertificatePdf(row: Row, res: Response): Promise<void> {
+  const fullName = row.full_name || "Aluno";
+  const courseTitle = row.course_title || "Curso";
+  const issuedAt = new Date(row.issued_at);
+  const city = "Florianópolis"; // sem ENVs, fixo
+
+  const html = buildHtml({ fullName, courseTitle, city, issuedAt });
+
+  const executablePath = await chromium.executablePath();
+  const browser = await puppeteer.launch({
+    args: chromium.args,
+    defaultViewport: chromium.defaultViewport,
+    executablePath,
+    headless: chromium.headless,
+  });
+
+  const page = await browser.newPage();
+  await page.setContent(html, { waitUntil: "networkidle0" });
+  const pdf = await page.pdf({
+    printBackground: true,
+    format: "A4",
+    margin: { top: "0mm", right: "0mm", bottom: "0mm", left: "0mm" },
+  });
+  await browser.close();
+
+  const serial = row.serial || "cert";
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `inline; filename="cert-${serial}.pdf"`);
+  res.setHeader("Cache-Control", "public, max-age=3600, s-maxage=3600");
+  res.status(200).send(pdf);
+}
+
+router.get("/:userId/:courseId.pdf", async (req: Request, res: Response) => {
+  const { userId, courseId } = req.params as { userId: string; courseId: string };
+  const qSerial = typeof req.query.serial === "string" ? req.query.serial : "";
+  const qHash = ((): string => {
+    const value = (req.query.h ?? req.query.hash) as string | undefined;
+    return typeof value === "string" ? value : "";
+  })();
+
+  const authUserId = req.auth?.userId;
+  let authorized = false;
+  if (authUserId && authUserId === userId) authorized = true;
+  if (!authorized && isAdminRequest(req)) authorized = true;
+
+  try {
+    if (!authorized) {
+      if (!qSerial && !qHash) return res.status(401).json({ error: "no_token" });
+
+      const { rows: authRows } = await pool.query(
+        `select 1
+           from certificate_issues
+          where user_id=$1 and course_id=$2
+            and ( ($3 <> '' and serial=$3) or ($4 <> '' and serial_hash=$4) )
+          limit 1`,
+        [userId, courseId, qSerial, qHash]
+      );
+      if (authRows.length === 0) return res.status(404).json({ error: "not_found" });
+    }
+
+    const q = await pool.query<Row>(
+      `
+      select
+        ci.user_id,
+        ci.course_id,
+        ci.full_name,
+        ci.issued_at,
+        ci.serial,
+        coalesce(c.title, '') as course_title
+      from certificate_issues ci
+      left join courses c on c.id = ci.course_id
+      where ci.user_id = $1 and ci.course_id = $2
+      limit 1
+      `,
+      [userId, courseId]
+    );
+    const row = q.rows[0];
+    if (!row) return res.status(404).send("not_found");
+
+    await renderCertificatePdf(row, res);
+  } catch (e) {
+    console.error("[certificates-pdf] render error", e);
+    return res.status(500).send("render_failed");
+  }
+});
+
 router.get("/:serial", async (req: Request, res: Response) => {
   const serial = String(req.params.serial || "").trim();
   if (!serial) return res.status(400).send("serial_required");
@@ -186,35 +286,7 @@ router.get("/:serial", async (req: Request, res: Response) => {
     );
     const row = q.rows[0];
     if (!row) return res.status(404).send("not_found");
-
-    const fullName = row.full_name || "Aluno";
-    const courseTitle = row.course_title || "Curso";
-    const issuedAt = new Date(row.issued_at);
-    const city = "Florianópolis"; // sem ENVs, fixo
-
-    const html = buildHtml({ fullName, courseTitle, city, issuedAt });
-
-    const executablePath = await chromium.executablePath();
-    const browser = await puppeteer.launch({
-      args: chromium.args,
-      defaultViewport: chromium.defaultViewport,
-      executablePath,
-      headless: chromium.headless,
-    });
-
-    const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: "networkidle0" });
-    const pdf = await page.pdf({
-      printBackground: true,
-      format: "A4",
-      margin: { top: "0mm", right: "0mm", bottom: "0mm", left: "0mm" },
-    });
-    await browser.close();
-
-    res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", `inline; filename="cert-${serial}.pdf"`);
-    res.setHeader("Cache-Control", "public, max-age=3600, s-maxage=3600");
-    return res.status(200).send(pdf);
+    await renderCertificatePdf(row, res);
   } catch (e) {
     console.error("[certificates-pdf] render error", e);
     return res.status(500).send("render_failed");
