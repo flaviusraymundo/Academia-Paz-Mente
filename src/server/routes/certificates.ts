@@ -8,10 +8,19 @@ import { issueCertificate } from "../lib/certificates.js";
 
 const DEBUG_CERTS = process.env.DEBUG_CERTS === "1";
 
-const router = Router();
+// Tipagem simples para req.auth sem precisar de @ts-expect-error
+interface AuthReq extends Request {
+  auth?: { userId?: string; roles?: string[] };
+}
+
+// Separa routers:
+// - Público: apenas /verify
+// - Privado (autenticado): emissão e listagem
+export const certificatesPublic = Router();
+export const certificatesPrivate = Router();
 
 // GET /api/certificates/verify/:serial (público)
-router.get("/verify/:serial", async (req: Request, res: Response) => {
+certificatesPublic.get("/:serial", async (req: Request, res: Response) => {
   const serial = String(req.params.serial || "").trim();
   if (!serial) return res.status(400).json({ error: "invalid_serial" });
 
@@ -34,7 +43,7 @@ router.get("/verify/:serial", async (req: Request, res: Response) => {
 });
 
 // GET /api/certificates/verify?hash=... (público)
-router.get("/verify", async (req: Request, res: Response) => {
+certificatesPublic.get("/", async (req: Request, res: Response) => {
   const hash = String(req.query.hash || "").trim();
   if (!hash) return res.status(400).json({ error: "missing_hash" });
 
@@ -57,9 +66,8 @@ router.get("/verify", async (req: Request, res: Response) => {
 });
 
 // GET / — lista certificados emitidos ao aluno (novo + legado)
-router.get("/", async (req: Request, res: Response) => {
-  // @ts-expect-error auth injetado via requireAuth no app.ts
-  const userId: string | undefined = req.auth?.userId;
+certificatesPrivate.get("/", async (req: AuthReq, res: Response) => {
+  const userId = req.auth?.userId;
   if (!userId) return res.status(401).json({ error: "unauthorized" });
 
   const sql = `
@@ -86,9 +94,8 @@ router.get("/", async (req: Request, res: Response) => {
 
 // POST /certificates/:courseId/issue
 // Regra: precisa entitlement e todos módulos do curso com status 'passed' ou 'completed'
-router.post("/:courseId/issue", async (req: Request, res: Response) => {
-  // @ts-expect-error auth injetado via requireAuth no app.ts
-  const userId: string | undefined = req.auth?.userId;
+certificatesPrivate.post("/:courseId/issue", async (req: AuthReq, res: Response) => {
+  const userId = req.auth?.userId;
   const { courseId } = req.params;
   const reissue = String(req.query.reissue ?? "") === "1";
   const keepIssuedAt = String(req.query.keepIssuedAt ?? "") === "1";
@@ -222,4 +229,8 @@ router.post("/:courseId/issue", async (req: Request, res: Response) => {
   }
 });
 
-export default router;
+// Exporta ambos
+export default {
+  certificatesPublic,
+  certificatesPrivate,
+};

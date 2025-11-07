@@ -11,7 +11,11 @@ import checkoutRouter from "./routes/checkout.js";
 import quizzesRouter from "./routes/quizzes.js";
 import progressRouter from "./routes/progress.js";
 import authRouter from "./routes/auth.js";
-import certificatesRouter from "./routes/certificates.js";
+import CertRouters from "./routes/certificates.js";
+const { certificatesPublic, certificatesPrivate } = CertRouters as {
+  certificatesPublic: import("express").Router;
+  certificatesPrivate: import("express").Router;
+};
 import eventsRouter from "./routes/events.js";
 import adminRouter from "./routes/admin.js";
 import { requireAuth } from "./middleware/auth.js";
@@ -55,9 +59,11 @@ app.use(["/catalog", "/api/catalog"], catalogRouter);
 app.use(["/events", "/api/events"], eventsRouter);
 
 // *** CERTIFICADOS ***
-// Deixe o router decidir o que é público (verify) e o que precisa de auth (issue).
-// IMPORTANTE: monte ANTES de qualquer guard genérico em "/api"!
-app.use("/api/certificates", certificatesRouter);
+// 1) Rotas públicas de verificação ANTES do guard genérico
+app.use("/api/certificates/verify", certificatesPublic);
+
+// 2) Demais rotas protegidas
+app.use("/api/certificates", requireAuth, certificatesPrivate);
 
 // Aluno (autenticado)
 app.use("/api/checkout", requireAuth, checkoutRouter);
@@ -65,8 +71,8 @@ app.use("/api/video", requireAuth, videoRouter);
 app.use("/api/quizzes", requireAuth, quizzesRouter);
 
 // Perfil/progresso (autenticado)
-app.use("/api", requireAuth, progressRouter);
 app.use("/api/entitlements", requireAuth, entitlementsRouter);
+app.use("/api", requireAuth, progressRouter);
 
 // Admin (protegido) — por último
 app.use("/api/admin", requireAuth, requireAdmin, adminRouter);
