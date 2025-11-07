@@ -38,6 +38,7 @@ function buildHtml(params: {
   return `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
+  <!-- templates/certificate.html -->
   <meta charset="UTF-8">
   <title>Certificado</title>
   <style>
@@ -57,20 +58,40 @@ function buildHtml(params: {
     .certificate::after{
       content:'';position:absolute;top:30px;left:30px;right:30px;bottom:30px;border:1px solid #80cbc4;pointer-events:none;
     }
-    .corner{position:absolute;width:80px;height:80px;border:2px solid #26a69a}
-    .corner::before,.corner::after{content:'';position:absolute;background:#4db6ac}
-    .corner-tl{top:25px;left:25px;border-right:none;border-bottom:none}
-    .corner-tl::before{width:30px;height:2px;top:15px;left:-2px}
-    .corner-tl::after{width:2px;height:30px;top:-2px;left:15px}
-    .corner-tr{top:25px;right:25px;border-left:none;border-bottom:none}
-    .corner-tr::before{width:30px;height:2px;top:15px;right:-2px}
-    .corner-tr::after{width:2px;height:30px;top:-2px;right:15px}
-    .corner-bl{bottom:25px;left:25px;border-right:none;border-top:none}
-    .corner-bl::before{width:30px;height:2px;bottom:15px;left:-2px}
-    .corner-bl::after{width:2px;height:30px;bottom:-2px;left:15px}
-    .corner-br{bottom:25px;right:25px;border-left:none;border-top:none}
-    .corner-br::before{width:30px;height:2px;bottom:15px;right:-2px}
-    .corner-br::after{width:2px;height:30px;bottom:-2px;right:15px}
+    /* ===== Corners dourados — 1 desenho, 4 rotações ===== */
+    :root{
+      --corner:78px;
+      --stroke:3px;
+      --gap:28px;
+      --gold:#b49a54;
+    }
+    .corner{
+      position:absolute;
+      width:var(--corner);
+      height:var(--corner);
+      color:var(--gold);
+    }
+    .corner::before,
+    .corner::after{
+      content:"";
+      position:absolute;
+      background:currentColor;
+      border-radius:2px;
+    }
+    .corner::before{
+      top:0;left:0;
+      width:100%;
+      height:var(--stroke);
+    }
+    .corner::after{
+      top:0;left:0;
+      width:var(--stroke);
+      height:100%;
+    }
+    .corner-tl{top:var(--gap);left:var(--gap);transform:rotate(0deg);transform-origin:0 0}
+    .corner-tr{top:var(--gap);right:var(--gap);transform:rotate(90deg);transform-origin:100% 0}
+    .corner-br{bottom:var(--gap);right:var(--gap);transform:rotate(180deg);transform-origin:100% 100%}
+    .corner-bl{bottom:var(--gap);left:var(--gap);transform:rotate(270deg);transform-origin:0 100%}
     .content{position:relative;z-index:1;text-align:center}
     .header{margin-bottom:30px}
     .title{font-size:48px;color:#26a69a;font-weight:bold;letter-spacing:4px;margin-bottom:10px;text-transform:uppercase}
@@ -98,8 +119,8 @@ function buildHtml(params: {
   <div class="certificate">
     <div class="corner corner-tl"></div>
     <div class="corner corner-tr"></div>
-    <div class="corner corner-bl"></div>
     <div class="corner corner-br"></div>
+    <div class="corner corner-bl"></div>
     <div class="content">
       <div class="header">
         <div class="title">Certificado</div>
