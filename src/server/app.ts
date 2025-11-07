@@ -11,11 +11,7 @@ import checkoutRouter from "./routes/checkout.js";
 import quizzesRouter from "./routes/quizzes.js";
 import progressRouter from "./routes/progress.js";
 import authRouter from "./routes/auth.js";
-import CertRouters from "./routes/certificates.js";
-const { certificatesPublic, certificatesPrivate } = CertRouters as {
-  certificatesPublic: import("express").Router;
-  certificatesPrivate: import("express").Router;
-};
+import { certificatesPublic, certificatesPrivate } from "./routes/certificates.js";
 import eventsRouter from "./routes/events.js";
 import adminRouter from "./routes/admin.js";
 import { requireAuth } from "./middleware/auth.js";
@@ -58,21 +54,20 @@ app.use(["/catalog", "/api/catalog"], catalogRouter);
 // Tracking público (se TRACK_PUBLIC=1, aceita sem JWT)
 app.use(["/events", "/api/events"], eventsRouter);
 
-// *** CERTIFICADOS ***
-// 1) Rotas públicas de verificação ANTES do guard genérico
-app.use("/api/certificates/verify", certificatesPublic);
-
-// 2) Demais rotas protegidas
-app.use("/api/certificates", requireAuth, certificatesPrivate);
-
 // Aluno (autenticado)
 app.use("/api/checkout", requireAuth, checkoutRouter);
 app.use("/api/video", requireAuth, videoRouter);
 app.use("/api/quizzes", requireAuth, quizzesRouter);
 
-// Perfil/progresso (autenticado)
-app.use("/api/entitlements", requireAuth, entitlementsRouter);
-app.use("/api", requireAuth, progressRouter);
+// Certificados: verificação pública deve vir ANTES do guard geral de /api
+app.use("/api/certificates/verify", certificatesPublic);
+
+// Demais endpoints públicos/abertos (se houver)
+app.use("/api/entitlements", entitlementsRouter);
+
+// Rotas privadas sob /api (guard)
+app.use("/api", requireAuth, progressRouter); // /api/me/*
+app.use("/api/certificates", requireAuth, certificatesPrivate);
 
 // Admin (protegido) — por último
 app.use("/api/admin", requireAuth, requireAdmin, adminRouter);
