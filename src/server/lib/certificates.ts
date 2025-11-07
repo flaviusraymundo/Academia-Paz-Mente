@@ -75,7 +75,7 @@ export async function issueCertificate({
       process.env.URL ||
       "https://lifeflourishconsulting.com").replace(/\/+$/, "");
   const ASSET_BASE =
-    (process.env.CERT_ASSET_BASE || `${BASE}/certificates`).replace(/\/+$/, "");
+    (process.env.CERT_ASSET_BASE || `${BASE}/api/certificates`).replace(/\/+$/, "");
 
   // URL final do PDF
   const fallbackUrl = `${ASSET_BASE}/${userId}/${courseId}.pdf`;
@@ -135,8 +135,7 @@ export async function issueCertificate({
     user_id: saved.user_id,
     course_id: saved.course_id,
     issued_at: saved.issued_at,
-    // espelha o valor realmente persistido
-    pdf_url: finalAssetUrl,
+    pdf_url: saved.asset_url, // o que foi persistido
     serial: saved.serial ?? null,
     hash: saved.serial_hash ?? null,
     verifyUrl: saved.serial ? `${BASE}/api/certificates/verify/${saved.serial}` : null,
