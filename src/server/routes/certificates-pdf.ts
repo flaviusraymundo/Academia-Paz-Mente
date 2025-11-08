@@ -203,9 +203,10 @@ async function renderCertificatePdf(row: Row, res: Response): Promise<void> {
   await page.emulateMediaType("print");
   await page.addStyleTag({
     content: `
-      @page { size: A4; margin: 0 }
+      @page{size:A4;margin:0}
       html,body{
-        background:#fff !important;
+        margin:0;
+        background:#fff;
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
       }
@@ -213,8 +214,10 @@ async function renderCertificatePdf(row: Row, res: Response): Promise<void> {
   });
   const pdf = await page.pdf({
     printBackground: true,
-    preferCSSPageSize: true
-    // não passe 'format'/'width'/'height' aqui; o @page controla o A4
+    preferCSSPageSize: true,
+    width: "210mm",
+    height: "297mm",
+    margin: { top: 0, right: 0, bottom: 0, left: 0 },
   });
   await browser.close();
 
