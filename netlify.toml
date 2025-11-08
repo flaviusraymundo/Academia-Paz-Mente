@@ -6,6 +6,10 @@
   node_bundler = "esbuild"
   external_node_modules = ["pg", "puppeteer-core", "@sparticuz/chromium"]
 
+[functions."*"]
+  # garante que os assets dos certificados vão junto no deploy das Functions
+  included_files = ["public/cert-templates/**", "public/images/**"]
+
 [build.environment]
   NODE_VERSION = "20"
 

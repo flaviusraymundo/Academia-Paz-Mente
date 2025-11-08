@@ -1,4 +1,7 @@
 // src/server/routes/certificates-pdf.ts
+import fs from "fs";
+import path from "path";
+import { Buffer } from "buffer";
 import { Router, Request, Response } from "express";
 import { pool } from "../lib/db.js";
 import chromium from "@sparticuz/chromium";
@@ -18,6 +21,99 @@ type Row = {
   course_title: string | null;
 };
 
+const TEMPLATE_PATH = path.join(process.cwd(), "public", "cert-templates", "elegant-classic-brand.html");
+const LOGO_PATH = path.join(process.cwd(), "public", "images", "logo.png");
+const DIRECTOR_NAME = process.env.CERT_DIRECTOR_NAME || "João Pedro Costa";
+const COORD_NAME = process.env.CERT_COORD_NAME || "Ana Carolina Lima";
+const VERIFY_BASE_URL = process.env.CERT_VERIFY_BASE_URL || "";
+const FALLBACK_QR_DATA_URL =
+  process.env.CERT_QR_PLACEHOLDER_DATA_URL ||
+  "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
+
+let templateCache: string | null = null;
+let logoDataUrlCache: string | null | undefined;
+
+function publicOrigin(req: Request) {
+  const proto =
+    (req.headers["x-forwarded-proto"] as string) ||
+    (req as any).protocol ||
+    "https";
+  const host =
+    (req.headers["x-forwarded-host"] as string) ||
+    req.get("host") ||
+    "localhost";
+  return `${proto}://${host}`.replace(/\/+$/i, "");
+}
+
+async function loadCertTemplate(req: Request): Promise<string> {
+  if (templateCache) return templateCache;
+
+  try {
+    templateCache = fs.readFileSync(TEMPLATE_PATH, "utf8");
+    return templateCache;
+  } catch {
+    const url = `${publicOrigin(req)}/cert-templates/elegant-classic-brand.html`;
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`template_fetch_failed:${response.status}`);
+    }
+    const html = await response.text();
+    templateCache = html;
+    return html;
+  }
+}
+
+async function loadLogoDataUrl(req: Request): Promise<string | null> {
+  if (logoDataUrlCache !== undefined) {
+    return logoDataUrlCache;
+  }
+
+  try {
+    const buf = fs.readFileSync(LOGO_PATH);
+    logoDataUrlCache = `data:image/png;base64,${buf.toString("base64")}`;
+    return logoDataUrlCache;
+  } catch {
+    try {
+      const response = await fetch(`${publicOrigin(req)}/images/logo.png`);
+      if (!response.ok) {
+        logoDataUrlCache = null;
+        return logoDataUrlCache;
+      }
+      const arr = await response.arrayBuffer();
+      const buf = Buffer.from(arr);
+      logoDataUrlCache = `data:image/png;base64,${buf.toString("base64")}`;
+      return logoDataUrlCache;
+    } catch {
+      logoDataUrlCache = null;
+      return logoDataUrlCache;
+    }
+  }
+}
+
+async function inlineLogo(html: string, req: Request): Promise<string> {
+  const dataUrl = await loadLogoDataUrl(req);
+  if (!dataUrl) return html;
+
+  return html
+    .replace(/src=(["'])\/images\/logo\.png\1/gi, (_match, quote: string) => `src=${quote}${dataUrl}${quote}`)
+    .replace(/src=\/images\/logo\.png/gi, `src="${dataUrl}"`);
+}
+
+function ensureBaseHref(html: string, origin: string): string {
+  if (!origin) return html;
+  if (/<base\s+[^>]*href=/i.test(html)) return html;
+
+  const normalized = origin.endsWith("/") ? origin : `${origin}/`;
+  const baseTag = `<base href="${normalized}">`;
+  const headRe = /<head([^>]*)>/i;
+
+  if (headRe.test(html)) {
+    return html.replace(headRe, `<head$1>${baseTag}`);
+  }
+
+  return `<head>${baseTag}</head>${html}`;
+}
+
 function formatPtBrDate(d: Date): string {
   const parts = new Intl.DateTimeFormat("pt-BR", {
     day: "2-digit",
@@ -28,133 +124,57 @@ function formatPtBrDate(d: Date): string {
   return parts;
 }
 
-function buildHtml(params: {
+function replacePlaceholders(template: string, replacements: Record<string, string>): string {
+  let output = template;
+  for (const [token, value] of Object.entries(replacements)) {
+    output = output.replaceAll(`{{${token}}}`, value);
+  }
+  return output;
+}
+
+function sanitizeUrl(url: string): string {
+  if (!url) return "";
+  try {
+    return new URL(url).toString();
+  } catch {
+    return "";
+  }
+}
+
+function buildVerifyUrl(serial: string): string {
+  if (!serial || !VERIFY_BASE_URL) return "";
+  const base = VERIFY_BASE_URL.endsWith("/") ? VERIFY_BASE_URL.slice(0, -1) : VERIFY_BASE_URL;
+  return `${base}/${encodeURIComponent(serial)}`;
+}
+
+function buildHtml(template: string, params: {
   fullName: string;
   courseTitle: string;
   city: string;
   issuedAt: Date;
+  serial: string;
+  verifyUrl: string;
+  qrDataUrl: string;
+  directorName?: string;
+  coordinatorName?: string;
 }): string {
-  const { fullName, courseTitle, city, issuedAt } = params;
-  const issuedStr = `${city}, ${formatPtBrDate(issuedAt)}`;
+  const issuedDateStr = formatPtBrDate(params.issuedAt);
 
-  // Template fornecido pelo usuário, com placeholders injetados
-  return `<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <!-- templates/certificate.html -->
-  <meta charset="UTF-8">
-  <title>Certificado</title>
-  <style>
-    *{margin:0;padding:0;box-sizing:border-box}
-    body{
-      font-family:'Georgia', serif;
-      background:linear-gradient(135deg,#e0f2f1 0%,#b2dfdb 100%);
-      display:flex;justify-content:center;align-items:center;min-height:100vh;padding:20px;
-    }
-    .certificate{
-      width:900px;background:#fff;padding:60px;position:relative;
-      box-shadow:0 10px 40px rgba(0,0,0,.2);
-    }
-    .certificate::before{
-      content:'';position:absolute;top:20px;left:20px;right:20px;bottom:20px;border:3px solid #26a69a;pointer-events:none;
-    }
-    .certificate::after{
-      content:'';position:absolute;top:30px;left:30px;right:30px;bottom:30px;border:1px solid #80cbc4;pointer-events:none;
-    }
-    /* ===== Corners dourados — 1 desenho, 4 rotações ===== */
-    :root{
-      --corner:78px;
-      --stroke:3px;
-      --gap:28px;
-      --gold:#b49a54;
-    }
-    .corner{
-      position:absolute;
-      width:var(--corner);
-      height:var(--corner);
-      color:var(--gold);
-    }
-    .corner::before,
-    .corner::after{
-      content:"";
-      position:absolute;
-      background:currentColor;
-      border-radius:2px;
-    }
-    .corner::before{
-      top:0;left:0;
-      width:100%;
-      height:var(--stroke);
-    }
-    .corner::after{
-      top:0;left:0;
-      width:var(--stroke);
-      height:100%;
-    }
-    .corner-tl{top:var(--gap);left:var(--gap);transform:rotate(0deg);transform-origin:0 0}
-    .corner-tr{top:var(--gap);right:var(--gap);transform:rotate(90deg);transform-origin:100% 0}
-    .corner-br{bottom:var(--gap);right:var(--gap);transform:rotate(180deg);transform-origin:100% 100%}
-    .corner-bl{bottom:var(--gap);left:var(--gap);transform:rotate(270deg);transform-origin:0 100%}
-    .content{position:relative;z-index:1;text-align:center}
-    .header{margin-bottom:30px}
-    .title{font-size:48px;color:#26a69a;font-weight:bold;letter-spacing:4px;margin-bottom:10px;text-transform:uppercase}
-    .subtitle{font-size:18px;color:#4db6ac;font-style:italic}
-    .divider{width:200px;height:2px;background:linear-gradient(to right,transparent,#26a69a,transparent);margin:30px auto}
-    .body-text{font-size:16px;color:#333;line-height:1.8;margin:20px 0}
-    .recipient-name{font-size:36px;color:#26a69a;font-weight:bold;margin:30px 0;font-style:italic;text-decoration:underline;text-decoration-color:#80cbc4;text-underline-offset:8px}
-    .achievement{font-size:18px;color:#555;margin:25px auto;line-height:1.6;max-width:600px}
-    .footer{margin-top:50px;display:flex;justify-content:space-around;align-items:flex-end}
-    .signature-block{text-align:center}
-    .signature-line{width:200px;height:1px;background:#26a69a;margin:40px auto 10px}
-    .signature-name{font-size:16px;color:#333;font-weight:bold}
-    .signature-title{font-size:14px;color:#666;font-style:italic}
-    .date{font-size:14px;color:#666;margin-top:30px}
-    .seal{
-      position:absolute;bottom:50px;right:80px;width:80px;height:80px;border:3px solid #26a69a;border-radius:50%;
-      display:flex;align-items:center;justify-content:center;font-size:12px;color:#26a69a;font-weight:bold;transform:rotate(-15deg);
-      background:rgba(38,166,154,.05)
-    }
-    @page{size:A4;margin:0}
-    html,body{height:auto}
-  </style>
-</head>
-<body>
-  <div class="certificate">
-    <div class="corner corner-tl"></div>
-    <div class="corner corner-tr"></div>
-    <div class="corner corner-br"></div>
-    <div class="corner corner-bl"></div>
-    <div class="content">
-      <div class="header">
-        <div class="title">Certificado</div>
-        <div class="subtitle">de Conclusão</div>
-      </div>
-      <div class="divider"></div>
-      <div class="body-text">Certificamos que</div>
-      <div class="recipient-name">${escapeHtml(fullName)}</div>
-      <div class="achievement">
-        Concluiu com êxito o curso de <strong>${escapeHtml(courseTitle)}</strong>,
-        demonstrando excelente desempenho e dedicação durante o período de aprendizado.
-      </div>
-      <div class="divider"></div>
-      <div class="footer">
-        <div class="signature-block">
-          <div class="signature-line"></div>
-          <div class="signature-name">João Pedro Costa</div>
-          <div class="signature-title">Diretor Acadêmico</div>
-        </div>
-        <div class="signature-block">
-          <div class="signature-line"></div>
-          <div class="signature-name">Ana Carolina Lima</div>
-          <div class="signature-title">Coordenadora do Curso</div>
-        </div>
-      </div>
-      <div class="date">${escapeHtml(issuedStr)}</div>
-    </div>
-    <div class="seal">SELO<br>OFICIAL</div>
-  </div>
-</body>
-</html>`;
+  const replacements: Record<string, string> = {
+    SERIAL: escapeHtml(params.serial),
+    FULL_NAME: escapeHtml(params.fullName),
+    COURSE_TITLE: escapeHtml(params.courseTitle),
+    DIRECTOR_NAME: escapeHtml(params.directorName || DIRECTOR_NAME),
+    COORD_NAME: escapeHtml(params.coordinatorName || COORD_NAME),
+    ISSUED_DATE_BR: escapeHtml(issuedDateStr),
+    QR_DATA_URL: params.qrDataUrl || FALLBACK_QR_DATA_URL,
+    VERIFY_URL: escapeHtml(sanitizeUrl(params.verifyUrl)),
+  };
+
+  let html = template.replace("Florianópolis,", `${escapeHtml(params.city)},`);
+  html = replacePlaceholders(html, replacements);
+
+  return html;
 }
 
 function escapeHtml(s: string): string {
@@ -180,13 +200,26 @@ function isAdminRequest(req: Request): boolean {
   return allow.includes(email);
 }
 
-async function renderCertificatePdf(row: Row, res: Response): Promise<void> {
+async function renderCertificatePdf(row: Row, req: Request, res: Response): Promise<void> {
   const fullName = row.full_name || "Aluno";
   const courseTitle = row.course_title || "Curso";
   const issuedAt = new Date(row.issued_at);
-  const city = "Florianópolis"; // sem ENVs, fixo
-
-  const html = buildHtml({ fullName, courseTitle, city, issuedAt });
+  const city = process.env.CERT_CITY || "Florianópolis";
+  const serial = row.serial || "cert";
+  const verifyUrl = buildVerifyUrl(serial);
+  const template = await loadCertTemplate(req);
+  const origin = publicOrigin(req);
+  const withLogo = await inlineLogo(template, req);
+  const templateWithBase = ensureBaseHref(withLogo, origin);
+  const html = buildHtml(templateWithBase, {
+    fullName,
+    courseTitle,
+    city,
+    issuedAt,
+    serial,
+    verifyUrl,
+    qrDataUrl: FALLBACK_QR_DATA_URL,
+  });
 
   const executablePath = await chromium.executablePath();
   const browser = await puppeteer.launch({
@@ -198,41 +231,23 @@ async function renderCertificatePdf(row: Row, res: Response): Promise<void> {
 
   const page = await browser.newPage();
   await page.setContent(html, { waitUntil: "networkidle0" });
-  await page.waitForSelector("#certificate, #cert-root, body", {
+  await page.waitForSelector(".sheet", {
     visible: true,
     timeout: 10_000,
   });
+  await page.emulateMediaType("print");
   await page.evaluate(async () => {
     if ((document as any).fonts?.ready) {
       await (document as any).fonts.ready;
     }
   });
-  await page.emulateMediaType("print");
-  await page.addStyleTag({
-    content: `
-      :root{ color-scheme: light; }
-      *{ -webkit-print-color-adjust:exact; print-color-adjust:exact }
-      html,body{ margin:0; padding:0; background:#fff !important }
-      @page{ size:210mm 297mm; margin:0 }
-      @media print{
-        html,body{ height:297mm }
-        body{ display:block !important; min-height:auto !important; }
-        .certificate { width:190mm !important; height:277mm !important; margin:10mm auto !important; box-shadow:none !important; }
-      }
-    `,
-  });
-  await page.setViewport({ width: 794, height: 1123, deviceScaleFactor: 2 }); // A4 @96dpi
   const pdf = await page.pdf({
-    width: "210mm",
-    height: "297mm",
     printBackground: true,
-    preferCSSPageSize: false,
+    preferCSSPageSize: true,
     pageRanges: "1",
-    margin: { top: 0, right: 0, bottom: 0, left: 0 },
   });
   await browser.close();
 
-  const serial = row.serial || "cert";
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `inline; filename="cert-${serial}.pdf"`);
   res.setHeader("Cache-Control", "public, max-age=3600, s-maxage=3600");
@@ -325,7 +340,7 @@ router.get("/:userId/:courseId.pdf", async (req: Request, res: Response) => {
     const row = q.rows[0];
     if (!row) return res.status(404).send("not_found");
 
-    await renderCertificatePdf(row, res);
+    await renderCertificatePdf(row, req, res);
   } catch (e) {
     console.error("[certificates-pdf] render error", e);
     return res.status(500).send("render_failed");
@@ -370,7 +385,7 @@ router.get("/:serial", async (req: Request, res: Response) => {
     );
     const row = q.rows[0];
     if (!row) return res.status(404).send("not_found");
-    await renderCertificatePdf(row, res);
+    await renderCertificatePdf(row, req, res);
   } catch (e) {
     console.error("[certificates-pdf] render error", e);
     return res.status(500).send("render_failed");

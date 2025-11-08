@@ -6,14 +6,19 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
-    html,body{height:100%}
-    body{
-      font-family:"Georgia","Times New Roman",serif;color:#222;
-      background:
-        radial-gradient(1200px 800px at 50% -10%, #ffffff 30%, #f7f7f5 100%),
-        linear-gradient(180deg,#f5f5f3 0%,#f1f1ee 100%);
-      display:flex;align-items:center;justify-content:center;padding:24px;
+    /* Tela: centrado e 100% só no screen */
+    @media screen{
+      html,body{height:100%}
+      body{
+        font-family:"Georgia","Times New Roman",serif;color:#222;
+        background:
+          radial-gradient(1200px 800px at 50% -10%, #ffffff 30%, #f7f7f5 100%),
+          linear-gradient(180deg,#f5f5f3 0%,#f1f1ee 100%);
+        display:flex;align-items:center;justify-content:center;padding:24px;
+      }
     }
+    /* Base comum */
+    body{font-family:"Georgia","Times New Roman",serif;color:#222}
     .sheet{
       width:900px;background:#fff;position:relative;padding:72px 72px 84px;
       box-shadow:0 18px 48px rgba(0,0,0,.18);isolation:isolate;border-radius:6px;
@@ -93,8 +98,13 @@
 
     @page{size:A4;margin:0}
     @media print{
-      body{background:#fff;box-shadow:none;padding:0}
-      .sheet{box-shadow:none;width:210mm;min-height:297mm;margin:0 auto}
+      html,body{height:auto !important;min-height:0 !important}
+      body{display:block !important;background:#fff !important;box-shadow:none !important;padding:0 !important}
+      .sheet{
+        width:210mm !important;height:297mm !important;min-height:0 !important;
+        margin:0 auto !important;box-shadow:none !important;page-break-inside:avoid;page-break-after:avoid
+      }
+      *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
     }
   </style>
 </head>
