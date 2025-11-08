@@ -9,7 +9,9 @@ import { issueCertificate } from "../lib/certificates.js";
 function publicBase(req: Request) {
   const env = (process.env.APP_BASE_URL || process.env.URL || "").trim().replace(/\/+$/, "");
   if (env) return env; // Produção: use o domínio principal configurado pelo Netlify (URL) ou APP_BASE_URL
-  const host = req.get("host") || (req.headers["x-forwarded-host"] as string) || "";
+  // Prefira cabeçalhos do proxy. Só caia para Host local se necessário.
+  const fHost = (req.headers["x-forwarded-host"] as string) || "";
+  const host = fHost || req.get("host") || "";
   const proto = (req.headers["x-forwarded-proto"] as string) || req.protocol || "https";
   return `${proto}://${host}`;
 }

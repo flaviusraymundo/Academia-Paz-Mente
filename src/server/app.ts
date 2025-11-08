@@ -21,6 +21,7 @@ import entitlementsRouter from "./routes/entitlements.js";
 import { attachAuthIfPresent } from "./middleware/auth-optional.js";
 
 const app = express();
+app.set("trust proxy", true); // faz req.protocol/hostname respeitarem x-forwarded-*
 
 app.use(helmet());
 app.use(morgan("combined"));
