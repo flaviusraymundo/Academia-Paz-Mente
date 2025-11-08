@@ -1,5 +1,5 @@
 // src/server/routes/certificates-pdf.ts
-import { readFileSync } from "fs";
+import fs from "fs";
 import path from "path";
 import { Router, Request, Response } from "express";
 import { pool } from "../lib/db.js";
@@ -30,6 +30,36 @@ const FALLBACK_QR_DATA_URL =
 
 let templateCache: string | null = null;
 
+function publicOrigin(req: Request) {
+  const proto =
+    (req.headers["x-forwarded-proto"] as string) ||
+    (req as any).protocol ||
+    "https";
+  const host =
+    (req.headers["x-forwarded-host"] as string) ||
+    req.get("host") ||
+    "localhost";
+  return `${proto}://${host}`.replace(/\/+$/i, "");
+}
+
+async function loadCertTemplate(req: Request): Promise<string> {
+  if (templateCache) return templateCache;
+
+  try {
+    templateCache = fs.readFileSync(TEMPLATE_PATH, "utf8");
+    return templateCache;
+  } catch {
+    const url = `${publicOrigin(req)}/cert-templates/elegant-classic-brand.html`;
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`template_fetch_failed:${response.status}`);
+    }
+    const html = await response.text();
+    templateCache = html;
+    return html;
+  }
+}
+
 function formatPtBrDate(d: Date): string {
   const parts = new Intl.DateTimeFormat("pt-BR", {
     day: "2-digit",
@@ -38,13 +68,6 @@ function formatPtBrDate(d: Date): string {
   }).format(d);
   // Ex.: "07 de novembro de 2025"
   return parts;
-}
-
-function getTemplate(): string {
-  if (!templateCache) {
-    templateCache = readFileSync(TEMPLATE_PATH, "utf8");
-  }
-  return templateCache;
 }
 
 function replacePlaceholders(template: string, replacements: Record<string, string>): string {
@@ -70,7 +93,7 @@ function buildVerifyUrl(serial: string): string {
   return `${base}/${encodeURIComponent(serial)}`;
 }
 
-function buildHtml(params: {
+function buildHtml(template: string, params: {
   fullName: string;
   courseTitle: string;
   city: string;
@@ -81,7 +104,6 @@ function buildHtml(params: {
   directorName?: string;
   coordinatorName?: string;
 }): string {
-  const template = getTemplate();
   const issuedDateStr = formatPtBrDate(params.issuedAt);
 
   const replacements: Record<string, string> = {
@@ -124,14 +146,15 @@ function isAdminRequest(req: Request): boolean {
   return allow.includes(email);
 }
 
-async function renderCertificatePdf(row: Row, res: Response): Promise<void> {
+async function renderCertificatePdf(row: Row, req: Request, res: Response): Promise<void> {
   const fullName = row.full_name || "Aluno";
   const courseTitle = row.course_title || "Curso";
   const issuedAt = new Date(row.issued_at);
   const city = process.env.CERT_CITY || "Florianópolis";
   const serial = row.serial || "cert";
   const verifyUrl = buildVerifyUrl(serial);
-  const html = buildHtml({
+  const template = await loadCertTemplate(req);
+  const html = buildHtml(template, {
     fullName,
     courseTitle,
     city,
@@ -260,7 +283,7 @@ router.get("/:userId/:courseId.pdf", async (req: Request, res: Response) => {
     const row = q.rows[0];
     if (!row) return res.status(404).send("not_found");
 
-    await renderCertificatePdf(row, res);
+    await renderCertificatePdf(row, req, res);
   } catch (e) {
     console.error("[certificates-pdf] render error", e);
     return res.status(500).send("render_failed");
@@ -305,7 +328,7 @@ router.get("/:serial", async (req: Request, res: Response) => {
     );
     const row = q.rows[0];
     if (!row) return res.status(404).send("not_found");
-    await renderCertificatePdf(row, res);
+    await renderCertificatePdf(row, req, res);
   } catch (e) {
     console.error("[certificates-pdf] render error", e);
     return res.status(500).send("render_failed");
