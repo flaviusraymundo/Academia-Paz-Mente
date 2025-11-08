@@ -68,6 +68,9 @@ app.use("/api/quizzes", requireAuth, quizzesRouter);
 app.use("/api/certificates/verify", certificatesPublic);
 app.use("/api/certificates", attachAuthIfPresent, certificatesPdf);
 
+// Alias legado para clientes que antes usavam /api/certificates-pdf/:serial
+app.use("/api/certificates-pdf", attachAuthIfPresent, certificatesPdf);
+
 // Demais endpoints públicos/abertos (se houver)
 app.use("/api/entitlements", entitlementsRouter);
 

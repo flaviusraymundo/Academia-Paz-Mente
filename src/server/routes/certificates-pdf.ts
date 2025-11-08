@@ -275,4 +275,128 @@ router.get("/:userId/:courseId.pdf", async (req: Request, res: Response) => {
   await renderCertificatePdf(row, res);
 });
 
+/* =========================================================
+ * ADMIN: Reintroduz busca por SERIAL em dois formatos
+ *  1) /serial/:serial.pdf  (canônico novo)
+ *  2) /:serial             (legado para compatibilidade)
+ * Ambos exigem bearer de admin (ou ADMIN_OPEN=1) e NÃO usam hash.
+ * Suporte a ?dbg=1 para inspecionar HTML (retorna JSON).
+ * ========================================================= */
+
+// Helper para carregar linha por serial
+async function loadBySerial(serial: string): Promise<Row | null> {
+  const q = await pool.query<Row>(
+    `select
+        ci.user_id,
+        ci.course_id,
+        ci.full_name,
+        ci.issued_at,
+        ci.serial,
+        coalesce(c.title, '') as course_title
+       from certificate_issues ci
+       left join courses c on c.id = ci.course_id
+      where ci.serial = $1
+      limit 1`,
+    [serial]
+  );
+  return q.rows[0] ?? null;
+}
+
+type AdminGuard =
+  | { ok: true }
+  | { ok: false; response: { error: "unauthorized"; reason: "admin_only"; hasBearer: boolean } };
+
+function ensureAdmin(req: Request): AdminGuard {
+  const hasBearer = Boolean((req.headers.authorization || "").startsWith("Bearer "));
+  const auth = (req as any).auth as MaybeAuth | undefined;
+  const adminByEnv = isAdminRequest(req);
+  const isAdmin = Boolean(auth?.isAdmin) || adminByEnv;
+  if (!isAdmin) {
+    const payload = { error: "unauthorized", reason: "admin_only", hasBearer };
+    return { ok: false as const, response: payload };
+  }
+  return { ok: true as const };
+}
+
+// Novo caminho explícito
+router.get("/serial/:serial.pdf", async (req: Request, res: Response) => {
+  const serial = String(req.params.serial || "").trim();
+  const dbg = String(req.query.dbg || req.query.debug || "") === "1";
+  if (!serial) return res.status(400).send("serial_required");
+
+  const adm = ensureAdmin(req);
+  if (!adm.ok) {
+    return dbg
+      ? res.status(401).json(adm.response)
+      : res.status(401).send("no_token");
+  }
+
+  try {
+    const row = await loadBySerial(serial);
+    if (!row) return res.status(404).send("not_found");
+
+    if (dbg) {
+      const html = buildHtml({
+        fullName: row.full_name || "Aluno",
+        courseTitle: row.course_title || "Curso",
+        city: "Florianópolis",
+        issuedAt: new Date(row.issued_at),
+      });
+      return res.json({
+        debug: true,
+        serial: row.serial,
+        userId: row.user_id,
+        courseId: row.course_id,
+        htmlLength: html.length,
+        htmlSnippet: html.slice(0, 800),
+      });
+    }
+
+    await renderCertificatePdf(row, res);
+  } catch (e) {
+    console.error("[certificates-pdf] /serial/:serial.pdf error", e);
+    return res.status(500).send("render_failed");
+  }
+});
+
+// Caminho legado simples /:serial  (mantido por compat; pode ser removido no futuro)
+router.get("/:serial", async (req: Request, res: Response) => {
+  const serial = String(req.params.serial || "").trim();
+  const dbg = String(req.query.dbg || req.query.debug || "") === "1";
+  if (!serial) return res.status(400).send("serial_required");
+
+  const adm = ensureAdmin(req);
+  if (!adm.ok) {
+    return dbg
+      ? res.status(401).json(adm.response)
+      : res.status(401).send("no_token");
+  }
+
+  try {
+    const row = await loadBySerial(serial);
+    if (!row) return res.status(404).send("not_found");
+
+    if (dbg) {
+      const html = buildHtml({
+        fullName: row.full_name || "Aluno",
+        courseTitle: row.course_title || "Curso",
+        city: "Florianópolis",
+        issuedAt: new Date(row.issued_at),
+      });
+      return res.json({
+        debug: true,
+        serial: row.serial,
+        userId: row.user_id,
+        courseId: row.course_id,
+        htmlLength: html.length,
+        htmlSnippet: html.slice(0, 800),
+      });
+    }
+    await renderCertificatePdf(row, res);
+  } catch (e) {
+    console.error("[certificates-pdf] /:serial error", e);
+    return res.status(500).send("render_failed");
+  }
+});
+
 export default router;
