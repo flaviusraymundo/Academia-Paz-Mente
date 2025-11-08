@@ -297,6 +297,21 @@ router.get("/:serial", async (req: Request, res: Response) => {
   const serial = String(req.params.serial || "").trim();
   if (!serial) return res.status(400).send("serial_required");
 
+  const dbg = String(req.query.dbg || req.query.debug || "") === "1";
+  const hasBearer = Boolean((req.headers.authorization || "").startsWith("Bearer "));
+  const auth = (req as any).auth as MaybeAuth | undefined;
+  const adminByEnv = isAdminRequest(req);
+  const isAdmin = Boolean(auth?.isAdmin) || adminByEnv;
+
+  if (!isAdmin) {
+    const payload = {
+      error: "unauthorized",
+      reason: "admin_only",
+      hasBearer,
+    };
+    return res.status(401).json(dbg ? payload : { error: "no_token" });
+  }
+
   try {
     const q = await pool.query<Row>(
       `
