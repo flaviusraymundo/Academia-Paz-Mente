@@ -209,9 +209,9 @@ async function renderCertificatePdf(row: Row, req: Request, res: Response): Prom
   const verifyUrl = buildVerifyUrl(serial);
   const template = await loadCertTemplate(req);
   const origin = publicOrigin(req);
-  const withLogo = await inlineLogo(template, req);
-  const templateWithBase = ensureBaseHref(withLogo, origin);
-  const html = buildHtml(templateWithBase, {
+  const templateWithBase = ensureBaseHref(template, origin);
+  const withLogo = await inlineLogo(templateWithBase, req);
+  const htmlDoc = buildHtml(withLogo, {
     fullName,
     courseTitle,
     city,
@@ -230,28 +230,70 @@ async function renderCertificatePdf(row: Row, req: Request, res: Response): Prom
   });
 
   const page = await browser.newPage();
-  await page.setContent(html, { waitUntil: "networkidle0" });
-  await page.waitForSelector(".sheet", {
-    visible: true,
-    timeout: 10_000,
-  });
-  await page.emulateMediaType("print");
-  await page.evaluate(async () => {
-    if ((document as any).fonts?.ready) {
-      await (document as any).fonts.ready;
+  let browserClosed = false;
+  try {
+    await page.setContent(htmlDoc, { waitUntil: "networkidle0" });
+    await page.waitForSelector(".sheet", {
+      visible: true,
+      timeout: 10_000,
+    });
+    await page.evaluate(async () => {
+      try {
+        if ((document as any).fonts?.ready) {
+          await (document as any).fonts.ready;
+        }
+      } catch (_) {
+        /* ignore */
+      }
+    });
+    await page.emulateMediaType("print");
+    await page.addStyleTag({
+      content: `
+    @page{ size:A4; margin:0 }
+    @media print{
+      html,body{ height:auto !important; min-height:0 !important }
+      body{ display:block !important; background:#fff !important; padding:0 !important; box-shadow:none !important }
+      .sheet{ width:210mm !important; height:297mm !important; min-height:0 !important; margin:0 auto !important; box-shadow:none !important; page-break-inside:avoid; page-break-after:avoid }
+      #stage,.stage,.container{ position:static !important; transform:none !important }
+      *{-webkit-print-color-adjust:exact; print-color-adjust:exact}
     }
-  });
-  const pdf = await page.pdf({
-    printBackground: true,
-    preferCSSPageSize: true,
-    pageRanges: "1",
-  });
-  await browser.close();
+  `,
+    });
 
-  res.setHeader("Content-Type", "application/pdf");
-  res.setHeader("Content-Disposition", `inline; filename="cert-${serial}.pdf"`);
-  res.setHeader("Cache-Control", "public, max-age=3600, s-maxage=3600");
-  res.status(200).send(pdf);
+    if (String(req.query.shot || "") === "1") {
+      const png = await page.screenshot({ fullPage: true, type: "png" });
+      await browser.close();
+      browserClosed = true;
+      res.setHeader("Content-Type", "image/png");
+      res.end(png);
+      return;
+    }
+
+    if (String(req.query.fmt || "") === "html") {
+      await browser.close();
+      browserClosed = true;
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.end(htmlDoc);
+      return;
+    }
+
+    const pdf = await page.pdf({
+      printBackground: true,
+      preferCSSPageSize: true,
+      width: "210mm",
+      height: "297mm",
+      margin: { top: 0, right: 0, bottom: 0, left: 0 },
+      pageRanges: "1",
+    });
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename="cert-${serial}.pdf"`);
+    res.setHeader("Cache-Control", "public, max-age=3600, s-maxage=3600");
+    res.status(200).send(pdf);
+  } finally {
+    if (!browserClosed) {
+      await browser.close();
+    }
+  }
 }
 
 router.get("/:userId/:courseId.pdf", async (req: Request, res: Response) => {
