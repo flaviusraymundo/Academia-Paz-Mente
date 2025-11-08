@@ -18,6 +18,7 @@ import adminRouter from "./routes/admin.js";
 import { requireAuth } from "./middleware/auth.js";
 import { requireAdmin } from "./middleware/admin.js";
 import entitlementsRouter from "./routes/entitlements.js";
+import { attachAuthIfPresent } from "./middleware/auth-optional.js";
 
 const app = express();
 
@@ -60,9 +61,11 @@ app.use("/api/checkout", requireAuth, checkoutRouter);
 app.use("/api/video", requireAuth, videoRouter);
 app.use("/api/quizzes", requireAuth, quizzesRouter);
 
-// Certificados: verificação pública e PDF devem vir ANTES do guard geral de /api
+// Certificados:
+// - /verify é totalmente público
+// - /certificates aceita hash OU bearer (attachAuthIfPresent popula req.auth se houver)
 app.use("/api/certificates/verify", certificatesPublic);
-app.use("/api/certificates", certificatesPdf);
+app.use("/api/certificates", attachAuthIfPresent, certificatesPdf);
 
 // Demais endpoints públicos/abertos (se houver)
 app.use("/api/entitlements", entitlementsRouter);
