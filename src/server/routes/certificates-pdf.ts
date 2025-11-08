@@ -19,12 +19,11 @@ type Row = {
 };
 
 function formatPtBrDate(d: Date): string {
-  const parts = new Intl.DateTimeFormat("pt-BR", {
+  return new Intl.DateTimeFormat("pt-BR", {
     day: "2-digit",
     month: "long",
     year: "numeric",
   }).format(d);
-  return parts;
 }
 
 function buildHtml(params: {
@@ -39,7 +38,6 @@ function buildHtml(params: {
   return `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <!-- templates/certificate.html -->
   <meta charset="UTF-8">
   <title>Certificado</title>
   <style>
@@ -88,11 +86,11 @@ function buildHtml(params: {
       display:flex;align-items:center;justify-content:center;font-size:12px;color:#26a69a;font-weight:bold;transform:rotate(-15deg);
       background:rgba(38,166,154,.05)
     }
-    /* Padrões de página */
+
+    /* Página A4 e overrides de impressão
+       (evita PDF em branco por causa de flex + 100vh no modo print) */
     @page{size:A4;margin:0}
     html,body{height:auto}
-
-    /* Overrides de impressão para evitar "página em branco" com flex/vh */
     @media print {
       html, body { height: auto !important; }
       body {
@@ -100,12 +98,15 @@ function buildHtml(params: {
         min-height: auto !important;
         padding: 0 !important;
         background: #fff !important;
+        color: #222 !important;
       }
       .certificate {
-        width: 190mm !important; /* cabe na A4 */
+        width: 190mm !important; /* cabe bem na A4 */
         margin: 0 auto !important;
         box-shadow: none !important;
       }
+      .title, .recipient-name, .signature-name { color: #1f8f84 !important; }
+      .body-text, .achievement, .signature-title, .date { color: #222 !important; }
     }
   </style>
 </head>
@@ -159,20 +160,17 @@ function escapeHtml(s: string): string {
 
 function isAdminRequest(req: Request): boolean {
   if (process.env.ADMIN_OPEN === "1") return true;
-
   const email = (req as any).auth?.email?.toLowerCase() || "";
   if (!email) return false;
-
   const csv = (process.env.ADMIN_EMAILS || "").toLowerCase();
-  const allow = csv.split(",").map((s) => s.trim()).filter(Boolean);
-  return allow.includes(email);
+  return csv.split(",").map((s) => s.trim()).filter(Boolean).includes(email);
 }
 
 async function renderCertificatePdf(row: Row, res: Response): Promise<void> {
   const fullName = row.full_name || "Aluno";
   const courseTitle = row.course_title || "Curso";
   const issuedAt = new Date(row.issued_at);
-  const city = "Florianópolis"; // sem ENVs, fixo
+  const city = "Florianópolis";
 
   const html = buildHtml({ fullName, courseTitle, city, issuedAt });
 
@@ -186,9 +184,10 @@ async function renderCertificatePdf(row: Row, res: Response): Promise<void> {
 
   const page = await browser.newPage();
   await page.setContent(html, { waitUntil: "networkidle0" });
+  // Aguarda fontes (evita texto invisível)
   await page.evaluateHandle("document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve()");
 
-  // Emular mídia "print" e reforçar overrides de impressão
+  // Modo impressão + overrides extras por segurança
   await page.emulateMediaType("print");
   await page.addStyleTag({
     content: `
@@ -206,6 +205,7 @@ async function renderCertificatePdf(row: Row, res: Response): Promise<void> {
           min-height: auto !important;
           padding: 0 !important;
           background: #fff !important;
+          color: #222 !important;
         }
         .certificate {
           width: 190mm !important;
@@ -241,6 +241,7 @@ router.get("/:userId/:courseId.pdf", async (req: Request, res: Response) => {
   const h = rawHash.toLowerCase();
   const dbg = String(req.query.dbg || req.query.debug || "") === "1";
 
+  // Sem hash exige bearer do dono/admin
   if (!rawHash) {
     const auth = (req as any).auth as MaybeAuth | undefined;
     const isOwner = auth?.userId === userId;
@@ -289,13 +290,7 @@ router.get("/:userId/:courseId.pdf", async (req: Request, res: Response) => {
     }
 
     if (!allowed) {
-      const payload = {
-        error: "unauthorized",
-        reason,
-        hasBearer,
-        hasHash: Boolean(h),
-        sawHash: h ? "yes" : "no",
-      };
+      const payload = { error: "unauthorized", reason, hasBearer, hasHash: Boolean(h), sawHash: h ? "yes" : "no" };
       return res.status(401).json(dbg ? payload : { error: "no_token" });
     }
 
@@ -318,13 +313,14 @@ router.get("/:userId/:courseId.pdf", async (req: Request, res: Response) => {
     const row = q.rows[0];
     if (!row) return res.status(404).send("not_found");
 
-    // Modo debug: retorna o HTML em vez do PDF
+    // Modo debug: retorna HTML
     if (dbg) {
       const fullName = row.full_name || "Aluno";
       const courseTitle = row.course_title || "Curso";
       const issuedAt = new Date(row.issued_at);
       const city = "Florianópolis";
       const html = buildHtml({ fullName, courseTitle, city, issuedAt });
+
       return res.json({
         debug: true,
         userId,
