@@ -211,31 +211,36 @@ async function renderCertificatePdf(row: Row, res: Response): Promise<void> {
 
 router.get("/:userId/:courseId.pdf", async (req: Request, res: Response) => {
   const { userId, courseId } = req.params as { userId: string; courseId: string };
-  const qSerial = typeof req.query.serial === "string" ? req.query.serial : "";
-  const qHash = ((): string => {
-    const value = (req.query.h ?? req.query.hash) as string | undefined;
-    return typeof value === "string" ? value : "";
-  })();
 
-  const authUserId = req.auth?.userId;
-  let authorized = false;
-  if (authUserId && authUserId === userId) authorized = true;
-  if (!authorized && isAdminRequest(req)) authorized = true;
+  const queryParams = req.query as Record<string, string | string[] | undefined>;
+  const tokenFromQuery = String((queryParams.h ?? queryParams.t ?? "") as string).trim();
+  const hasBearer = Boolean(req.headers.authorization);
+  if (!hasBearer && !tokenFromQuery) {
+    return res.status(401).json({ error: "no_token" });
+  }
 
   try {
-    if (!authorized) {
-      if (!qSerial && !qHash) return res.status(401).json({ error: "no_token" });
+    let allowed = false;
 
-      const { rows: authRows } = await pool.query(
-        `select 1
+    if (tokenFromQuery) {
+      const { rows } = await pool.query(
+        `select serial_hash
            from certificate_issues
-          where user_id=$1 and course_id=$2
-            and ( ($3 <> '' and serial=$3) or ($4 <> '' and serial_hash=$4) )
+          where user_id = $1 and course_id = $2
           limit 1`,
-        [userId, courseId, qSerial, qHash]
+        [userId, courseId]
       );
-      if (authRows.length === 0) return res.status(404).json({ error: "not_found" });
+      const saved = rows[0]?.serial_hash;
+      if (saved && tokenFromQuery === saved) allowed = true;
     }
+
+    if (!allowed && hasBearer) {
+      const uid = req.auth?.userId;
+      const isAdmin = Boolean(req.auth?.isAdmin) || isAdminRequest(req);
+      if (isAdmin || uid === userId) allowed = true;
+    }
+
+    if (!allowed) return res.status(401).json({ error: "invalid_token" });
 
     const q = await pool.query<Row>(
       `
