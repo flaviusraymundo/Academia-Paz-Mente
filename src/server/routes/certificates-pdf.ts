@@ -1,6 +1,7 @@
 // src/server/routes/certificates-pdf.ts
 import fs from "fs";
 import path from "path";
+import { Buffer } from "buffer";
 import { Router, Request, Response } from "express";
 import { pool } from "../lib/db.js";
 import chromium from "@sparticuz/chromium";
@@ -21,6 +22,7 @@ type Row = {
 };
 
 const TEMPLATE_PATH = path.join(process.cwd(), "public", "cert-templates", "elegant-classic-brand.html");
+const LOGO_PATH = path.join(process.cwd(), "public", "images", "logo.png");
 const DIRECTOR_NAME = process.env.CERT_DIRECTOR_NAME || "João Pedro Costa";
 const COORD_NAME = process.env.CERT_COORD_NAME || "Ana Carolina Lima";
 const VERIFY_BASE_URL = process.env.CERT_VERIFY_BASE_URL || "";
@@ -29,6 +31,7 @@ const FALLBACK_QR_DATA_URL =
   "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 
 let templateCache: string | null = null;
+let logoDataUrlCache: string | null | undefined;
 
 function publicOrigin(req: Request) {
   const proto =
@@ -58,6 +61,57 @@ async function loadCertTemplate(req: Request): Promise<string> {
     templateCache = html;
     return html;
   }
+}
+
+async function loadLogoDataUrl(req: Request): Promise<string | null> {
+  if (logoDataUrlCache !== undefined) {
+    return logoDataUrlCache;
+  }
+
+  try {
+    const buf = fs.readFileSync(LOGO_PATH);
+    logoDataUrlCache = `data:image/png;base64,${buf.toString("base64")}`;
+    return logoDataUrlCache;
+  } catch {
+    try {
+      const response = await fetch(`${publicOrigin(req)}/images/logo.png`);
+      if (!response.ok) {
+        logoDataUrlCache = null;
+        return logoDataUrlCache;
+      }
+      const arr = await response.arrayBuffer();
+      const buf = Buffer.from(arr);
+      logoDataUrlCache = `data:image/png;base64,${buf.toString("base64")}`;
+      return logoDataUrlCache;
+    } catch {
+      logoDataUrlCache = null;
+      return logoDataUrlCache;
+    }
+  }
+}
+
+async function inlineLogo(html: string, req: Request): Promise<string> {
+  const dataUrl = await loadLogoDataUrl(req);
+  if (!dataUrl) return html;
+
+  return html
+    .replace(/src=(["'])\/images\/logo\.png\1/gi, (_match, quote: string) => `src=${quote}${dataUrl}${quote}`)
+    .replace(/src=\/images\/logo\.png/gi, `src="${dataUrl}"`);
+}
+
+function ensureBaseHref(html: string, origin: string): string {
+  if (!origin) return html;
+  if (/<base\s+[^>]*href=/i.test(html)) return html;
+
+  const normalized = origin.endsWith("/") ? origin : `${origin}/`;
+  const baseTag = `<base href="${normalized}">`;
+  const headRe = /<head([^>]*)>/i;
+
+  if (headRe.test(html)) {
+    return html.replace(headRe, `<head$1>${baseTag}`);
+  }
+
+  return `<head>${baseTag}</head>${html}`;
 }
 
 function formatPtBrDate(d: Date): string {
@@ -154,7 +208,10 @@ async function renderCertificatePdf(row: Row, req: Request, res: Response): Prom
   const serial = row.serial || "cert";
   const verifyUrl = buildVerifyUrl(serial);
   const template = await loadCertTemplate(req);
-  const html = buildHtml(template, {
+  const origin = publicOrigin(req);
+  const withLogo = await inlineLogo(template, req);
+  const templateWithBase = ensureBaseHref(withLogo, origin);
+  const html = buildHtml(templateWithBase, {
     fullName,
     courseTitle,
     city,

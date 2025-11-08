@@ -7,8 +7,8 @@
   external_node_modules = ["pg", "puppeteer-core", "@sparticuz/chromium"]
 
 [functions."*"]
-  # garante que o HTML dos certificados vai junto no deploy das Functions
-  included_files = ["public/cert-templates/**"]
+  # garante que os assets dos certificados vão junto no deploy das Functions
+  included_files = ["public/cert-templates/**", "public/images/**"]
 
 [build.environment]
   NODE_VERSION = "20"
