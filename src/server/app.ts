@@ -11,6 +11,7 @@ import checkoutRouter from "./routes/checkout.js";
 import quizzesRouter from "./routes/quizzes.js";
 import progressRouter from "./routes/progress.js";
 import authRouter from "./routes/auth.js";
+import certificatesPdf from "./routes/certificates-pdf.js";
 import { certificatesPublic, certificatesPrivate } from "./routes/certificates.js";
 import eventsRouter from "./routes/events.js";
 import adminRouter from "./routes/admin.js";
@@ -59,8 +60,9 @@ app.use("/api/checkout", requireAuth, checkoutRouter);
 app.use("/api/video", requireAuth, videoRouter);
 app.use("/api/quizzes", requireAuth, quizzesRouter);
 
-// Certificados: verificação pública deve vir ANTES do guard geral de /api
+// Certificados: verificação pública e PDF devem vir ANTES do guard geral de /api
 app.use("/api/certificates/verify", certificatesPublic);
+app.use("/api/certificates", certificatesPdf);
 
 // Demais endpoints públicos/abertos (se houver)
 app.use("/api/entitlements", entitlementsRouter);
