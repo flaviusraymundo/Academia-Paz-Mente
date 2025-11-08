@@ -198,26 +198,36 @@ async function renderCertificatePdf(row: Row, res: Response): Promise<void> {
 
   const page = await browser.newPage();
   await page.setContent(html, { waitUntil: "networkidle0" });
-  await page.evaluateHandle("document.fonts?.ready?.then?.(()=>{})"); // fonts ok
-  await page.addStyleTag({
-    content: `
-    :root{ color-scheme: light; }
-    @page { size: A4; margin: 0 }
-    @media print {
-      html,body { width:210mm; height:297mm; margin:0; padding:0; background:#fff !important; }
-      body { display:block !important; min-height:auto !important; }
-      /* seu container principal */
-      .certificate { width:190mm !important; height:277mm !important; margin:10mm auto !important; box-shadow:none !important; }
+  await page.waitForSelector("#certificate, #cert-root, body", {
+    visible: true,
+    timeout: 10_000,
+  });
+  await page.evaluate(async () => {
+    if ((document as any).fonts?.ready) {
+      await (document as any).fonts.ready;
     }
-    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  `,
   });
   await page.emulateMediaType("print");
+  await page.addStyleTag({
+    content: `
+      :root{ color-scheme: light; }
+      *{ -webkit-print-color-adjust:exact; print-color-adjust:exact }
+      html,body{ margin:0; padding:0; background:#fff !important }
+      @page{ size:210mm 297mm; margin:0 }
+      @media print{
+        html,body{ height:297mm }
+        body{ display:block !important; min-height:auto !important; }
+        .certificate { width:190mm !important; height:277mm !important; margin:10mm auto !important; box-shadow:none !important; }
+      }
+    `,
+  });
   await page.setViewport({ width: 794, height: 1123, deviceScaleFactor: 2 }); // A4 @96dpi
   const pdf = await page.pdf({
     width: "210mm",
     height: "297mm",
     printBackground: true,
+    preferCSSPageSize: false,
+    pageRanges: "1",
     margin: { top: 0, right: 0, bottom: 0, left: 0 },
   });
   await browser.close();
