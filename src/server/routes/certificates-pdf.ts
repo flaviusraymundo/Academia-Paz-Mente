@@ -8,7 +8,6 @@ import { isUuid } from "../utils/ids.js";
 const router = Router();
 
 type MaybeAuth = { userId?: string; email?: string; isAdmin?: boolean };
-
 type Row = {
   user_id: string;
   course_id: string;
@@ -24,6 +23,15 @@ function formatPtBrDate(d: Date): string {
     month: "long",
     year: "numeric",
   }).format(d);
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }
 
 function buildHtml(params: {
@@ -149,28 +157,25 @@ function buildHtml(params: {
 </html>`;
 }
 
-function escapeHtml(s: string): string {
-  return s
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-}
-
 function isAdminRequest(req: Request): boolean {
   if (process.env.ADMIN_OPEN === "1") return true;
+
   const email = (req as any).auth?.email?.toLowerCase() || "";
   if (!email) return false;
+
   const csv = (process.env.ADMIN_EMAILS || "").toLowerCase();
-  return csv.split(",").map((s) => s.trim()).filter(Boolean).includes(email);
+  const allow = csv
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return allow.includes(email);
 }
 
 async function renderCertificatePdf(row: Row, res: Response): Promise<void> {
   const fullName = row.full_name || "Aluno";
   const courseTitle = row.course_title || "Curso";
   const issuedAt = new Date(row.issued_at);
-  const city = "Florianópolis";
+  const city = "Florianópolis"; // sem ENVs, fixo
 
   const html = buildHtml({ fullName, courseTitle, city, issuedAt });
 
@@ -183,12 +188,14 @@ async function renderCertificatePdf(row: Row, res: Response): Promise<void> {
   });
 
   const page = await browser.newPage();
+  // Viewport aproximado de A4 em 96dpi (ajuda com vh em alguns ambientes)
+  await page.setViewport({ width: 794, height: 1123, deviceScaleFactor: 1 });
   await page.setContent(html, { waitUntil: "networkidle0" });
-  // Aguarda fontes (evita texto invisível)
+  // Garantir fonts carregadas
   await page.evaluateHandle("document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve()");
-
-  // Modo impressão + overrides extras por segurança
+  // Modo impressão
   await page.emulateMediaType("print");
+  // Reforço extra de CSS no print
   await page.addStyleTag({
     content: `
       @page{size:A4;margin:0}
@@ -217,7 +224,6 @@ async function renderCertificatePdf(row: Row, res: Response): Promise<void> {
       }
     `,
   });
-
   const pdf = await page.pdf({
     printBackground: true,
     preferCSSPageSize: true,
@@ -241,7 +247,7 @@ router.get("/:userId/:courseId.pdf", async (req: Request, res: Response) => {
   const h = rawHash.toLowerCase();
   const dbg = String(req.query.dbg || req.query.debug || "") === "1";
 
-  // Sem hash exige bearer do dono/admin
+  // Sem hash exige bearer de dono/admin.
   if (!rawHash) {
     const auth = (req as any).auth as MaybeAuth | undefined;
     const isOwner = auth?.userId === userId;
@@ -279,7 +285,8 @@ router.get("/:userId/:courseId.pdf", async (req: Request, res: Response) => {
     if (!allowed && hasBearer) {
       const auth = (req as any).auth as MaybeAuth | undefined;
       const uid = auth?.userId;
-      const adminByEnv = isAdminRequest(req);
+      // manter compat com overrides por ENV
+      const adminByEnv = isAdminRequest(req); // helper já definido acima
       const isAdmin = Boolean(auth?.isAdmin) || adminByEnv;
       if (isAdmin || uid === userId) {
         allowed = true;
@@ -290,7 +297,13 @@ router.get("/:userId/:courseId.pdf", async (req: Request, res: Response) => {
     }
 
     if (!allowed) {
-      const payload = { error: "unauthorized", reason, hasBearer, hasHash: Boolean(h), sawHash: h ? "yes" : "no" };
+      const payload = {
+        error: "unauthorized",
+        reason,
+        hasBearer,
+        hasHash: Boolean(h),
+        sawHash: h ? "yes" : "no",
+      };
       return res.status(401).json(dbg ? payload : { error: "no_token" });
     }
 
@@ -313,14 +326,13 @@ router.get("/:userId/:courseId.pdf", async (req: Request, res: Response) => {
     const row = q.rows[0];
     if (!row) return res.status(404).send("not_found");
 
-    // Modo debug: retorna HTML
+    // Modo debug: retorna o HTML em vez do PDF
     if (dbg) {
       const fullName = row.full_name || "Aluno";
       const courseTitle = row.course_title || "Curso";
       const issuedAt = new Date(row.issued_at);
       const city = "Florianópolis";
       const html = buildHtml({ fullName, courseTitle, city, issuedAt });
-
       return res.json({
         debug: true,
         userId,
