@@ -198,6 +198,8 @@ async function renderCertificatePdf(row: Row, res: Response): Promise<void> {
 
   const page = await browser.newPage();
   await page.setContent(html, { waitUntil: "networkidle0" });
+  // garante que as fontes foram carregadas antes do print
+  await page.evaluateHandle("document.fonts.ready");
   // Garantias de render
   // Use mídia "print" para que @page seja respeitado (A4 sem margens)
   await page.emulateMediaType("print");
