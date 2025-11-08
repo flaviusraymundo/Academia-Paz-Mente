@@ -245,10 +245,12 @@ router.get("/:userId/:courseId.pdf", async (req: Request, res: Response) => {
     if (!allowed && hasBearer) {
       const auth = (req as any).auth as MaybeAuth | undefined;
       const uid = auth?.userId;
-      const isAdmin = Boolean(auth?.isAdmin);
+      // manter compat com overrides por ENV
+      const adminByEnv = isAdminRequest(req); // helper já definido acima
+      const isAdmin = Boolean(auth?.isAdmin) || adminByEnv;
       if (isAdmin || uid === userId) {
         allowed = true;
-        reason = isAdmin ? "by_admin" : "by_self";
+        reason = isAdmin ? (adminByEnv ? "by_admin_env" : "by_admin") : "by_self";
       } else {
         reason = "bearer_not_authorized";
       }
