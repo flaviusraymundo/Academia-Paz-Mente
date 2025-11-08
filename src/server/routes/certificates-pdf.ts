@@ -198,10 +198,14 @@ async function renderCertificatePdf(row: Row, res: Response): Promise<void> {
 
   const page = await browser.newPage();
   await page.setContent(html, { waitUntil: "networkidle0" });
+  // Garantias de render
+  await page.emulateMediaType("screen");
+  await page.addStyleTag({
+    content: "html,body{background:#fff !important}@page{size:A4;margin:0}",
+  });
   const pdf = await page.pdf({
     printBackground: true,
-    format: "A4",
-    margin: { top: "0mm", right: "0mm", bottom: "0mm", left: "0mm" },
+    preferCSSPageSize: true,
   });
   await browser.close();
 

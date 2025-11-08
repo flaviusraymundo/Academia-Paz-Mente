@@ -1,15 +1,16 @@
 // src/server/routes/certificates.ts
-import { Router, Request, Response } from "express";
+import { Router, Response } from "express";
+import type { Request } from "express";
 import { pool, withClient } from "../lib/db.js";
 import { isUuid } from "../utils/ids.js";
 import { issueCertificate } from "../lib/certificates.js";
 
-// Util simples para base pública
+// Base pública para montar links absolutos
 function publicBase(req: Request) {
-  const env = (process.env.APP_BASE_URL || "").trim().replace(/\/+$/, "");
-  if (env) return env;
+  const env = (process.env.APP_BASE_URL || process.env.URL || "").trim().replace(/\/+$/, "");
+  if (env) return env; // Produção: use o domínio principal configurado pelo Netlify (URL) ou APP_BASE_URL
+  const host = req.get("host") || (req.headers["x-forwarded-host"] as string) || "";
   const proto = (req.headers["x-forwarded-proto"] as string) || req.protocol || "https";
-  const host = (req.headers["x-forwarded-host"] as string) || req.get("host") || "";
   return `${proto}://${host}`;
 }
 
