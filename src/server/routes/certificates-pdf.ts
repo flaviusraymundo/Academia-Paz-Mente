@@ -213,10 +213,22 @@ async function renderCertificatePdf(row: Row, res: Response): Promise<void> {
 }
 
 router.get("/:userId/:courseId.pdf", async (req: Request, res: Response) => {
-  const userId = String(req.params.userId || "");
-  const courseId = String(req.params.courseId || "");
-  const h = String(req.query.h || "").toLowerCase();
+  const userId = String(req.params.userId || "").trim();
+  const courseId = String(req.params.courseId || "").trim();
+  const rawHash = String(req.query.h || "").trim();
+  const h = rawHash.toLowerCase();
   const dbg = String(req.query.dbg || req.query.debug || "") === "1";
+
+  // Bloqueio antecipado: sem hash exige bearer de dono ou admin.
+  if (!rawHash) {
+    const auth = (req as any).auth as MaybeAuth | undefined;
+    const isOwner = auth?.userId === userId;
+    const isAdmin = Boolean(auth?.isAdmin) || isAdminRequest(req);
+    if (!(isOwner || isAdmin)) {
+      const payload = { error: "no_token", reason: "missing_hash_and_no_bearer" };
+      return dbg ? res.status(401).json(payload) : res.status(401).send("no_token");
+    }
+  }
 
   if (!isUuid(userId) || !isUuid(courseId)) {
     return res.status(400).json({ error: "bad_request" });

@@ -4,6 +4,20 @@ import { pool, withClient } from "../lib/db.js";
 import { isUuid } from "../utils/ids.js";
 import { issueCertificate } from "../lib/certificates.js";
 
+// Util simples para base pública
+function publicBase(req: Request) {
+  const env = (process.env.APP_BASE_URL || "").trim().replace(/\/+$/, "");
+  if (env) return env;
+  const proto = (req.headers["x-forwarded-proto"] as string) || req.protocol || "https";
+  const host = (req.headers["x-forwarded-host"] as string) || req.get("host") || "";
+  return `${proto}://${host}`;
+}
+
+function buildPdfUrl(base: string, userId: string, courseId: string, hash?: string | null) {
+  const suffix = hash ? `?h=${hash}` : "";
+  return `${base}/api/certificates/${userId}/${courseId}.pdf${suffix}`;
+}
+
 type Auth = { userId?: string; email?: string; isAdmin?: boolean };
 interface AuthReq extends Request { auth?: Auth }
 
@@ -28,7 +42,11 @@ certificatesPublic.get("/:serial", async (req: Request, res: Response) => {
       [serial]
     );
     if (!rows.length) return res.status(404).json({ error: "not_found" });
-    return res.json(rows[0]);
+
+    const row = rows[0];
+    const base = publicBase(req);
+    const pdfUrl = buildPdfUrl(base, row.user_id, row.course_id, row.hash);
+    return res.json({ ...row, pdf_url: pdfUrl });
   } catch (e) {
     return res.status(500).json({ error: "verify_failed" });
   }
@@ -51,7 +69,11 @@ certificatesPublic.get("/", async (req: Request, res: Response) => {
       [hash]
     );
     if (!rows.length) return res.status(404).json({ error: "not_found" });
-    return res.json(rows[0]);
+
+    const row = rows[0];
+    const base = publicBase(req);
+    const pdfUrl = buildPdfUrl(base, row.user_id, row.course_id, row.hash);
+    return res.json({ ...row, pdf_url: pdfUrl });
   } catch {
     return res.status(500).json({ error: "verify_failed" });
   }
@@ -93,7 +115,12 @@ certificatesPrivate.get("/", async (req: AuthReq, res: Response) => {
 
   try {
     const { rows } = await pool.query(sql, [userId]);
-    return res.json({ certificates: rows });
+    const base = publicBase(req);
+    const certificates = rows.map((row: any) => ({
+      ...row,
+      pdf_url: buildPdfUrl(base, userId, row.course_id, row.hash),
+    }));
+    return res.json({ certificates });
   } catch {
     return res.status(500).json({ error: "list_failed" });
   }
@@ -128,19 +155,19 @@ certificatesPrivate.post("/:courseId/issue", async (req: AuthReq, res: Response)
       })
     );
 
-    const base =
-      process.env.APP_BASE_URL || `${req.protocol}://${req.get("host") ?? ""}`;
+    const base = publicBase(req);
     const verifyUrl = row.serial ? `${base}/api/certificates/verify/${row.serial}` : null;
+    const pdfUrl = buildPdfUrl(base, row.user_id, row.course_id, row.hash);
 
     return res.json({
       id: row.id,
       user_id: row.user_id,
       course_id: row.course_id,
       issued_at: row.issued_at,
-      pdf_url: row.pdf_url,
+      pdf_url: pdfUrl,
       serial: row.serial ?? null,
       hash: row.hash ?? null,
-      verifyUrl: row.verifyUrl,
+      verifyUrl,
       reissue,
       keepIssuedAt,
     });
