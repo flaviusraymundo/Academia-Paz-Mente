@@ -235,8 +235,10 @@ router.get("/:userId/:courseId.pdf", async (req: Request, res: Response) => {
     }
 
     if (!allowed && hasBearer) {
-      const uid = req.auth?.userId;
-      const isAdmin = Boolean(req.auth?.isAdmin) || isAdminRequest(req);
+      type MaybeAuth = { userId?: string; email?: string; isAdmin?: boolean };
+      const auth = (req as any).auth as MaybeAuth | undefined;
+      const uid = auth?.userId;
+      const isAdmin = Boolean(auth?.isAdmin) || isAdminRequest(req);
       if (isAdmin || uid === userId) allowed = true;
     }
 
