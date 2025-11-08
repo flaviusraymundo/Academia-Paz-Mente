@@ -3,8 +3,11 @@ import { Router, Request, Response } from "express";
 import { pool } from "../lib/db.js";
 import chromium from "@sparticuz/chromium";
 import puppeteer from "puppeteer-core";
+import { isUuid } from "../utils/ids.js";
 
 const router = Router();
+
+type MaybeAuth = { userId?: string; email?: string; isAdmin?: boolean };
 
 type Row = {
   user_id: string;
@@ -210,39 +213,57 @@ async function renderCertificatePdf(row: Row, res: Response): Promise<void> {
 }
 
 router.get("/:userId/:courseId.pdf", async (req: Request, res: Response) => {
-  const { userId, courseId } = req.params as { userId: string; courseId: string };
+  const userId = String(req.params.userId || "");
+  const courseId = String(req.params.courseId || "");
+  const h = String(req.query.h || "").toLowerCase();
+  const dbg = String(req.query.dbg || req.query.debug || "") === "1";
 
-  const queryParams = req.query as Record<string, string | string[] | undefined>;
-  const tokenFromQuery = String((queryParams.h ?? queryParams.t ?? "") as string).trim();
-  const hasBearer = Boolean(req.headers.authorization);
-  if (!hasBearer && !tokenFromQuery) {
-    return res.status(401).json({ error: "no_token" });
+  if (!isUuid(userId) || !isUuid(courseId)) {
+    return res.status(400).json({ error: "bad_request" });
   }
+
+  const hasBearer = Boolean((req.headers.authorization || "").startsWith("Bearer "));
 
   try {
     let allowed = false;
+    let reason: string = "none";
 
-    if (tokenFromQuery) {
-      const { rows } = await pool.query(
-        `select serial_hash
-           from certificate_issues
-          where user_id = $1 and course_id = $2
-          limit 1`,
-        [userId, courseId]
-      );
-      const saved = rows[0]?.serial_hash;
-      if (saved && tokenFromQuery === saved) allowed = true;
+    const { rows } = await pool.query(
+      `select serial_hash
+         from certificate_issues
+        where user_id = $1 and course_id = $2
+        limit 1`,
+      [userId, courseId]
+    );
+    const savedHash = rows[0]?.serial_hash?.toLowerCase() || null;
+
+    if (h && savedHash && savedHash === h) {
+      allowed = true;
+      reason = "by_hash";
     }
 
     if (!allowed && hasBearer) {
-      type MaybeAuth = { userId?: string; email?: string; isAdmin?: boolean };
       const auth = (req as any).auth as MaybeAuth | undefined;
       const uid = auth?.userId;
-      const isAdmin = Boolean(auth?.isAdmin) || isAdminRequest(req);
-      if (isAdmin || uid === userId) allowed = true;
+      const isAdmin = Boolean(auth?.isAdmin);
+      if (isAdmin || uid === userId) {
+        allowed = true;
+        reason = isAdmin ? "by_admin" : "by_self";
+      } else {
+        reason = "bearer_not_authorized";
+      }
     }
 
-    if (!allowed) return res.status(401).json({ error: "invalid_token" });
+    if (!allowed) {
+      const payload = {
+        error: "unauthorized",
+        reason,
+        hasBearer,
+        hasHash: Boolean(h),
+        sawHash: h ? "yes" : "no",
+      };
+      return res.status(401).json(dbg ? payload : { error: "no_token" });
+    }
 
     const q = await pool.query<Row>(
       `
