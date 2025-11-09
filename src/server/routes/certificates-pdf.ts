@@ -411,34 +411,21 @@ async function renderCertificatePdf(row: Row, req: Request, res: Response): Prom
       `,
     });
 
+    // Debug: screenshot PNG (binário puro, sem conversões)
     if (String(req.query.shot || "") === "1") {
       console.log("[cert-pdf] Gerando screenshot PNG");
 
-      // Para screenshot: mídia de TELA, não 'print'
       try {
         await page.emulateMediaType("screen");
       } catch {}
 
-      // Captura da “folha” visível, sem fullPage
-      let png = await page.screenshot({
-        type: "png",
-        fullPage: false,
-        omitBackground: false,
-        captureBeyondViewport: false,
-      });
+      let png = await page.screenshot({ fullPage: true, type: "png" });
 
-      // Retry se veio vazio (corrige casos esporádicos em serverless)
       if (!png || png.length === 0) {
         await page.waitForTimeout(200);
-        png = await page.screenshot({
-          type: "png",
-          fullPage: false,
-          omitBackground: false,
-          captureBeyondViewport: false,
-        });
+        png = await page.screenshot({ fullPage: true, type: "png" });
       }
 
-      // Fecha o browser aqui; o finally já está protegido
       if (browser) {
         try {
           await browser.close();
@@ -447,12 +434,14 @@ async function renderCertificatePdf(row: Row, req: Request, res: Response): Prom
         browser = null;
       }
 
-      // Headers corretos para imagem em aba
       relaxInlinePdfCSP(res);
+      res.statusCode = 200;
       res.setHeader("Content-Type", "image/png");
-      res.setHeader("Cache-Control", "no-store, no-transform");
       res.setHeader("Content-Length", String(png.length));
-      res.status(200);
+      // nunca cache público para imagens debugadas por bearer/hash
+      res.setHeader("Cache-Control", "private, no-store");
+      res.setHeader("Vary", "Authorization, Cookie");
+      res.setHeader("Content-Disposition", `inline; filename="cert-${serial}.png"`);
       res.end(png);
       return;
     }
@@ -478,29 +467,34 @@ async function renderCertificatePdf(row: Row, req: Request, res: Response): Prom
       String(req.query.download || "").toLowerCase() === "true";
     const disp = wantsDownload ? "attachment" : "inline";
     res.setHeader("Content-Disposition", `${disp}; filename="cert-${serial}.pdf"`);
-    res.setHeader("Cache-Control", "public, max-age=3600, s-maxage=3600");
+    // Cache: público só quando SOMENTE hash é usado; com bearer → privado
+    const hasHash = typeof req.query.h === "string" && String(req.query.h).length > 0;
+    const hasBearer = (req.headers.authorization || "").startsWith("Bearer ");
+    if (hasHash && !hasBearer) {
+      res.setHeader("Cache-Control", "public, max-age=3600, immutable");
+    } else {
+      res.setHeader("Cache-Control", "private, no-store");
+      res.setHeader("Vary", "Authorization, Cookie");
+    }
     res.status(200).send(pdf);
   } catch (error) {
     console.error("[cert-pdf] Erro na renderização:", error);
     throw error;
   } finally {
     if (browser && !browserClosed) {
-      const isConnected =
-        typeof browser.isConnected === "function" ? browser.isConnected() : true;
-      if (!isConnected) {
-        console.warn("[cert-pdf] Browser já desconectado, ignorando close()");
+      try {
+        const isConnected =
+          typeof (browser as any).isConnected === "function"
+            ? (browser as any).isConnected()
+            : true;
+        if (isConnected) {
+          await browser.close();
+        }
+      } catch (closeError) {
+        console.warn("[cert-pdf] Falha ao fechar browser (finally):", closeError);
+      } finally {
         browserClosed = true;
         browser = null;
-      } else {
-        try {
-          await browser.close();
-          console.log("[cert-pdf] Browser fechado");
-        } catch (closeError) {
-          console.warn("[cert-pdf] Falha ao fechar browser:", closeError);
-        } finally {
-          browserClosed = true;
-          browser = null;
-        }
       }
     }
   }
