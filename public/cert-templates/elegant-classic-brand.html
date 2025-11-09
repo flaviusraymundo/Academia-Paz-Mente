@@ -39,7 +39,6 @@
       padding: 20mm 20mm 25mm 20mm;
       margin: 0;
       overflow: hidden;
-      display: block; /* força bloco sempre */
     }
     
     /* Bordas decorativas */
@@ -63,7 +62,7 @@
       opacity: 0.9;
     }
 
-    /* Cantos decorativos */
+    /* Cantos decorativos - CORRIGIDO */
     .corner {
       position: absolute;
       width: 20mm;
@@ -78,15 +77,31 @@
       height: 100%;
     }
     
-    .corner.tl { top: 10mm; left: 10mm; transform: rotate(0deg); }
-    .corner.tr { top: 10mm; right: 10mm; transform: rotate(90deg); }
-    .corner.br { bottom: 10mm; right: 10mm; transform: rotate(180deg); }
-    .corner.bl { bottom: 10mm; left: 10mm; transform: rotate(270deg); }
+    /* Sem transformações - cada SVG já desenhado na orientação correta */
+    .corner.tl { 
+      top: 10mm; 
+      left: 10mm; 
+    }
+    
+    .corner.tr { 
+      top: 10mm; 
+      right: 10mm; 
+    }
+    
+    .corner.br { 
+      bottom: 10mm; 
+      right: 10mm; 
+    }
+    
+    .corner.bl { 
+      bottom: 10mm; 
+      left: 10mm; 
+    }
 
-    /* Cabeçalho com logo */
+    /* Cabeçalho com logo centralizado acima - CORRIGIDO */
     .header {
       display: flex;
-      justify-content: space-between;
+      flex-direction: column;
       align-items: center;
       margin-bottom: 8mm;
       position: relative;
@@ -95,18 +110,18 @@
     
     .brand {
       display: flex;
+      justify-content: center;
       align-items: center;
-      flex: 0 0 auto;
+      margin-bottom: 10mm;
     }
     
     .brand img {
-      max-height: 15mm;
-      max-width: 40mm;
+      max-height: 22mm;
+      max-width: 60mm;
       object-fit: contain;
     }
     
     .title-wrapper {
-      flex: 1;
       text-align: center;
     }
     
@@ -314,7 +329,6 @@
       
       body {
         background: #fff !important;
-        display: block !important; /* remove qualquer resquício de flex em ambientes estranhos */
       }
       
       .sheet {
@@ -326,7 +340,6 @@
         border-radius: 0 !important;
         page-break-inside: avoid;
         page-break-after: avoid;
-        display: block !important;
       }
       
       * {
@@ -356,7 +369,7 @@
 </head>
 <body>
   <main class="sheet" role="document" aria-label="Certificado">
-    <!-- Cantos decorativos -->
+    <!-- Cantos decorativos - CORRIGIDOS -->
     <div class="corner tl" aria-hidden="true">
       <svg viewBox="0 0 100 100" fill="currentColor">
         <path d="M0,100 L0,0 L100,0 L92,8 L8,8 L8,92 Z"/>
@@ -381,7 +394,7 @@
     <!-- Marca d'água -->
     <div class="wm">{{SERIAL}}</div>
 
-    <!-- Cabeçalho -->
+    <!-- Cabeçalho - CORRIGIDO: Logo centralizado acima -->
     <header class="header">
       <div class="brand">
         <img src="/images/logo.png" alt="Logo" />
@@ -390,7 +403,6 @@
         <h1 class="title">Certificado</h1>
         <p class="subtitle">de Conclusão</p>
       </div>
-      <div style="flex: 0 0 auto; width: 40mm;"></div>
     </header>
 
     <div class="divider" aria-hidden="true"></div>
