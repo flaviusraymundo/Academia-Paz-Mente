@@ -419,11 +419,41 @@ async function renderCertificatePdf(row: Row, req: Request, res: Response): Prom
         await page.emulateMediaType("screen");
       } catch {}
 
-      let png = await page.screenshot({ fullPage: true, type: "png" });
+      let pngBuf: Buffer;
+      try {
+        const sheetBox = (page as any).__sheetBox as
+          | { x: number; y: number; width: number; height: number }
+          | undefined;
+        if (!sheetBox) {
+          throw new Error("sheet box unavailable");
+        }
 
-      if (!png || png.length === 0) {
-        await page.waitForTimeout(200);
-        png = await page.screenshot({ fullPage: true, type: "png" });
+        const clip = {
+          x: Math.max(0, Math.floor(sheetBox.x)),
+          y: Math.max(0, Math.floor(sheetBox.y)),
+          width: Math.max(1, Math.ceil(sheetBox.width)),
+          height: Math.max(1, Math.ceil(sheetBox.height)),
+        };
+
+        pngBuf = (await page.screenshot({
+          type: "png",
+          clip,
+          omitBackground: false,
+        })) as Buffer;
+
+        if (!pngBuf || pngBuf.length === 0) {
+          throw new Error("empty clipped screenshot");
+        }
+      } catch {
+        pngBuf = (await page.screenshot({ type: "png", fullPage: true })) as Buffer;
+
+        if (!pngBuf || pngBuf.length === 0) {
+          await page.waitForTimeout(200);
+          pngBuf = (await page.screenshot({
+            type: "png",
+            fullPage: true,
+          })) as Buffer;
+        }
       }
 
       if (browser) {
@@ -435,14 +465,16 @@ async function renderCertificatePdf(row: Row, req: Request, res: Response): Prom
       }
 
       relaxInlinePdfCSP(res);
-      res.statusCode = 200;
-      res.setHeader("Content-Type", "image/png");
-      res.setHeader("Content-Length", String(png.length));
-      // nunca cache público para imagens debugadas por bearer/hash
-      res.setHeader("Cache-Control", "private, no-store");
-      res.setHeader("Vary", "Authorization, Cookie");
-      res.setHeader("Content-Disposition", `inline; filename="cert-${serial}.png"`);
-      res.end(png);
+      res.writeHead(200, {
+        "Content-Type": "image/png",
+        "Content-Length": String(pngBuf.length),
+        // nunca cache público para imagens debugadas por bearer/hash
+        "Cache-Control": "private, no-store",
+        Vary: "Authorization, Cookie",
+        "X-Content-Type-Options": "nosniff",
+        "Content-Disposition": `inline; filename="cert-${serial}.png"`,
+      });
+      res.end(pngBuf);
       return;
     }
 
