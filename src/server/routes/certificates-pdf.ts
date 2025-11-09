@@ -16,13 +16,11 @@ type Row = {
   user_id: string;
   course_id: string;
   full_name: string | null;
-  issued_at: string; // timestamptz
+  issued_at: string;
   serial: string;
   course_title: string | null;
 };
 
-const TEMPLATE_PATH = path.join(process.cwd(), "public", "cert-templates", "elegant-classic-brand.html");
-const LOGO_PATH = path.join(process.cwd(), "public", "images", "logo.png");
 const DIRECTOR_NAME = process.env.CERT_DIRECTOR_NAME || "João Pedro Costa";
 const COORD_NAME = process.env.CERT_COORD_NAME || "Ana Carolina Lima";
 const VERIFY_BASE_URL = process.env.CERT_VERIFY_BASE_URL || "";
@@ -30,104 +28,139 @@ const FALLBACK_QR_DATA_URL =
   process.env.CERT_QR_PLACEHOLDER_DATA_URL ||
   "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 
-let templateCache: string | null = null;
-let logoDataUrlCache: string | null | undefined;
+// ============================================
+// CORREÇÃO 1: Função robusta para encontrar arquivos
+// ============================================
+function findFile(relativePath: string): string | null {
+  const possibleRoots = [
+    process.cwd(),
+    path.join(process.cwd(), "dist"),
+    "/var/task",
+    path.join(__dirname, "../.."),
+    path.join(__dirname, "../../.."),
+  ];
 
-function publicOrigin(req: Request) {
-  const proto =
-    (req.headers["x-forwarded-proto"] as string) ||
-    (req as any).protocol ||
-    "https";
-  const host =
-    (req.headers["x-forwarded-host"] as string) ||
-    req.get("host") ||
-    "localhost";
-  return `${proto}://${host}`.replace(/\/+$/i, "");
+  for (const root of possibleRoots) {
+    const fullPath = path.join(root, relativePath);
+    if (fs.existsSync(fullPath)) {
+      console.log(`[cert-pdf] Arquivo encontrado: ${fullPath}`);
+      return fullPath;
+    }
+  }
+
+  console.warn(`[cert-pdf] Arquivo não encontrado: ${relativePath}`);
+  return null;
 }
 
-async function loadCertTemplate(req: Request): Promise<string> {
-  if (templateCache) return templateCache;
+function publicOrigin(req: Request): string {
+  // Prioriza variáveis de ambiente
+  const envBase = (process.env.APP_BASE_URL || process.env.URL || "").trim().replace(/\/+$/, "");
+  if (envBase) return envBase;
 
+  // Fallback para headers
+  const proto = (req.headers["x-forwarded-proto"] as string) || "https";
+  const host = (req.headers["x-forwarded-host"] as string) || req.get("host") || "localhost";
+  return `${proto}://${host}`;
+}
+
+// ============================================
+// CORREÇÃO 2: Carregamento sem cache global
+// ============================================
+async function loadCertTemplate(req: Request): Promise<string> {
+  // Tenta carregar do filesystem
+  const templatePath = findFile("public/cert-templates/elegant-classic-brand.html");
+  
+  if (templatePath) {
+    try {
+      const content = fs.readFileSync(templatePath, "utf8");
+      console.log(`[cert-pdf] Template carregado do filesystem: ${content.length} bytes`);
+      return content;
+    } catch (error) {
+      console.error("[cert-pdf] Erro ao ler template do filesystem:", error);
+    }
+  }
+
+  // Fallback: busca via HTTP
+  console.warn("[cert-pdf] Tentando fetch do template via HTTP");
+  const url = `${publicOrigin(req)}/cert-templates/elegant-classic-brand.html`;
+  console.log(`[cert-pdf] Buscando template em: ${url}`);
+  
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`template_fetch_failed: ${response.status} ${response.statusText}`);
+  }
+  
+  const content = await response.text();
+  console.log(`[cert-pdf] Template carregado via HTTP: ${content.length} bytes`);
+  return content;
+}
+
+// ============================================
+// CORREÇÃO 3: Logo inline sem cache global
+// ============================================
+async function loadLogoDataUrl(req: Request): Promise<string | null> {
+  // Tenta carregar do filesystem
+  const logoPath = findFile("public/images/logo.png");
+  
+  if (logoPath) {
+    try {
+      const buf = fs.readFileSync(logoPath);
+      console.log(`[cert-pdf] Logo carregado do filesystem: ${buf.length} bytes`);
+      return `data:image/png;base64,${buf.toString("base64")}`;
+    } catch (error) {
+      console.error("[cert-pdf] Erro ao ler logo do filesystem:", error);
+    }
+  }
+
+  // Fallback: busca via HTTP
   try {
-    templateCache = fs.readFileSync(TEMPLATE_PATH, "utf8");
-    return templateCache;
-  } catch {
-    const url = `${publicOrigin(req)}/cert-templates/elegant-classic-brand.html`;
+    const url = `${publicOrigin(req)}/images/logo.png`;
+    console.log(`[cert-pdf] Buscando logo em: ${url}`);
+    
     const response = await fetch(url);
     if (!response.ok) {
-      throw new Error(`template_fetch_failed:${response.status}`);
+      console.warn(`[cert-pdf] Logo não encontrado via HTTP: ${response.status}`);
+      return null;
     }
-    const html = await response.text();
-    templateCache = html;
-    return html;
-  }
-}
-
-async function loadLogoDataUrl(req: Request): Promise<string | null> {
-  if (logoDataUrlCache !== undefined) {
-    return logoDataUrlCache;
-  }
-
-  try {
-    const buf = fs.readFileSync(LOGO_PATH);
-    logoDataUrlCache = `data:image/png;base64,${buf.toString("base64")}`;
-    return logoDataUrlCache;
-  } catch {
-    try {
-      const response = await fetch(`${publicOrigin(req)}/images/logo.png`);
-      if (!response.ok) {
-        logoDataUrlCache = null;
-        return logoDataUrlCache;
-      }
-      const arr = await response.arrayBuffer();
-      const buf = Buffer.from(arr);
-      logoDataUrlCache = `data:image/png;base64,${buf.toString("base64")}`;
-      return logoDataUrlCache;
-    } catch {
-      logoDataUrlCache = null;
-      return logoDataUrlCache;
-    }
+    
+    const arr = await response.arrayBuffer();
+    const buf = Buffer.from(arr);
+    console.log(`[cert-pdf] Logo carregado via HTTP: ${buf.length} bytes`);
+    return `data:image/png;base64,${buf.toString("base64")}`;
+  } catch (error) {
+    console.error("[cert-pdf] Erro ao buscar logo via HTTP:", error);
+    return null;
   }
 }
 
 async function inlineLogo(html: string, req: Request): Promise<string> {
   const dataUrl = await loadLogoDataUrl(req);
-  if (!dataUrl) return html;
+  
+  if (!dataUrl) {
+    console.warn("[cert-pdf] Logo não disponível, usando placeholder ou removendo");
+    // Remove a tag img do logo para evitar erro 404
+    return html.replace(/<img[^>]*src=(["'])\/images\/logo\.png\1[^>]*>/gi, "");
+  }
 
+  // Substitui todas as referências ao logo
   return html
-    .replace(/src=(["'])\/images\/logo\.png\1/gi, (_match, quote: string) => `src=${quote}${dataUrl}${quote}`)
+    .replace(/src=(["'])\/images\/logo\.png\1/gi, `src="${dataUrl}"`)
     .replace(/src=\/images\/logo\.png/gi, `src="${dataUrl}"`);
 }
 
-function ensureBaseHref(html: string, origin: string): string {
-  if (!origin) return html;
-  if (/<base\s+[^>]*href=/i.test(html)) return html;
-
-  const normalized = origin.endsWith("/") ? origin : `${origin}/`;
-  const baseTag = `<base href="${normalized}">`;
-  const headRe = /<head([^>]*)>/i;
-
-  if (headRe.test(html)) {
-    return html.replace(headRe, `<head$1>${baseTag}`);
-  }
-
-  return `<head>${baseTag}</head>${html}`;
-}
-
 function formatPtBrDate(d: Date): string {
-  const parts = new Intl.DateTimeFormat("pt-BR", {
+  return new Intl.DateTimeFormat("pt-BR", {
     day: "2-digit",
     month: "long",
     year: "numeric",
   }).format(d);
-  // Ex.: "07 de novembro de 2025"
-  return parts;
 }
 
 function replacePlaceholders(template: string, replacements: Record<string, string>): string {
   let output = template;
   for (const [token, value] of Object.entries(replacements)) {
-    output = output.replaceAll(`{{${token}}}`, value);
+    const regex = new RegExp(`\\{\\{${token}\\}\\}`, "g");
+    output = output.replace(regex, value);
   }
   return output;
 }
@@ -142,22 +175,29 @@ function sanitizeUrl(url: string): string {
 }
 
 function buildVerifyUrl(serial: string): string {
-  if (!serial || !VERIFY_BASE_URL) return "";
-  const base = VERIFY_BASE_URL.endsWith("/") ? VERIFY_BASE_URL.slice(0, -1) : VERIFY_BASE_URL;
-  return `${base}/${encodeURIComponent(serial)}`;
+  if (!serial) return "";
+  
+  const base = VERIFY_BASE_URL || process.env.APP_BASE_URL || process.env.URL || "";
+  if (!base) return "";
+  
+  const cleanBase = base.endsWith("/") ? base.slice(0, -1) : base;
+  return `${cleanBase}/api/certificates/verify/${encodeURIComponent(serial)}`;
 }
 
-function buildHtml(template: string, params: {
-  fullName: string;
-  courseTitle: string;
-  city: string;
-  issuedAt: Date;
-  serial: string;
-  verifyUrl: string;
-  qrDataUrl: string;
-  directorName?: string;
-  coordinatorName?: string;
-}): string {
+function buildHtml(
+  template: string,
+  params: {
+    fullName: string;
+    courseTitle: string;
+    city: string;
+    issuedAt: Date;
+    serial: string;
+    verifyUrl: string;
+    qrDataUrl: string;
+    directorName?: string;
+    coordinatorName?: string;
+  }
+): string {
   const issuedDateStr = formatPtBrDate(params.issuedAt);
 
   const replacements: Record<string, string> = {
@@ -179,11 +219,11 @@ function buildHtml(template: string, params: {
 
 function escapeHtml(s: string): string {
   return s
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function isAdminRequest(req: Request): boolean {
@@ -207,10 +247,22 @@ async function renderCertificatePdf(row: Row, req: Request, res: Response): Prom
   const city = process.env.CERT_CITY || "Florianópolis";
   const serial = row.serial || "cert";
   const verifyUrl = buildVerifyUrl(serial);
-  const template = await loadCertTemplate(req);
-  const origin = publicOrigin(req);
-  const templateWithBase = ensureBaseHref(template, origin);
-  const withLogo = await inlineLogo(templateWithBase, req);
+
+  console.log(`[cert-pdf] Iniciando renderização: serial=${serial}, user=${row.user_id}`);
+
+  // Carrega template
+  let template: string;
+  try {
+    template = await loadCertTemplate(req);
+  } catch (error) {
+    console.error("[cert-pdf] Erro ao carregar template:", error);
+    throw new Error("Falha ao carregar template");
+  }
+
+  // Faz inline do logo
+  const withLogo = await inlineLogo(template, req);
+  
+  // Monta HTML final
   const htmlDoc = buildHtml(withLogo, {
     fullName,
     courseTitle,
@@ -221,62 +273,113 @@ async function renderCertificatePdf(row: Row, req: Request, res: Response): Prom
     qrDataUrl: FALLBACK_QR_DATA_URL,
   });
 
-  const executablePath = await chromium.executablePath();
-  const browser = await puppeteer.launch({
-    args: chromium.args,
-    defaultViewport: chromium.defaultViewport,
-    executablePath,
-    headless: chromium.headless,
-  });
+  console.log(`[cert-pdf] HTML montado: ${htmlDoc.length} bytes`);
 
-  const page = await browser.newPage();
-  let browserClosed = false;
+  // Debug: retorna HTML puro
+  if (String(req.query.fmt || "") === "html") {
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.end(htmlDoc);
+    return;
+  }
+
+  // Renderiza com Puppeteer
+  let browser;
   try {
-    await page.setContent(htmlDoc, { waitUntil: "networkidle0" });
-    await page.waitForSelector(".sheet", {
-      visible: true,
-      timeout: 10_000,
+    const executablePath = await chromium.executablePath();
+    console.log(`[cert-pdf] Chromium path: ${executablePath}`);
+
+    browser = await puppeteer.launch({
+      args: [...chromium.args, "--no-sandbox", "--disable-setuid-sandbox"],
+      defaultViewport: chromium.defaultViewport,
+      executablePath,
+      headless: chromium.headless,
     });
+
+    const page = await browser.newPage();
+    
+    // Carrega HTML
+    await page.setContent(htmlDoc, { 
+      waitUntil: "networkidle0", 
+      timeout: 30000 
+    });
+
+    // Aguarda elemento principal
+    try {
+      await page.waitForSelector(".sheet", { visible: true, timeout: 10000 });
+      console.log("[cert-pdf] Elemento .sheet encontrado");
+    } catch (error) {
+      console.warn("[cert-pdf] Timeout aguardando .sheet, continuando...");
+    }
+
+    // Aguarda fontes
     await page.evaluate(async () => {
       try {
         if ((document as any).fonts?.ready) {
           await (document as any).fonts.ready;
         }
-      } catch (_) {
-        /* ignore */
-      }
-    });
-    await page.emulateMediaType("print");
-    await page.addStyleTag({
-      content: `
-    @page{ size:A4; margin:0 }
-    @media print{
-      html,body{ height:auto !important; min-height:0 !important }
-      body{ display:block !important; background:#fff !important; padding:0 !important; box-shadow:none !important }
-      .sheet{ width:210mm !important; height:297mm !important; min-height:0 !important; margin:0 auto !important; box-shadow:none !important; page-break-inside:avoid; page-break-after:avoid }
-      #stage,.stage,.container{ position:static !important; transform:none !important }
-      *{-webkit-print-color-adjust:exact; print-color-adjust:exact}
-    }
-  `,
+      } catch (_) {}
     });
 
+    await page.emulateMediaType("print");
+
+    // Aplica CSS de impressão forçado
+    await page.addStyleTag({
+      content: `
+        @page { 
+          size: 210mm 297mm; 
+          margin: 0; 
+        }
+        
+        html, body {
+          width: 210mm !important;
+          height: 297mm !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          overflow: hidden !important;
+        }
+        
+        body { 
+          display: block !important; 
+          background: #fff !important; 
+          box-shadow: none !important;
+        }
+        
+        .sheet { 
+          width: 210mm !important; 
+          height: 297mm !important; 
+          min-height: 297mm !important;
+          max-height: 297mm !important;
+          margin: 0 !important; 
+          padding: 20mm 20mm 25mm 20mm !important;
+          box-shadow: none !important; 
+          page-break-inside: avoid !important; 
+          page-break-after: avoid !important;
+          border-radius: 0 !important;
+          overflow: hidden !important;
+          position: relative !important;
+        }
+        
+        * { 
+          -webkit-print-color-adjust: exact !important; 
+          print-color-adjust: exact !important;
+          color-adjust: exact !important;
+        }
+      `,
+    });
+
+    // Debug: screenshot PNG
     if (String(req.query.shot || "") === "1") {
+      console.log("[cert-pdf] Gerando screenshot PNG");
       const png = await page.screenshot({ fullPage: true, type: "png" });
       await browser.close();
-      browserClosed = true;
       res.setHeader("Content-Type", "image/png");
+      res.setHeader("Content-Disposition", `inline; filename="cert-${serial}.png"`);
       res.end(png);
       return;
     }
 
-    if (String(req.query.fmt || "") === "html") {
-      await browser.close();
-      browserClosed = true;
-      res.setHeader("Content-Type", "text/html; charset=utf-8");
-      res.end(htmlDoc);
-      return;
-    }
-
+    // Gera PDF
+    console.log("[cert-pdf] Gerando PDF...");
     const pdf = await page.pdf({
       printBackground: true,
       preferCSSPageSize: true,
@@ -285,13 +388,20 @@ async function renderCertificatePdf(row: Row, req: Request, res: Response): Prom
       margin: { top: 0, right: 0, bottom: 0, left: 0 },
       pageRanges: "1",
     });
+
+    console.log(`[cert-pdf] PDF gerado com sucesso: ${pdf.length} bytes`);
+
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `inline; filename="cert-${serial}.pdf"`);
     res.setHeader("Cache-Control", "public, max-age=3600, s-maxage=3600");
     res.status(200).send(pdf);
+  } catch (error) {
+    console.error("[cert-pdf] Erro na renderização:", error);
+    throw error;
   } finally {
-    if (!browserClosed) {
+    if (browser) {
       await browser.close();
+      console.log("[cert-pdf] Browser fechado");
     }
   }
 }
@@ -303,7 +413,8 @@ router.get("/:userId/:courseId.pdf", async (req: Request, res: Response) => {
   const h = rawHash.toLowerCase();
   const dbg = String(req.query.dbg || req.query.debug || "") === "1";
 
-  // Bloqueio antecipado: sem hash exige bearer de dono ou admin.
+  console.log(`[cert-pdf] GET /${userId}/${courseId}.pdf?h=${h ? "***" : "none"}`);
+
   if (!rawHash) {
     const auth = (req as any).auth as MaybeAuth | undefined;
     const isOwner = auth?.userId === userId;
@@ -341,8 +452,7 @@ router.get("/:userId/:courseId.pdf", async (req: Request, res: Response) => {
     if (!allowed && hasBearer) {
       const auth = (req as any).auth as MaybeAuth | undefined;
       const uid = auth?.userId;
-      // manter compat com overrides por ENV
-      const adminByEnv = isAdminRequest(req); // helper já definido acima
+      const adminByEnv = isAdminRequest(req);
       const isAdmin = Boolean(auth?.isAdmin) || adminByEnv;
       if (isAdmin || uid === userId) {
         allowed = true;
@@ -358,7 +468,6 @@ router.get("/:userId/:courseId.pdf", async (req: Request, res: Response) => {
         reason,
         hasBearer,
         hasHash: Boolean(h),
-        sawHash: h ? "yes" : "no",
       };
       return res.status(401).json(dbg ? payload : { error: "no_token" });
     }
@@ -385,7 +494,10 @@ router.get("/:userId/:courseId.pdf", async (req: Request, res: Response) => {
     await renderCertificatePdf(row, req, res);
   } catch (e) {
     console.error("[certificates-pdf] render error", e);
-    return res.status(500).send("render_failed");
+    return res.status(500).json({ 
+      error: "render_failed", 
+      message: dbg ? String(e) : undefined 
+    });
   }
 });
 
@@ -430,7 +542,10 @@ router.get("/:serial", async (req: Request, res: Response) => {
     await renderCertificatePdf(row, req, res);
   } catch (e) {
     console.error("[certificates-pdf] render error", e);
-    return res.status(500).send("render_failed");
+    return res.status(500).json({ 
+      error: "render_failed",
+      message: dbg ? String(e) : undefined
+    });
   }
 });
 
