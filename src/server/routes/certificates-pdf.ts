@@ -10,6 +10,17 @@ import { isUuid } from "../utils/ids.js";
 
 const router = Router();
 
+function relaxInlinePdfCSP(res: Response) {
+  // Evita tela em branco do viewer do Chrome quando navega direto no PDF
+  try {
+    res.removeHeader("Content-Security-Policy");
+  } catch {}
+  res.setHeader(
+    "Content-Security-Policy",
+    "default-src 'self'; img-src 'self' data: blob:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; object-src 'self' data: blob:; frame-ancestors 'self';"
+  );
+}
+
 type MaybeAuth = { userId?: string; email?: string; isAdmin?: boolean };
 
 type Row = {
@@ -306,7 +317,8 @@ async function renderCertificatePdf(row: Row, req: Request, res: Response): Prom
   }
 
   // Renderiza com Puppeteer
-  let browser: Awaited<ReturnType<typeof puppeteer.launch>> | null = null;
+  let browser: import("puppeteer-core").Browser | null = null;
+  let browserClosed = false;
   try {
     const executablePath = await chromium.executablePath();
     console.log(`[cert-pdf] Chromium path: ${executablePath}`);
@@ -395,6 +407,7 @@ async function renderCertificatePdf(row: Row, req: Request, res: Response): Prom
       console.log("[cert-pdf] Gerando screenshot PNG");
       const png = await page.screenshot({ fullPage: true, type: "png" });
       await browser!.close();
+      browserClosed = true;
       browser = null;
       res.setHeader("Content-Type", "image/png");
       res.setHeader("Content-Disposition", `inline; filename="cert-${serial}.png"`);
@@ -415,16 +428,23 @@ async function renderCertificatePdf(row: Row, req: Request, res: Response): Prom
 
     console.log(`[cert-pdf] PDF gerado com sucesso: ${pdf.length} bytes`);
 
+    // Relaxa CSP apenas nesta rota (evita viewer em branco)
+    relaxInlinePdfCSP(res);
     res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", `inline; filename="cert-${serial}.pdf"`);
+    const wantsDownload =
+      String(req.query.download || "") === "1" ||
+      String(req.query.download || "").toLowerCase() === "true";
+    const disp = wantsDownload ? "attachment" : "inline";
+    res.setHeader("Content-Disposition", `${disp}; filename="cert-${serial}.pdf"`);
     res.setHeader("Cache-Control", "public, max-age=3600, s-maxage=3600");
     res.status(200).send(pdf);
   } catch (error) {
     console.error("[cert-pdf] Erro na renderização:", error);
     throw error;
   } finally {
-    if (browser && browser.isConnected()) {
+    if (browser && !browserClosed) {
       await browser.close();
+      browserClosed = true;
       console.log("[cert-pdf] Browser fechado");
     }
   }
