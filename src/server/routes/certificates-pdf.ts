@@ -283,7 +283,7 @@ async function renderCertificatePdf(row: Row, req: Request, res: Response): Prom
   }
 
   // Renderiza com Puppeteer
-  let browser: import("puppeteer-core").Browser | null = null;
+  let browser: Awaited<ReturnType<typeof puppeteer.launch>> | null = null;
   try {
     const executablePath = await chromium.executablePath();
     console.log(`[cert-pdf] Chromium path: ${executablePath}`);
