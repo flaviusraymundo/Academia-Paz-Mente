@@ -174,14 +174,37 @@ function sanitizeUrl(url: string): string {
   }
 }
 
+function joinPaths(left: string, right: string): string {
+  const leftClean = left.replace(/\/+$/, "");
+  const rightClean = right.replace(/^\/+/, "");
+  const combined = `${leftClean}/${rightClean}`;
+  return combined.startsWith("/") ? combined : `/${combined}`;
+}
+
 function buildVerifyUrl(serial: string): string {
   if (!serial) return "";
-  
-  const base = VERIFY_BASE_URL || process.env.APP_BASE_URL || process.env.URL || "";
+
+  const base = (VERIFY_BASE_URL || process.env.APP_BASE_URL || process.env.URL || "").trim();
   if (!base) return "";
-  
-  const cleanBase = base.endsWith("/") ? base.slice(0, -1) : base;
-  return `${cleanBase}/api/certificates/verify/${encodeURIComponent(serial)}`;
+
+  const verifyPath = "/api/certificates/verify";
+  let finalBase: string;
+
+  try {
+    const parsed = new URL(base);
+    const currentPath = parsed.pathname.replace(/\/+$/, "");
+    if (!currentPath.toLowerCase().startsWith(verifyPath)) {
+      parsed.pathname = joinPaths(currentPath, verifyPath);
+    }
+    finalBase = parsed.toString().replace(/\/+$/, "");
+  } catch {
+    const normalized = base.replace(/\/+$/, "");
+    const hasVerify = normalized.toLowerCase().includes(verifyPath);
+    finalBase = hasVerify ? normalized : `${normalized}${verifyPath}`;
+  }
+
+  const separator = finalBase.endsWith("/") ? "" : "/";
+  return `${finalBase}${separator}${encodeURIComponent(serial)}`;
 }
 
 function buildHtml(
