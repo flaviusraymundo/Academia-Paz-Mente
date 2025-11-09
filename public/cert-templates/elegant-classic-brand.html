@@ -39,6 +39,7 @@
       padding: 20mm 20mm 25mm 20mm;
       margin: 0;
       overflow: hidden;
+      display: block; /* força bloco sempre */
     }
     
     /* Bordas decorativas */
@@ -313,6 +314,7 @@
       
       body {
         background: #fff !important;
+        display: block !important; /* remove qualquer resquício de flex em ambientes estranhos */
       }
       
       .sheet {
@@ -324,6 +326,7 @@
         border-radius: 0 !important;
         page-break-inside: avoid;
         page-break-after: avoid;
+        display: block !important;
       }
       
       * {

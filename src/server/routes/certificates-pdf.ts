@@ -331,17 +331,26 @@ async function renderCertificatePdf(row: Row, req: Request, res: Response): Prom
     });
 
     const page = await browser.newPage();
+    // Viewport em A4 @96dpi (~210mm x 297mm) e escala 2 p/ nitidez
+    await page.setViewport({ width: 794, height: 1123, deviceScaleFactor: 2 });
     
     // Carrega HTML
-    await page.setContent(htmlDoc, { 
+    await page.setContent(htmlDoc, {
       waitUntil: "networkidle0", 
       timeout: 30000 
     });
+    // Renderizar como "print" garante que @page/@media print valham
+    await page.emulateMediaType("print");
 
-    // Aguarda elemento principal
+    // Aguarda elemento principal e mede o retângulo visível
     try {
       await page.waitForSelector(".sheet", { visible: true, timeout: 10000 });
-      console.log("[cert-pdf] Elemento .sheet encontrado");
+      const box = await page.$eval(".sheet", el => {
+        const r = (el as HTMLElement).getBoundingClientRect();
+        return { x: r.x, y: r.y, width: r.width, height: r.height };
+      });
+      (page as any).__sheetBox = box;
+      console.log("[cert-pdf] .sheet bbox:", box);
     } catch (error) {
       console.warn("[cert-pdf] Timeout aguardando .sheet, continuando...");
     }
@@ -402,10 +411,11 @@ async function renderCertificatePdf(row: Row, req: Request, res: Response): Prom
       `,
     });
 
-    // Debug: screenshot PNG
+    // Debug: screenshot PNG (clip na .sheet em A4)
     if (String(req.query.shot || "") === "1") {
       console.log("[cert-pdf] Gerando screenshot PNG");
-      const png = await page.screenshot({ fullPage: true, type: "png" });
+      const box = (page as any).__sheetBox || { x: 0, y: 0, width: 794, height: 1123 };
+      const png = await page.screenshot({ type: "png", clip: box });
       if (browser) {
         await browser.close();
         browserClosed = true;
