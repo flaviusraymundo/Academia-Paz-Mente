@@ -454,8 +454,8 @@ async function renderCertificatePdf(row: Row, req: Request, res: Response): Prom
       try {
         res.removeHeader("Content-Length");
       } catch {}
-
-      return res.status(200).send(png);
+      res.status(200).send(png);
+      return;
     }
 
     // Gera PDF
