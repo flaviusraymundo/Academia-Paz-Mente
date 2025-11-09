@@ -317,7 +317,7 @@ async function renderCertificatePdf(row: Row, req: Request, res: Response): Prom
   }
 
   // Renderiza com Puppeteer
-  let browser: import("puppeteer-core").Browser | null = null;
+  let browser: Awaited<ReturnType<typeof puppeteer.launch>> | null = null;
   let browserClosed = false;
   try {
     const executablePath = await chromium.executablePath();
@@ -406,9 +406,11 @@ async function renderCertificatePdf(row: Row, req: Request, res: Response): Prom
     if (String(req.query.shot || "") === "1") {
       console.log("[cert-pdf] Gerando screenshot PNG");
       const png = await page.screenshot({ fullPage: true, type: "png" });
-      await browser!.close();
-      browserClosed = true;
-      browser = null;
+      if (browser) {
+        await browser.close();
+        browserClosed = true;
+        browser = null;
+      }
       res.setHeader("Content-Type", "image/png");
       res.setHeader("Content-Disposition", `inline; filename="cert-${serial}.png"`);
       res.end(png);
@@ -445,6 +447,7 @@ async function renderCertificatePdf(row: Row, req: Request, res: Response): Prom
     if (browser && !browserClosed) {
       await browser.close();
       browserClosed = true;
+      browser = null;
       console.log("[cert-pdf] Browser fechado");
     }
   }
