@@ -6,6 +6,7 @@ import { Router, Request, Response } from "express";
 import { pool } from "../lib/db.js";
 import chromium from "@sparticuz/chromium";
 import puppeteer from "puppeteer-core";
+import QRCode from "qrcode";
 import { isUuid } from "../utils/ids.js";
 
 const router = Router();
@@ -218,6 +219,20 @@ function buildVerifyUrl(serial: string): string {
   return `${finalBase}${separator}${encodeURIComponent(serial)}`;
 }
 
+async function makeQrDataUrl(url: string): Promise<string> {
+  if (!url) return FALLBACK_QR_DATA_URL;
+  try {
+    return await QRCode.toDataURL(url, {
+      width: 360,
+      margin: 0,
+      errorCorrectionLevel: "M",
+      color: { dark: "#000000", light: "#FFFFFF" },
+    });
+  } catch {
+    return FALLBACK_QR_DATA_URL;
+  }
+}
+
 function buildHtml(
   template: string,
   params: {
@@ -280,7 +295,10 @@ async function renderCertificatePdf(row: Row, req: Request, res: Response): Prom
   const issuedAt = new Date(row.issued_at);
   const city = process.env.CERT_CITY || "Florianópolis";
   const serial = row.serial || "cert";
-  const verifyUrl = buildVerifyUrl(serial);
+  const verifyUrl =
+    buildVerifyUrl(serial) ||
+    `${publicOrigin(req)}/api/certificates/verify/${encodeURIComponent(serial)}`;
+  const qrDataUrl = await makeQrDataUrl(verifyUrl);
 
   console.log(`[cert-pdf] Iniciando renderização: serial=${serial}, user=${row.user_id}`);
 
@@ -304,7 +322,7 @@ async function renderCertificatePdf(row: Row, req: Request, res: Response): Prom
     issuedAt,
     serial,
     verifyUrl,
-    qrDataUrl: FALLBACK_QR_DATA_URL,
+    qrDataUrl,
   });
 
   console.log(`[cert-pdf] HTML montado: ${htmlDoc.length} bytes`);
@@ -499,15 +517,9 @@ async function renderCertificatePdf(row: Row, req: Request, res: Response): Prom
       String(req.query.download || "").toLowerCase() === "true";
     const disp = wantsDownload ? "attachment" : "inline";
     res.setHeader("Content-Disposition", `${disp}; filename="cert-${serial}.pdf"`);
-    // Cache: público só quando SOMENTE hash é usado; com bearer → privado
-    const hasHash = typeof req.query.h === "string" && String(req.query.h).length > 0;
-    const hasBearer = (req.headers.authorization || "").startsWith("Bearer ");
-    if (hasHash && !hasBearer) {
-      res.setHeader("Cache-Control", "public, max-age=3600, immutable");
-    } else {
-      res.setHeader("Cache-Control", "private, no-store");
-      res.setHeader("Vary", "Authorization, Cookie");
-    }
+    // Evita confundir validação manual com artefatos em cache compartilhado
+    res.setHeader("Cache-Control", "private, no-store");
+    res.setHeader("Vary", "Authorization, Cookie");
     res.status(200).send(pdf);
   } catch (error) {
     console.error("[cert-pdf] Erro na renderização:", error);
