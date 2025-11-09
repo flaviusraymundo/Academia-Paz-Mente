@@ -445,10 +445,23 @@ async function renderCertificatePdf(row: Row, req: Request, res: Response): Prom
     throw error;
   } finally {
     if (browser && !browserClosed) {
-      await browser.close();
-      browserClosed = true;
-      browser = null;
-      console.log("[cert-pdf] Browser fechado");
+      const isConnected =
+        typeof browser.isConnected === "function" ? browser.isConnected() : true;
+      if (!isConnected) {
+        console.warn("[cert-pdf] Browser já desconectado, ignorando close()");
+        browserClosed = true;
+        browser = null;
+      } else {
+        try {
+          await browser.close();
+          console.log("[cert-pdf] Browser fechado");
+        } catch (closeError) {
+          console.warn("[cert-pdf] Falha ao fechar browser:", closeError);
+        } finally {
+          browserClosed = true;
+          browser = null;
+        }
+      }
     }
   }
 }
