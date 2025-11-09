@@ -1,5 +1,8 @@
 // netlify/functions/api.ts
 import serverless from "serverless-http";
-import app from "../../src/server/app.ts";
+import app from "../../src/server/app";
 
-export const handler = serverless(app);
+// inclui PNG e PDF como tipos binários
+export const handler = serverless(app, {
+  binary: ["image/png", "application/pdf"],
+});
