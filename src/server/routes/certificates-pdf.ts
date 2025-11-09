@@ -411,19 +411,50 @@ async function renderCertificatePdf(row: Row, req: Request, res: Response): Prom
       `,
     });
 
-    // Debug: screenshot PNG (clip na .sheet em A4)
     if (String(req.query.shot || "") === "1") {
       console.log("[cert-pdf] Gerando screenshot PNG");
-      const box = (page as any).__sheetBox || { x: 0, y: 0, width: 794, height: 1123 };
-      const png = await page.screenshot({ type: "png", clip: box });
+
+      // Para screenshot: mídia de TELA, não 'print'
+      try {
+        await page.emulateMediaType("screen");
+      } catch {}
+
+      // Captura da “folha” visível, sem fullPage
+      let png = await page.screenshot({
+        type: "png",
+        fullPage: false,
+        omitBackground: false,
+        captureBeyondViewport: false,
+      });
+
+      // Retry se veio vazio (corrige casos esporádicos em serverless)
+      if (!png || png.length === 0) {
+        await page.waitForTimeout(200);
+        png = await page.screenshot({
+          type: "png",
+          fullPage: false,
+          omitBackground: false,
+          captureBeyondViewport: false,
+        });
+      }
+
+      // Fecha o browser aqui; o finally já está protegido
       if (browser) {
-        await browser.close();
+        try {
+          await browser.close();
+        } catch {}
         browserClosed = true;
         browser = null;
       }
+
+      // Headers corretos para imagem em aba
+      relaxInlinePdfCSP(res);
       res.setHeader("Content-Type", "image/png");
-      res.setHeader("Content-Disposition", `inline; filename="cert-${serial}.png"`);
-      res.end(png);
+      res.setHeader("Cache-Control", "no-store, no-transform");
+      try {
+        res.removeHeader("Content-Length");
+      } catch {}
+      res.status(200).send(png);
       return;
     }
 
