@@ -451,10 +451,9 @@ async function renderCertificatePdf(row: Row, req: Request, res: Response): Prom
       relaxInlinePdfCSP(res);
       res.setHeader("Content-Type", "image/png");
       res.setHeader("Cache-Control", "no-store, no-transform");
-      try {
-        res.removeHeader("Content-Length");
-      } catch {}
-      res.status(200).send(png);
+      res.setHeader("Content-Length", String(png.length));
+      res.status(200);
+      res.end(png);
       return;
     }
 
