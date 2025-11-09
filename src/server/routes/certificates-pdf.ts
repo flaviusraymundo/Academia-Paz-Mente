@@ -438,7 +438,9 @@ async function renderCertificatePdf(row: Row, req: Request, res: Response): Prom
       res.statusCode = 200;
       res.setHeader("Content-Type", "image/png");
       res.setHeader("Content-Length", String(png.length));
-      res.setHeader("Cache-Control", "public, max-age=300, s-maxage=300");
+      // nunca cache público para imagens debugadas por bearer/hash
+      res.setHeader("Cache-Control", "private, no-store");
+      res.setHeader("Vary", "Authorization, Cookie");
       res.setHeader("Content-Disposition", `inline; filename="cert-${serial}.png"`);
       res.end(png);
       return;
@@ -465,7 +467,15 @@ async function renderCertificatePdf(row: Row, req: Request, res: Response): Prom
       String(req.query.download || "").toLowerCase() === "true";
     const disp = wantsDownload ? "attachment" : "inline";
     res.setHeader("Content-Disposition", `${disp}; filename="cert-${serial}.pdf"`);
-    res.setHeader("Cache-Control", "public, max-age=3600, s-maxage=3600");
+    // Cache: público só quando SOMENTE hash é usado; com bearer → privado
+    const hasHash = typeof req.query.h === "string" && String(req.query.h).length > 0;
+    const hasBearer = (req.headers.authorization || "").startsWith("Bearer ");
+    if (hasHash && !hasBearer) {
+      res.setHeader("Cache-Control", "public, max-age=3600, immutable");
+    } else {
+      res.setHeader("Cache-Control", "private, no-store");
+      res.setHeader("Vary", "Authorization, Cookie");
+    }
     res.status(200).send(pdf);
   } catch (error) {
     console.error("[cert-pdf] Erro na renderização:", error);
