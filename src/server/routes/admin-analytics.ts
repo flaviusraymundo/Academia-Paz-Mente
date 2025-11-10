@@ -2,7 +2,13 @@
 import { Router } from "express";
 import { withClient } from "../lib/db.js";
 import { isUuid } from "../utils/ids.js";
-import { getTimeByModule, getCourseFunnel, getQuizStats } from "../lib/analytics.js";
+import {
+  getTimeByModule,
+  getCourseFunnel,
+  getQuizStats,
+  getCourseOverview,
+  getUserTimeLeaderboard
+} from "../lib/analytics.js";
 
 const router = Router();
 
@@ -12,6 +18,8 @@ const router = Router();
  *   GET  /time?courseId=...
  *   GET  /funnel?courseId=...
  *   GET  /quiz?courseId=...
+ *   GET  /overview?courseId=...
+ *   GET  /time/users?courseId=...&limit=20
  *   POST /refresh
  */
 
@@ -36,6 +44,21 @@ router.get("/quiz", async (req, res) => {
   res.json({ rows: r.rows });
 });
 
+router.get("/overview", async (req, res) => {
+  const courseId = String(req.query.courseId || "");
+  if (!isUuid(courseId)) return res.status(400).json({ error: "invalid_courseId" });
+  const r = await withClient((c) => getCourseOverview(c, courseId));
+  res.json({ row: r.rows[0] || null });
+});
+
+router.get("/time/users", async (req, res) => {
+  const courseId = String(req.query.courseId || "");
+  const limit = Math.max(1, Math.min(200, Number(req.query.limit || 20)));
+  if (!isUuid(courseId)) return res.status(400).json({ error: "invalid_courseId" });
+  const r = await withClient((c) => getUserTimeLeaderboard(c, courseId, limit));
+  res.json({ rows: r.rows });
+});
+
 router.post("/refresh", async (_req, res) => {
   async function tryRefresh(client: any, mv: string) {
     try {
@@ -44,12 +67,14 @@ router.post("/refresh", async (_req, res) => {
       await client.query(`REFRESH MATERIALIZED VIEW ${mv}`);
     }
   }
-
   try {
     await withClient(async (c) => {
       await tryRefresh(c, "vw_module_time");
       await tryRefresh(c, "vw_course_funnel");
       await tryRefresh(c, "vw_quiz_stats");
+      await tryRefresh(c, "vw_course_time");
+      await tryRefresh(c, "vw_course_overview");
+      await tryRefresh(c, "vw_user_course_time");
     });
     res.json({ ok: true });
   } catch (e) {
