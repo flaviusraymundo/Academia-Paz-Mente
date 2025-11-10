@@ -89,3 +89,17 @@ export async function getUserTimeLeaderboard(c: PoolClient, courseId: string, li
     [courseId, limit]
   );
 }
+
+/** Coortes semanais do curso (últimas N linhas por order desc). */
+export async function getCourseWeekly(c: PoolClient, courseId: string, weeks = 12) {
+  return c.query(
+    `
+    SELECT course_id, week_start, users_active, time_spent_secs, modules_started, modules_passed
+      FROM vw_course_weekly
+     WHERE course_id = $1
+     ORDER BY week_start DESC
+     LIMIT $2
+    `,
+    [courseId, weeks]
+  );
+}

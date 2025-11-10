@@ -7,7 +7,8 @@ import {
   getCourseFunnel,
   getQuizStats,
   getCourseOverview,
-  getUserTimeLeaderboard
+  getUserTimeLeaderboard,
+  getCourseWeekly
 } from "../lib/analytics.js";
 
 const router = Router();
@@ -20,6 +21,7 @@ const router = Router();
  *   GET  /quiz?courseId=...
  *   GET  /overview?courseId=...
  *   GET  /time/users?courseId=...&limit=20
+ *   GET  /weekly?courseId=...&weeks=12
  *   POST /refresh
  */
 
@@ -59,13 +61,20 @@ router.get("/time/users", async (req, res) => {
   res.json({ rows: r.rows });
 });
 
+/** GET /api/admin/analytics/weekly?courseId=...&weeks=12 */
+router.get("/weekly", async (req, res) => {
+  const courseId = String(req.query.courseId || "");
+  const weeks = Math.max(1, Math.min(104, Number(req.query.weeks || 12)));
+  if (!isUuid(courseId)) return res.status(400).json({ error: "invalid_courseId" });
+  const r = await withClient((c) => getCourseWeekly(c, courseId, weeks));
+  res.json({ rows: r.rows });
+});
+
+/** Refresh de todas as MVs (CONCURRENTLY com fallback) */
 router.post("/refresh", async (_req, res) => {
   async function tryRefresh(client: any, mv: string) {
-    try {
-      await client.query(`REFRESH MATERIALIZED VIEW CONCURRENTLY ${mv}`);
-    } catch {
-      await client.query(`REFRESH MATERIALIZED VIEW ${mv}`);
-    }
+    try { await client.query(`REFRESH MATERIALIZED VIEW CONCURRENTLY ${mv}`); }
+    catch { await client.query(`REFRESH MATERIALIZED VIEW ${mv}`); }
   }
   try {
     await withClient(async (c) => {
@@ -75,6 +84,7 @@ router.post("/refresh", async (_req, res) => {
       await tryRefresh(c, "vw_course_time");
       await tryRefresh(c, "vw_course_overview");
       await tryRefresh(c, "vw_user_course_time");
+      await tryRefresh(c, "vw_course_weekly"); // novo
     });
     res.json({ ok: true });
   } catch (e) {
