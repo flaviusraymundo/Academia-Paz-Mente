@@ -338,10 +338,11 @@ router.get("/courses", async (_req, res) => {
 
 /**
  * POST /api/admin/courses/:courseId/clone
+ * Clona estrutura de um curso (módulos, itens, quiz e perguntas).
  * Body: { newSlug, newTitle, mode="clone"|"template", blankMedia?:boolean, includeQuestions?:boolean }
- * - Cria novo curso draft (active=false); preserva ordem de módulos e itens
- * - blankMedia: remove campos sensíveis de payload_ref
- * - includeQuestions: clona questões dos quizzes
+ * - Novo curso nasce draft=true, active=false
+ * - blankMedia: remove campos de mídia (ex.: mux_playback_id, html, url, doc_id) do payload_ref dos itens
+ * - includeQuestions: clona perguntas dos quizzes
  */
 router.post("/courses/:courseId/clone", async (req, res) => {
   const sourceId = String(req.params.courseId || "").trim();
@@ -377,9 +378,13 @@ router.post("/courses/:courseId/clone", async (req, res) => {
       return res.status(409).json({ error: "duplicate_slug" });
     }
 
+    // Carrega curso de origem válido (não deletado)
     const courseOrig = await client.query(
-      `select id, slug, title, summary, level from courses
-        where id = $1 and deleted_at is null`,
+      `select id, slug, title, summary, level
+         from courses
+        where id = $1
+          and deleted_at is null
+        limit 1`,
       [sourceId]
     );
     if (!courseOrig.rowCount) {
@@ -388,23 +393,25 @@ router.post("/courses/:courseId/clone", async (req, res) => {
     }
     const source = courseOrig.rows[0];
 
+    // Módulos em ordem
     const modules = await client.query(
-      `select id, title, "order" from modules
+      `select id, title, "order"
+         from modules
         where course_id = $1
         order by "order" asc, id asc`,
       [sourceId]
     );
 
+    // Itens do curso de origem (CORREÇÃO: usar IN (SELECT ...) — NÃO usar ANY(subquery))
     const items = await client.query(
       `select id, module_id, type, "order", payload_ref
          from module_items
-        where module_id = any(
-          select id from modules where course_id = $1
-        )
+        where module_id in (select id from modules where course_id = $1)
         order by module_id, "order" asc`,
       [sourceId]
     );
 
+    // Quizzes (por módulo) e, se habilitado, perguntas
     const quizzes = await client.query(
       `select q.id, q.module_id, q.pass_score
          from quizzes q
@@ -412,21 +419,19 @@ router.post("/courses/:courseId/clone", async (req, res) => {
         where m.course_id = $1`,
       [sourceId]
     );
-
     let questions: any[] = [];
     if (quizzes.rowCount && includeQuestions) {
       const quizIds = quizzes.rows.map((q) => q.id);
-      questions = (
-        await client.query(
-          `select id, quiz_id, kind, body, choices, answer_key
-             from questions
-            where quiz_id = any($1::uuid[])`,
-          [quizIds]
-        )
-      ).rows;
+      const qs = await client.query(
+        `select id, quiz_id, kind, body, choices, answer_key
+           from questions
+          where quiz_id = any($1::uuid[])`,
+        [quizIds]
+      );
+      questions = qs.rows;
     }
 
-    // Inserir novo curso (draft=true sempre; active=false)
+    // Insere novo curso (sempre draft=true, active=false)
     const newCourse = await client.query(
       `insert into courses(id, slug, title, summary, level, active, draft)
        values (gen_random_uuid(), $1, $2, $3, $4, false, true)
@@ -435,7 +440,7 @@ router.post("/courses/:courseId/clone", async (req, res) => {
     );
     const newCourseId = newCourse.rows[0].id;
 
-    // Map antigo->novo módulo
+    // Mapa de módulo antigo -> novo
     const moduleIdMap = new Map<string, string>();
     const newModules: any[] = [];
     for (const m of modules.rows) {
@@ -449,18 +454,18 @@ router.post("/courses/:courseId/clone", async (req, res) => {
       newModules.push(ins.rows[0]);
     }
 
-    // Função de sanitização simples
+    // Sanitização leve de payload_ref quando blankMedia=true
     function sanitizePayloadRef(ref: any) {
       if (!blankMedia) return ref || {};
       if (!ref || typeof ref !== "object") return {};
-      const clone = { ...ref } as Record<string, unknown>;
-      const wipe = ["mux_playback_id", "mux_asset_id", "doc_id", "html", "url"];
-      for (const k of wipe) {
-        if (k in clone) delete clone[k];
+      const clone = { ...ref };
+      for (const k of ["mux_playback_id", "mux_asset_id", "doc_id", "html", "url"]) {
+        if (k in clone) delete (clone as any)[k];
       }
       return clone;
     }
 
+    // Itens
     const newItemsByModule: Record<string, any[]> = {};
     for (const it of items.rows) {
       const newModuleId = moduleIdMap.get(it.module_id);
@@ -476,6 +481,7 @@ router.post("/courses/:courseId/clone", async (req, res) => {
       newItemsByModule[newModuleId].push(ins.rows[0]);
     }
 
+    // Quizzes + perguntas
     const newQuizIds: Record<string, string> = {};
     let questionsCopied = 0;
     for (const q of quizzes.rows) {
@@ -521,14 +527,84 @@ router.post("/courses/:courseId/clone", async (req, res) => {
       mode,
     });
   } catch (e: any) {
-    try {
-      await client.query("ROLLBACK");
-    } catch {}
+    try { await client.query("ROLLBACK"); } catch {}
     const msg = String(e?.message || e);
     if (msg === "duplicate_slug") return res.status(409).json({ error: "duplicate_slug" });
-    if (msg === "source_course_not_found")
-      return res.status(404).json({ error: "source_course_not_found" });
+    if (msg === "source_course_not_found") return res.status(404).json({ error: "source_course_not_found" });
     return res.status(500).json({ error: "clone_failed", detail: msg });
+  } finally {
+    client.release();
+  }
+});
+
+// DELETE /api/admin/courses/:courseId
+// Soft delete somente se draft=true, deleted_at IS NULL e SEM entitlements ativos.
+// Implementação atômica com UPDATE ... WHERE ... AND NOT EXISTS (...) em transação SERIALIZABLE.
+router.delete("/courses/:courseId", async (req, res) => {
+  const id = String(req.params.courseId || "").trim();
+  if (!isUuid(id)) return res.status(400).json({ error: "invalid_courseId" });
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE");
+
+    const attempt = await client.query(
+      `
+      with del as (
+        update courses c
+           set deleted_at = now()
+         where c.id = $1
+           and c.draft = true
+           and c.deleted_at is null
+           and not exists (
+             select 1
+               from entitlements e
+              where e.course_id = c.id
+                and now() < coalesce(e.ends_at, '9999-12-31'::timestamptz)
+           )
+         returning c.id, c.slug, c.title, c.deleted_at
+      )
+      select * from del
+      `,
+      [id]
+    );
+
+    if (attempt.rowCount) {
+      await client.query("COMMIT");
+      return res.json({ ok: true, deleted: true, course: attempt.rows[0] });
+    }
+
+    // Diagnóstico (não compromete a atomicidade da operação anterior)
+    const status = await client.query(
+      `
+      select c.id, c.draft, c.deleted_at,
+             exists (
+               select 1
+                 from entitlements e
+                where e.course_id = c.id
+                  and now() < coalesce(e.ends_at, '9999-12-31'::timestamptz)
+             ) as has_entitlements
+        from courses c
+       where c.id = $1
+       limit 1
+      `,
+      [id]
+    );
+
+    await client.query("ROLLBACK");
+
+    if (!status.rowCount) return res.status(404).json({ error: "not_found" });
+    const row = status.rows[0];
+    if (!row.draft || row.deleted_at) return res.status(409).json({ error: "not_draft" });
+    if (row.has_entitlements) return res.status(409).json({ error: "has_entitlements" });
+    return res.status(500).json({ error: "delete_failed" });
+  } catch (e: any) {
+    try { await client.query("ROLLBACK"); } catch {}
+    if (String(e?.code) === "40001") {
+      return res.status(409).json({ error: "serialization_failure", retry: true });
+    }
+    return res.status(500).json({ error: "delete_failed", detail: String(e?.message || e) });
   } finally {
     client.release();
   }
@@ -556,45 +632,6 @@ router.post("/courses/:courseId/publish", async (req, res) => {
     return res.json({ ok: true, course: r.rows[0] });
   } catch (e: any) {
     return res.status(500).json({ error: "publish_failed", detail: String(e?.message || e) });
-  }
-});
-
-/**
- * DELETE /api/admin/courses/:courseId
- * Soft delete somente se draft=true e sem entitlements.
- */
-router.delete("/courses/:courseId", async (req, res) => {
-  const id = String(req.params.courseId || "").trim();
-  if (!isUuid(id)) return res.status(400).json({ error: "invalid_courseId" });
-  const client = await pool.connect();
-  try {
-    const check = await client.query(
-      `select c.id, c.draft, c.deleted_at,
-              (select count(*) from entitlements e where e.course_id = c.id) as ent_count
-         from courses c
-        where c.id = $1`,
-      [id]
-    );
-    if (!check.rowCount) return res.status(404).json({ error: "not_found" });
-    const row = check.rows[0];
-    if (!row.draft || row.deleted_at) return res.status(409).json({ error: "not_draft" });
-    if (Number(row.ent_count) > 0) return res.status(409).json({ error: "has_entitlements" });
-
-    const del = await client.query(
-      `update courses
-          set deleted_at = now()
-        where id = $1
-          and draft = true
-          and deleted_at is null
-        returning id, slug, title, deleted_at`,
-      [id]
-    );
-    if (!del.rowCount) return res.status(500).json({ error: "delete_failed" });
-    return res.json({ ok: true, deleted: true, course: del.rows[0] });
-  } catch (e: any) {
-    return res.status(500).json({ error: "delete_failed", detail: String(e?.message || e) });
-  } finally {
-    client.release();
   }
 });
 
