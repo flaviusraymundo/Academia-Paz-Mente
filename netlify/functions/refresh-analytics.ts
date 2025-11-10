@@ -20,7 +20,21 @@ export async function handler() {
       headers: { Authorization: `Bearer ${adminToken}` },
     });
     const text = await resp.text();
-    return { statusCode: 200, body: JSON.stringify({ status: resp.status, text }) };
+    // Propaga falhas para que o agendamento mostre erro visível.
+    if (!resp.ok) {
+      return {
+        statusCode: resp.status,
+        body: JSON.stringify({
+          error: "refresh_failed",
+          upstream_status: resp.status,
+          upstream_body: text
+        })
+      };
+    }
+    return {
+      statusCode: 200,
+      body: JSON.stringify({ status: resp.status, text })
+    };
   } catch (e: any) {
     return { statusCode: 500, body: JSON.stringify({ error: String(e?.message || e) }) };
   }
