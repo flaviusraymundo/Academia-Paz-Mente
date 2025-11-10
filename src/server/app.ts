@@ -16,6 +16,7 @@ import { certificatesPublic, certificatesPrivate } from "./routes/certificates.j
 import eventsRouter from "./routes/events.js";
 import adminRouter from "./routes/admin.js";
 import adminAnalyticsRouter from "./routes/admin-analytics.js";
+import adminAnalyticsExportRouter from "./routes/admin-analytics-export.js";
 import { requireAuth } from "./middleware/auth.js";
 import { requireAdmin } from "./middleware/admin.js";
 import entitlementsRouter from "./routes/entitlements.js";
@@ -48,14 +49,13 @@ app.get(["/health", "/api/health"], async (_req: Request, res: Response) => {
   res.json({ ok: true });
 });
 
-// Auth público (ex.: /login, /logout, /me public etc.)
-// Montado em "/" e "/api" para funcionar local e via redirect da Function
+// Auth público
 app.use(["/", "/api"], authRouter);
 
 // Público
 app.use(["/catalog", "/api/catalog"], catalogRouter);
 
-// Tracking público (se TRACK_PUBLIC=1, aceita sem JWT)
+// Tracking público
 app.use(["/events", "/api/events"], eventsRouter);
 
 // Aluno (autenticado)
@@ -63,21 +63,20 @@ app.use("/api/checkout", requireAuth, checkoutRouter);
 app.use("/api/video", requireAuth, videoRouter);
 app.use("/api/quizzes", requireAuth, quizzesRouter);
 
-// Certificados:
-// - /verify é totalmente público
-// - /certificates aceita hash OU bearer (attachAuthIfPresent popula req.auth se houver)
+// Certificados
 app.use("/api/certificates/verify", certificatesPublic);
 app.use("/api/certificates", attachAuthIfPresent, certificatesPdf);
 
-// Demais endpoints públicos/abertos (se houver)
+// Demais endpoints públicos/abertos
 app.use("/api/entitlements", entitlementsRouter);
 
-// Rotas privadas sob /api (guard)
+// Rotas privadas sob /api
 app.use("/api", requireAuth, progressRouter); // /api/me/*
 app.use("/api/certificates", requireAuth, certificatesPrivate);
 
 // Admin Analytics (protegido)
 app.use("/api/admin/analytics", requireAuth, requireAdmin, adminAnalyticsRouter);
+app.use("/api/admin/analytics", requireAuth, requireAdmin, adminAnalyticsExportRouter);
 
 // Admin (protegido) — por último
 app.use("/api/admin", requireAuth, requireAdmin, adminRouter);
