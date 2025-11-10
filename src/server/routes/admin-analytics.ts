@@ -8,7 +8,9 @@ import {
   getQuizStats,
   getCourseOverview,
   getUserTimeLeaderboard,
-  getCourseWeekly
+  getCourseWeekly,
+  getCourseDropoff,
+  getDurations
 } from "../lib/analytics.js";
 
 const router = Router();
@@ -22,6 +24,8 @@ const router = Router();
  *   GET  /overview?courseId=...
  *   GET  /time/users?courseId=...&limit=20
  *   GET  /weekly?courseId=...&weeks=12
+ *   GET  /dropoff?courseId=...
+ *   GET  /durations?courseId=...
  *   POST /refresh
  */
 
@@ -70,6 +74,20 @@ router.get("/weekly", async (req, res) => {
   res.json({ rows: r.rows });
 });
 
+router.get("/dropoff", async (req, res) => {
+  const courseId = String(req.query.courseId || "");
+  if (!isUuid(courseId)) return res.status(400).json({ error: "invalid_courseId" });
+  const r = await withClient((c) => getCourseDropoff(c, courseId));
+  res.json({ rows: r.rows });
+});
+
+router.get("/durations", async (req, res) => {
+  const courseId = String(req.query.courseId || "");
+  if (!isUuid(courseId)) return res.status(400).json({ error: "invalid_courseId" });
+  const r = await withClient((c) => getDurations(c, courseId));
+  res.json(r);
+});
+
 /** Refresh de todas as MVs (CONCURRENTLY com fallback) */
 router.post("/refresh", async (_req, res) => {
   async function tryRefresh(client: any, mv: string) {
@@ -85,6 +103,11 @@ router.post("/refresh", async (_req, res) => {
       await tryRefresh(c, "vw_course_overview");
       await tryRefresh(c, "vw_user_course_time");
       await tryRefresh(c, "vw_course_weekly"); // novo
+      await tryRefresh(c, "vw_course_path");
+      await tryRefresh(c, "vw_course_dropoff");
+      await tryRefresh(c, "vw_module_time_user");
+      await tryRefresh(c, "vw_module_time_stats");
+      await tryRefresh(c, "vw_course_time_stats");
     });
     res.json({ ok: true });
   } catch (e) {

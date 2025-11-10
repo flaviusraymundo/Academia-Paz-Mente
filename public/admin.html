@@ -55,6 +55,8 @@
       <button id="anOverview">Overview</button>
       <button id="anTables">Tabelas (Time/Funnel/Quiz)</button>
       <button id="anLeaderboard">Leaderboard Tempo</button>
+      <button id="anDropoff">Drop-off</button>
+      <button id="anDurations">Tempos (p50/p90)</button>
       <button id="anWeekly">Semanas</button>
       <button id="anExportTime">Export CSV (Time)</button>
       <button id="anExportFunnel">Export CSV (Funnel)</button>
@@ -392,6 +394,31 @@ ends_at: 2025-03-01T12:00:00Z
         thead.innerHTML = '<tr><th>Email</th><th>UserId</th><th>Tempo(s)</th></tr>';
         tbody.innerHTML = (json?.rows||[]).map(r=>`<tr>
           <td>${r.email||''}</td><td>${r.user_id}</td><td>${Number(r.time_spent_secs||0)}</td>
+        </tr>`).join('');
+      });
+
+      // Drop-off por módulo
+      $('#anDropoff')?.addEventListener('click', async ()=>{
+        const c=$('#anCourse').value.trim();
+        const {status,json}=await fetchJSON(`/api/admin/analytics/dropoff?courseId=${c}`,{});
+        $('#anOut').textContent = JSON.stringify({status,json},null,2);
+        const thead=$('#anTable thead'); const tbody=$('#anTable tbody');
+        thead.innerHTML='<tr><th>Ordem</th><th>Módulo</th><th>Parou antes</th><th>Parou aqui</th></tr>';
+        tbody.innerHTML=(json?.rows||[]).map(r=>`<tr>
+          <td>${r.module_order}</td><td>${r.title}</td>
+          <td>${r.drop_after_prev}</td><td>${r.stopped_here}</td>
+        </tr>`).join('');
+      });
+
+      // Tempos (p50/p90) por módulo + agregados do curso
+      $('#anDurations')?.addEventListener('click', async ()=>{
+        const c=$('#anCourse').value.trim();
+        const {status,json}=await fetchJSON(`/api/admin/analytics/durations?courseId=${c}`,{});
+        $('#anOut').textContent = JSON.stringify({status,json},null,2);
+        const thead=$('#anTable thead'); const tbody=$('#anTable tbody');
+        thead.innerHTML='<tr><th>Módulo</th><th>p50(s)</th><th>p90(s)</th><th>avg(s)</th></tr>';
+        tbody.innerHTML=(json?.modules||[]).map(r=>`<tr>
+          <td>${r.title}</td><td>${r.p50_secs}</td><td>${r.p90_secs}</td><td>${r.avg_secs}</td>
         </tr>`).join('');
       });
 
