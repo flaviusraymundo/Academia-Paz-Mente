@@ -57,6 +57,9 @@
       <button id="anLeaderboard">Leaderboard Tempo</button>
       <button id="anWeekly">Semanas</button>
       <button id="anExportTime">Export CSV (Time)</button>
+      <button id="anExportFunnel">Export CSV (Funnel)</button>
+      <button id="anExportQuiz">Export CSV (Quiz)</button>
+      <button id="anExportOverview">Export CSV (Overview)</button>
       <button id="anRefresh">Refresh MVs</button>
     </div>
     <pre id="anOut" style="background:#111;color:#0f0;padding:8px;white-space:pre-wrap;max-height:260px;overflow:auto"></pre>
@@ -418,13 +421,24 @@ ends_at: 2025-03-01T12:00:00Z
         </tr>`).join('');
       });
 
-      // Export CSV (Time) usando o endpoint /export (já existente) com Authorization
-      async function exportCSV(kind, courseId) {
-        const token = (document.getElementById("jwt")?.value || "").trim().replace(/^['"]+|['"]+$/g,"");
+      // Export CSV helper (com Authorization e fallback para localStorage)
+      function readToken() {
+        try {
+          const t = localStorage.getItem("lms_jwt");
+          if (t) return t.trim();
+        } catch {}
+        return (document.getElementById("jwt")?.value || "").trim().replace(/^['"]+|['"]+$/g,"");
+      }
+      async function exportCSVAuth(kind, courseId) {
+        const token = readToken();
+        if (!token) {
+          alert('Cole o JWT antes de exportar.');
+          return;
+        }
         const params = new URLSearchParams({ kind, courseId });
         const resp = await fetch(`/api/admin/analytics/export?${params.toString()}`, {
           headers: {
-            "Authorization": token ? `Bearer ${token}` : "",
+            "Authorization": `Bearer ${token}`,
             "Accept": "text/csv"
           }
         });
@@ -450,14 +464,18 @@ ends_at: 2025-03-01T12:00:00Z
           URL.revokeObjectURL(url);
         }
       }
-      $('#anExportTime')?.addEventListener('click', async ()=>{
-        const c=$('#anCourse').value.trim();
+      function exportCsv(kind) {
+        const c = document.querySelector('#anCourse')?.value.trim() || '';
         if (!c) {
           alert('Informe courseId antes de exportar.');
           return;
         }
-        await exportCSV('time', c);
-      });
+        exportCSVAuth(kind, c);
+      }
+      document.getElementById('anExportTime')?.addEventListener('click', ()=>exportCsv('time'));
+      document.getElementById('anExportFunnel')?.addEventListener('click', ()=>exportCsv('funnel'));
+      document.getElementById('anExportQuiz')?.addEventListener('click', ()=>exportCsv('quiz'));
+      document.getElementById('anExportOverview')?.addEventListener('click', ()=>exportCsv('overview'));
 
       $('#anRefresh')?.addEventListener('click', async ()=>{
         const {status,json}=await fetchJSON(`/api/admin/analytics/refresh`,{method:'POST'});
