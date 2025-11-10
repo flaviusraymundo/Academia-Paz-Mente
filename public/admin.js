@@ -34,6 +34,19 @@ function setOut(id, v) {
   el.textContent = typeof v === "string" ? v : JSON.stringify(v, null, 2);
 }
 
+const CREATION_STATE_KEY = "admin_creation_state";
+function updateCreationState(patch = {}) {
+  try {
+    const prev = JSON.parse(localStorage.getItem(CREATION_STATE_KEY) || "{}") || {};
+    const next = { ...prev, ...patch };
+    localStorage.setItem(CREATION_STATE_KEY, JSON.stringify(next));
+    const el = document.getElementById("creation-state");
+    if (el) el.textContent = JSON.stringify(next, null, 2);
+  } catch {
+    /* ignore */
+  }
+}
+
 function authHeader() {
   const t = readToken();
   return t ? { Authorization: `Bearer ${t}` } : {};
@@ -271,6 +284,54 @@ document.getElementById("createCourse")?.addEventListener("click", async () => {
     body: JSON.stringify({ slug, title, summary, level, active })
   });
   show(out, r.status, await r.text());
+});
+
+// === Clone / Publish / Delete Draft ===
+document.getElementById("btnCloneCourse")?.addEventListener("click", async () => {
+  const source = (document.getElementById("cl-source")?.value || "").trim();
+  const newSlug = (document.getElementById("cl-slug")?.value || "").trim();
+  const newTitle = (document.getElementById("cl-title")?.value || "").trim();
+  const blankMedia = !!document.getElementById("cl-blank")?.checked;
+  const includeQuestions = !!document.getElementById("cl-questions")?.checked;
+  const mode = document.getElementById("cl-mode")?.value || "clone";
+  if (!source || !newSlug || !newTitle) {
+    setOut("cl-out", { error: "source, newSlug e newTitle são obrigatórios" });
+    return;
+  }
+  const { status, body } = await api(`/api/admin/courses/${encodeURIComponent(source)}/clone`, {
+    method: "POST",
+    body: JSON.stringify({ newSlug, newTitle, mode, blankMedia, includeQuestions })
+  });
+  setOut("cl-out", { status, body });
+  if (status === 200 && body?.course?.id) {
+    // Atualiza painel de estado rápido
+    updateCreationState({ lastCourseId: body.course.id });
+  }
+});
+
+document.getElementById("btnPublishCourse")?.addEventListener("click", async () => {
+  const courseId = (document.getElementById("pub-course")?.value || "").trim();
+  if (!courseId) {
+    setOut("cl-out", { error: "Informe courseId draft" });
+    return;
+  }
+  const { status, body } = await api(`/api/admin/courses/${encodeURIComponent(courseId)}/publish`, {
+    method: "POST"
+  });
+  setOut("cl-out", { status, body });
+});
+
+document.getElementById("btnDeleteCourse")?.addEventListener("click", async () => {
+  const courseId = (document.getElementById("pub-course")?.value || "").trim();
+  if (!courseId) {
+    setOut("cl-out", { error: "Informe courseId draft" });
+    return;
+  }
+  if (!confirm("Confirma excluir (soft delete) este draft?")) return;
+  const { status, body } = await api(`/api/admin/courses/${encodeURIComponent(courseId)}`, {
+    method: "DELETE"
+  });
+  setOut("cl-out", { status, body });
 });
 
 // Módulo

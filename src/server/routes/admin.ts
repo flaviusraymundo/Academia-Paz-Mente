@@ -94,14 +94,14 @@ const AdminUserSearchQuery = z.object({
 // ========= Rotas "underscore" SEM guards :id =========
 // Mantê-las ANTES de qualquer router.use("/.../:id", paramUuid("id"))
 
-// Cursos com contagens
+// Cursos com contagens (mantém UMA única definição; removidas duplicatas)
 router.get("/courses/_summary", async (_req: Request, res: Response) => {
   const q = await pool.query(`
     SELECT c.id, c.slug, c.title, c.summary, c.level, c.active,
            COUNT(DISTINCT m.id) AS module_count,
-           COUNT(mi.id)        AS item_count
+           COUNT(mi.id)         AS item_count
       FROM courses c
-      LEFT JOIN modules m ON m.course_id = c.id
+      LEFT JOIN modules m      ON m.course_id = c.id
       LEFT JOIN module_items mi ON mi.module_id = m.id
      GROUP BY c.id
      ORDER BY c.title ASC
@@ -109,6 +109,7 @@ router.get("/courses/_summary", async (_req: Request, res: Response) => {
   res.json({ courses: q.rows });
 });
 
+// Trilhas (tracks) resumo (mantém UMA única definição; removidas duplicatas)
 router.get("/tracks/_summary", async (_req: Request, res: Response) => {
   const q = await pool.query(`
     SELECT t.id, t.slug, t.title, t.active,
@@ -121,68 +122,8 @@ router.get("/tracks/_summary", async (_req: Request, res: Response) => {
   res.json({ tracks: q.rows });
 });
 
-
-router.get("/courses/_summary", async (_req: Request, res: Response) => {
-  const q = await pool.query(`
-    SELECT c.id, c.slug, c.title, c.summary, c.level, c.active,
-           COUNT(DISTINCT m.id) AS module_count,
-           COUNT(mi.id)        AS item_count
-      FROM courses c
-      LEFT JOIN modules m     ON m.course_id = c.id
-      LEFT JOIN module_items mi ON mi.module_id = m.id
-     GROUP BY c.id
-     ORDER BY c.title ASC
-  `);
-  res.json({ courses: q.rows });
-});
-
-// Trilhas (tracks) com breve resumo
-router.get("/tracks/_summary", async (_req: Request, res: Response) => {
-  const q = await pool.query(`
-    SELECT t.id, t.slug, t.title, t.active,
-           COUNT(tc.course_id) AS course_count
-      FROM tracks t
-      LEFT JOIN track_courses tc ON tc.track_id = t.id
-     GROUP BY t.id
-     ORDER BY t.title ASC
-  `);
-  res.json({ tracks: q.rows });
-});
-
-// Busca de usuários por e-mail (autocomplete p/ admin)
-router.get("/users/_search", async (req, res) => {
-  const maybeEmail = Array.isArray(req.query.email) ? req.query.email[0] : req.query.email;
-  const parsed = AdminUserSearchQuery.safeParse({ email: maybeEmail ?? "" });
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-
-  const term = parsed.data.email.toLowerCase();
-  const sanitized = term.replace(/[%_]/g, "\\$&");
-  const pattern = `%${sanitized}%`;
-
-  const { rows } = await pool.query(
-    `SELECT id, email
-       FROM users
-      WHERE email ILIKE $1 ESCAPE '\\'
-      ORDER BY email ASC
-      LIMIT 20`,
-    [pattern]
-  );
-  res.json({ users: rows });
-});
-
-// Criação/garantia de usuário (admin cria aluno)
-router.post("/users", async (req, res) => {
-  const parsed = AdminUserBody.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  const { rows } = await pool.query(
-    `INSERT INTO users(id, email)
-     VALUES (gen_random_uuid(), $1)
-     ON CONFLICT (email) DO UPDATE SET email = EXCLUDED.email
-     RETURNING id, email`,
-    [parsed.data.email]
-  );
-  res.json({ user: rows[0] });
-});
+// (Mantida a primeira definição de /users/_search mais abaixo; removida duplicada)
+// (Mantida a primeira definição de POST /users mais abaixo; removida duplicada)
 
 // Conceder/Revogar entitlements
 router.post("/entitlements", async (req, res) => {
@@ -393,6 +334,268 @@ router.get("/courses", async (_req, res) => {
     `select id, slug, title, summary, level, active, created_at from courses order by created_at desc`
   );
   res.json(rows);
+});
+
+/**
+ * POST /api/admin/courses/:courseId/clone
+ * Body: { newSlug, newTitle, mode="clone"|"template", blankMedia?:boolean, includeQuestions?:boolean }
+ * - Cria novo curso draft (active=false); preserva ordem de módulos e itens
+ * - blankMedia: remove campos sensíveis de payload_ref
+ * - includeQuestions: clona questões dos quizzes
+ */
+router.post("/courses/:courseId/clone", async (req, res) => {
+  const sourceId = String(req.params.courseId || "").trim();
+  if (!isUuid(sourceId)) return res.status(400).json({ error: "invalid_courseId" });
+  const {
+    newSlug,
+    newTitle,
+    mode = "clone",
+    blankMedia = false,
+    includeQuestions = true,
+  } = req.body || {};
+  if (!newSlug || !newTitle) {
+    return res.status(400).json({ error: "missing_newSlug_or_newTitle" });
+  }
+  if (!/^[-a-z0-9]+$/.test(newSlug)) {
+    return res.status(400).json({ error: "invalid_slug_format" });
+  }
+  if (!["clone", "template"].includes(mode)) {
+    return res.status(400).json({ error: "invalid_mode" });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // Verifica slug duplicado cedo
+    const dupe = await client.query(
+      `select 1 from courses where slug = $1 and deleted_at is null limit 1`,
+      [newSlug]
+    );
+    if (dupe.rowCount) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "duplicate_slug" });
+    }
+
+    const courseOrig = await client.query(
+      `select id, slug, title, summary, level from courses
+        where id = $1 and deleted_at is null`,
+      [sourceId]
+    );
+    if (!courseOrig.rowCount) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "source_course_not_found" });
+    }
+    const source = courseOrig.rows[0];
+
+    const modules = await client.query(
+      `select id, title, "order" from modules
+        where course_id = $1
+        order by "order" asc, id asc`,
+      [sourceId]
+    );
+
+    const items = await client.query(
+      `select id, module_id, type, "order", payload_ref
+         from module_items
+        where module_id = any(
+          select id from modules where course_id = $1
+        )
+        order by module_id, "order" asc`,
+      [sourceId]
+    );
+
+    const quizzes = await client.query(
+      `select q.id, q.module_id, q.pass_score
+         from quizzes q
+         join modules m on m.id = q.module_id
+        where m.course_id = $1`,
+      [sourceId]
+    );
+
+    let questions: any[] = [];
+    if (quizzes.rowCount && includeQuestions) {
+      const quizIds = quizzes.rows.map((q) => q.id);
+      questions = (
+        await client.query(
+          `select id, quiz_id, kind, body, choices, answer_key
+             from questions
+            where quiz_id = any($1::uuid[])`,
+          [quizIds]
+        )
+      ).rows;
+    }
+
+    // Inserir novo curso (draft=true sempre; active=false)
+    const newCourse = await client.query(
+      `insert into courses(id, slug, title, summary, level, active, draft)
+       values (gen_random_uuid(), $1, $2, $3, $4, false, true)
+       returning id, slug, title, draft, active`,
+      [newSlug, newTitle, source.summary || "", source.level || "beginner"]
+    );
+    const newCourseId = newCourse.rows[0].id;
+
+    // Map antigo->novo módulo
+    const moduleIdMap = new Map<string, string>();
+    const newModules: any[] = [];
+    for (const m of modules.rows) {
+      const ins = await client.query(
+        `insert into modules(id, course_id, title, "order")
+         values (gen_random_uuid(), $1, $2, $3)
+         returning id, title, "order"`,
+        [newCourseId, m.title, m.order]
+      );
+      moduleIdMap.set(m.id, ins.rows[0].id);
+      newModules.push(ins.rows[0]);
+    }
+
+    // Função de sanitização simples
+    function sanitizePayloadRef(ref: any) {
+      if (!blankMedia) return ref || {};
+      if (!ref || typeof ref !== "object") return {};
+      const clone = { ...ref } as Record<string, unknown>;
+      const wipe = ["mux_playback_id", "mux_asset_id", "doc_id", "html", "url"];
+      for (const k of wipe) {
+        if (k in clone) delete clone[k];
+      }
+      return clone;
+    }
+
+    const newItemsByModule: Record<string, any[]> = {};
+    for (const it of items.rows) {
+      const newModuleId = moduleIdMap.get(it.module_id);
+      if (!newModuleId) continue;
+      const payloadRef = sanitizePayloadRef(it.payload_ref);
+      const ins = await client.query(
+        `insert into module_items(id, module_id, type, "order", payload_ref)
+         values (gen_random_uuid(), $1, $2, $3, $4::jsonb)
+         returning id, type, "order"`,
+        [newModuleId, it.type, it.order, JSON.stringify(payloadRef)]
+      );
+      if (!newItemsByModule[newModuleId]) newItemsByModule[newModuleId] = [];
+      newItemsByModule[newModuleId].push(ins.rows[0]);
+    }
+
+    const newQuizIds: Record<string, string> = {};
+    let questionsCopied = 0;
+    for (const q of quizzes.rows) {
+      const newModuleId = moduleIdMap.get(q.module_id);
+      if (!newModuleId) continue;
+      const insQ = await client.query(
+        `insert into quizzes(id, module_id, pass_score)
+         values (gen_random_uuid(), $1, $2)
+         returning id`,
+        [newModuleId, q.pass_score]
+      );
+      const newQuizId = insQ.rows[0].id;
+      newQuizIds[newModuleId] = newQuizId;
+
+      if (includeQuestions) {
+        const subset = questions.filter((qq) => qq.quiz_id === q.id);
+        for (const qq of subset) {
+          await client.query(
+            `insert into questions(id, quiz_id, kind, body, choices, answer_key)
+             values (gen_random_uuid(), $1, $2, $3::jsonb, $4::jsonb, $5::jsonb)`,
+            [
+              newQuizId,
+              qq.kind,
+              JSON.stringify(qq.body || {}),
+              JSON.stringify(qq.choices || []),
+              JSON.stringify(qq.answer_key || {}),
+            ]
+          );
+          questionsCopied++;
+        }
+      }
+    }
+
+    await client.query("COMMIT");
+    return res.json({
+      course: newCourse.rows[0],
+      modules: newModules,
+      items: newItemsByModule,
+      quiz: newQuizIds,
+      questionsCopied,
+      blankMedia: !!blankMedia,
+      includeQuestions: !!includeQuestions,
+      mode,
+    });
+  } catch (e: any) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {}
+    const msg = String(e?.message || e);
+    if (msg === "duplicate_slug") return res.status(409).json({ error: "duplicate_slug" });
+    if (msg === "source_course_not_found")
+      return res.status(404).json({ error: "source_course_not_found" });
+    return res.status(500).json({ error: "clone_failed", detail: msg });
+  } finally {
+    client.release();
+  }
+});
+
+/**
+ * POST /api/admin/courses/:courseId/publish
+ * Transição draft->publicado (active=true, draft=false)
+ */
+router.post("/courses/:courseId/publish", async (req, res) => {
+  const id = String(req.params.courseId || "").trim();
+  if (!isUuid(id)) return res.status(400).json({ error: "invalid_courseId" });
+  try {
+    const r = await pool.query(
+      `update courses
+          set draft = false,
+              active = true
+        where id = $1
+          and draft = true
+          and deleted_at is null
+        returning id, slug, title, draft, active`,
+      [id]
+    );
+    if (!r.rowCount) return res.status(409).json({ error: "cannot_publish" });
+    return res.json({ ok: true, course: r.rows[0] });
+  } catch (e: any) {
+    return res.status(500).json({ error: "publish_failed", detail: String(e?.message || e) });
+  }
+});
+
+/**
+ * DELETE /api/admin/courses/:courseId
+ * Soft delete somente se draft=true e sem entitlements.
+ */
+router.delete("/courses/:courseId", async (req, res) => {
+  const id = String(req.params.courseId || "").trim();
+  if (!isUuid(id)) return res.status(400).json({ error: "invalid_courseId" });
+  const client = await pool.connect();
+  try {
+    const check = await client.query(
+      `select c.id, c.draft, c.deleted_at,
+              (select count(*) from entitlements e where e.course_id = c.id) as ent_count
+         from courses c
+        where c.id = $1`,
+      [id]
+    );
+    if (!check.rowCount) return res.status(404).json({ error: "not_found" });
+    const row = check.rows[0];
+    if (!row.draft || row.deleted_at) return res.status(409).json({ error: "not_draft" });
+    if (Number(row.ent_count) > 0) return res.status(409).json({ error: "has_entitlements" });
+
+    const del = await client.query(
+      `update courses
+          set deleted_at = now()
+        where id = $1
+          and draft = true
+          and deleted_at is null
+        returning id, slug, title, deleted_at`,
+      [id]
+    );
+    if (!del.rowCount) return res.status(500).json({ error: "delete_failed" });
+    return res.json({ ok: true, deleted: true, course: del.rows[0] });
+  } catch (e: any) {
+    return res.status(500).json({ error: "delete_failed", detail: String(e?.message || e) });
+  } finally {
+    client.release();
+  }
 });
 
 // ===== Módulos =====

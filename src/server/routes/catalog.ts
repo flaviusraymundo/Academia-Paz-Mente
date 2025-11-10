@@ -29,6 +29,8 @@ router.get("/", async (_req: Request, res: Response) => {
         group by mo.course_id
       ) i on i.course_id = c.id
       where c.active = true
+        and c.draft = false
+        and c.deleted_at is null
       order by c.title asc
       `
     );

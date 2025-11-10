@@ -193,6 +193,47 @@ ends_at: 2025-03-01T12:00:00Z
     <button id="createCourse">Criar/Atualizar curso</button>
   </section>
 
+  <!-- Gerenciar rascunhos / clone -->
+  <section>
+    <h2>Clone / Publicar / Excluir (Draft)</h2>
+    <div style="display:grid;gap:8px;max-width:880px">
+      <div>
+        <label>courseId origem (para clonar)</label><br/>
+        <input id="cl-source" placeholder="UUID do curso existente" />
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div>
+          <label>Novo slug</label><br/>
+          <input id="cl-slug" placeholder="novo-slug" />
+        </div>
+        <div>
+          <label>Novo título</label><br/>
+          <input id="cl-title" placeholder="Novo título do curso" />
+        </div>
+        <label style="display:flex;align-items:center;gap:6px">
+          <input type="checkbox" id="cl-blank" /> blank media (limpar payloads)
+        </label>
+        <label style="display:flex;align-items:center;gap:6px">
+          <input type="checkbox" id="cl-questions" checked /> incluir questões
+        </label>
+        <select id="cl-mode">
+          <option value="clone">clone</option>
+          <option value="template">template</option>
+        </select>
+      </div>
+      <button id="btnCloneCourse">Clonar curso</button>
+      <div style="border-top:1px solid #ddd;padding-top:8px;margin-top:8px">
+        <label>courseId draft (publicar / excluir)</label><br/>
+        <input id="pub-course" placeholder="UUID do curso draft" />
+        <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">
+          <button id="btnPublishCourse">Publicar (draft → ativo)</button>
+          <button id="btnDeleteCourse">Excluir draft (soft delete)</button>
+        </div>
+      </div>
+      <pre id="cl-out" style="white-space:pre-wrap;border:1px solid #ddd;padding:8px;"></pre>
+    </div>
+  </section>
+
   <section>
     <h2>Novo módulo</h2>
     <input id="m-course" placeholder="courseId" />
