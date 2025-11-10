@@ -15,6 +15,7 @@ import certificatesPdf from "./routes/certificates-pdf.js";
 import { certificatesPublic, certificatesPrivate } from "./routes/certificates.js";
 import eventsRouter from "./routes/events.js";
 import adminRouter from "./routes/admin.js";
+import adminAnalyticsRouter from "./routes/admin-analytics.js";
 import { requireAuth } from "./middleware/auth.js";
 import { requireAdmin } from "./middleware/admin.js";
 import entitlementsRouter from "./routes/entitlements.js";
@@ -74,6 +75,9 @@ app.use("/api/entitlements", entitlementsRouter);
 // Rotas privadas sob /api (guard)
 app.use("/api", requireAuth, progressRouter); // /api/me/*
 app.use("/api/certificates", requireAuth, certificatesPrivate);
+
+// Admin Analytics (protegido)
+app.use("/api/admin/analytics", requireAuth, requireAdmin, adminAnalyticsRouter);
 
 // Admin (protegido) — por último
 app.use("/api/admin", requireAuth, requireAdmin, adminRouter);
