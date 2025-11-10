@@ -103,3 +103,44 @@ export async function getCourseWeekly(c: PoolClient, courseId: string, weeks = 1
     [courseId, weeks]
   );
 }
+
+/** Drop-off por módulo (onde os alunos param). */
+export async function getCourseDropoff(c: PoolClient, courseId: string) {
+  return c.query(
+    `
+    SELECT d.module_order, m.title,
+           d.drop_after_prev, d.stopped_here
+      FROM vw_course_dropoff d
+      JOIN modules m
+        ON m.course_id = d.course_id
+       AND m."order"    = d.module_order
+     WHERE d.course_id = $1
+     ORDER BY d.module_order ASC
+    `,
+    [courseId]
+  );
+}
+
+/** Tempos (medianas p50/p90) por módulo e agregados do curso. */
+export async function getDurations(c: PoolClient, courseId: string) {
+  const mods = await c.query(
+    `
+    SELECT s.module_id, m.title,
+           s.p50_secs::bigint, s.p90_secs::bigint, s.avg_secs::bigint
+      FROM vw_module_time_stats s
+      JOIN modules m ON m.id = s.module_id
+     WHERE s.course_id = $1
+     ORDER BY m."order" ASC
+    `,
+    [courseId]
+  );
+  const course = await c.query(
+    `
+    SELECT p50_secs::bigint, p90_secs::bigint, avg_secs::bigint
+      FROM vw_course_time_stats
+     WHERE course_id = $1
+    `,
+    [courseId]
+  );
+  return { modules: mods.rows, course: course.rows[0] || null };
+}
