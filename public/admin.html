@@ -338,6 +338,34 @@ ends_at: 2025-03-01T12:00:00Z
         try { return { status:r.status, json: JSON.parse(txt) }; } catch { return { status:r.status, json: txt }; }
       }
 
+      // Helpers para CSV local (sem endpoint /export no servidor)
+      function rowsToCSV(rows) {
+        if (!rows?.length) return "";
+        const cols = Object.keys(rows[0]);
+        const head = cols.join(",");
+        const body = rows.map(r => cols.map(c => {
+          const v = r[c];
+          if (v == null) return "";
+          const s = String(v);
+          return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
+        }).join(",")).join("\n");
+        return head + "\n" + body + "\n";
+      }
+      function downloadCSV(filename, csv) {
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        try {
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+        } finally {
+          URL.revokeObjectURL(url);
+        }
+      }
+
       $('#anOverview')?.addEventListener('click', async ()=>{
         const c=$('#anCourse').value.trim();
         const {status,json}=await fetchJSON(`/api/admin/analytics/overview?courseId=${c}`,{});
@@ -395,6 +423,12 @@ ends_at: 2025-03-01T12:00:00Z
       $('#anWeekly')?.addEventListener('click', async ()=>{
         const c=$('#anCourse').value.trim();
         const {status,json}=await fetchJSON(`/api/admin/analytics/weekly?courseId=${c}&weeks=12`,{});
+        if (status === 404) {
+          $('#anOut').textContent = JSON.stringify({status, error: "weekly_endpoint_missing", hint: "Atualize o backend para expor /api/admin/analytics/weekly ou o botão Semanas ficará indisponível."}, null, 2);
+          const thead=$('#anTable thead'); const tbody=$('#anTable tbody');
+          thead.innerHTML = ''; tbody.innerHTML = '';
+          return;
+        }
         $('#anOut').textContent = JSON.stringify({status,json},null,2);
         const thead=$('#anTable thead'); const tbody=$('#anTable tbody');
         thead.innerHTML = '<tr><th>Week Start</th><th>Users</th><th>Time(s)</th><th>Modules Started</th><th>Modules Passed</th></tr>';
@@ -407,47 +441,20 @@ ends_at: 2025-03-01T12:00:00Z
         </tr>`).join('');
       });
 
-      // Faz download de CSV autenticado (com Authorization: Bearer ...)
-      async function downloadCSVAuth(kind, courseId, limit) {
-        const params = new URLSearchParams({ kind, courseId });
-        if (typeof limit === 'number') params.set('limit', String(limit));
-        const token = (document.getElementById("jwt")?.value || "")
-          .trim()
-          .replace(/^['"]+|['"]+$/g,"");
-        const resp = await fetch(`/api/admin/analytics/export?${params.toString()}`, {
-          headers: {
-            "Authorization": token ? `Bearer ${token}` : "",
-            "Accept": "text/csv; charset=utf-8"
-          }
-        });
-        if (!resp.ok) {
-          const txt = await resp.text().catch(()=> "");
-          // Mostra erro no painel de saída se existir
-          const out = document.getElementById('anOut');
-          if (out) out.textContent = JSON.stringify({ status: resp.status, body: txt }, null, 2);
-          alert(`Falha ao exportar (${resp.status}). Verifique o token/admin e tente novamente.`);
+      // Export CSV local (usa endpoints existentes e inclui Authorization)
+      async function exportTimeCSVLocal(courseId) {
+        const { status, json } = await fetchJSON(`/api/admin/analytics/time?courseId=${courseId}`, {});
+        if (status !== 200) {
+          $('#anOut').textContent = JSON.stringify({ status, json }, null, 2);
           return;
         }
-        const blob = await resp.blob();
-        const cd = resp.headers.get("content-disposition") || "";
-        const m = cd.match(/filename="?([^"]+)"?/i);
-        const filename = m?.[1] || `${kind}_${courseId}.csv`;
-        const url = URL.createObjectURL(blob);
-        try {
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = filename;
-          document.body.appendChild(a);
-          a.click();
-          a.remove();
-        } finally {
-          URL.revokeObjectURL(url);
-        }
+        const rows = json?.rows || [];
+        const csv = rowsToCSV(rows);
+        downloadCSV(`time_${courseId}.csv`, csv);
       }
-
       $('#anExportTime')?.addEventListener('click', async ()=>{
         const c=$('#anCourse').value.trim();
-        await downloadCSVAuth('time', c);
+        await exportTimeCSVLocal(c);
       });
 
       $('#anRefresh')?.addEventListener('click', async ()=>{
