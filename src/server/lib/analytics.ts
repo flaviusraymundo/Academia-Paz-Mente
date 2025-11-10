@@ -1,19 +1,22 @@
 // src/server/lib/analytics.ts
 import type { PoolClient } from "pg";
 
-/** Tempo agregado por módulo dentro de um curso. */
+/** Tempo agregado por módulo dentro de um curso (soma de todos os usuários). */
 export async function getTimeByModule(c: PoolClient, courseId: string) {
   return c.query(
     `
-    SELECT m.course_id,
-           m.id AS module_id,
-           m.title,
-           m."order",
-           COALESCE(v.time_spent_secs, 0)::bigint AS time_spent_secs
-      FROM modules m
-      LEFT JOIN vw_module_time v ON v.module_id = m.id
-     WHERE m.course_id = $1
-     ORDER BY m."order" ASC, m.title ASC
+    SELECT
+      m.course_id,
+      m.id   AS module_id,
+      m.title,
+      m."order",
+      COALESCE(SUM(v.time_spent_secs), 0)::bigint AS time_spent_secs
+    FROM modules m
+    LEFT JOIN vw_module_time v
+      ON v.module_id = m.id
+    WHERE m.course_id = $1
+    GROUP BY m.course_id, m.id, m.title, m."order"
+    ORDER BY m."order" ASC, m.title ASC
     `,
     [courseId]
   );
