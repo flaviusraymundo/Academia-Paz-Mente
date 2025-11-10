@@ -1,0 +1,19 @@
+-- db/migrations/022_leaderboard_time.sql
+-- Idempotente: DROP + CREATE da MV de tempo por usuário/curso.
+
+DROP MATERIALIZED VIEW IF EXISTS vw_user_course_time;
+
+CREATE MATERIALIZED VIEW vw_user_course_time AS
+SELECT
+  p.user_id,
+  m.course_id,
+  SUM(COALESCE(p.time_spent_secs,0))::bigint AS time_spent_secs
+FROM progress p
+JOIN modules m ON m.id = p.module_id
+GROUP BY p.user_id, m.course_id;
+
+CREATE UNIQUE INDEX vw_user_course_time_unique
+  ON vw_user_course_time(user_id, course_id);
+
+CREATE INDEX vw_user_course_time_course_idx
+  ON vw_user_course_time(course_id);
