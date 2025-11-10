@@ -407,12 +407,47 @@ ends_at: 2025-03-01T12:00:00Z
         </tr>`).join('');
       });
 
+      // Faz download de CSV autenticado (com Authorization: Bearer ...)
+      async function downloadCSVAuth(kind, courseId, limit) {
+        const params = new URLSearchParams({ kind, courseId });
+        if (typeof limit === 'number') params.set('limit', String(limit));
+        const token = (document.getElementById("jwt")?.value || "")
+          .trim()
+          .replace(/^['"]+|['"]+$/g,"");
+        const resp = await fetch(`/api/admin/analytics/export?${params.toString()}`, {
+          headers: {
+            "Authorization": token ? `Bearer ${token}` : "",
+            "Accept": "text/csv; charset=utf-8"
+          }
+        });
+        if (!resp.ok) {
+          const txt = await resp.text().catch(()=> "");
+          // Mostra erro no painel de saída se existir
+          const out = document.getElementById('anOut');
+          if (out) out.textContent = JSON.stringify({ status: resp.status, body: txt }, null, 2);
+          alert(`Falha ao exportar (${resp.status}). Verifique o token/admin e tente novamente.`);
+          return;
+        }
+        const blob = await resp.blob();
+        const cd = resp.headers.get("content-disposition") || "";
+        const m = cd.match(/filename="?([^"]+)"?/i);
+        const filename = m?.[1] || `${kind}_${courseId}.csv`;
+        const url = URL.createObjectURL(blob);
+        try {
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+        } finally {
+          URL.revokeObjectURL(url);
+        }
+      }
+
       $('#anExportTime')?.addEventListener('click', async ()=>{
         const c=$('#anCourse').value.trim();
-        const a=document.createElement('a');
-        a.href = `/api/admin/analytics/export?kind=time&courseId=${encodeURIComponent(c)}`;
-        a.download = '';
-        a.click();
+        await downloadCSVAuth('time', c);
       });
 
       $('#anRefresh')?.addEventListener('click', async ()=>{
