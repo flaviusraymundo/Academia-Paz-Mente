@@ -30,18 +30,30 @@ DROP MATERIALIZED VIEW IF EXISTS vw_course_dropoff;
 
 CREATE MATERIALIZED VIEW vw_course_dropoff AS
 WITH mods AS (
-  SELECT course_id, "order" FROM modules
+  SELECT course_id, "order"
+  FROM modules
 ),
 paths AS (
-  SELECT course_id, max_order_seen, max_order_passed FROM vw_course_path
+  SELECT course_id, max_order_seen, max_order_passed
+  FROM vw_course_path
 )
 SELECT
   m.course_id,
-  m."order"                       AS module_order,
-  COUNT(*) FILTER (WHERE COALESCE(p.max_order_passed, -1) = m."order" - 1) AS drop_after_prev, -- parou antes de iniciar este
-  COUNT(*) FILTER (WHERE COALESCE(p.max_order_seen, -1) = m."order")       AS stopped_here      -- chegou aqui e não passou
+  m."order" AS module_order,
+  -- drop_after_prev: usuários que NÃO iniciaram este módulo (último visto = módulo anterior)
+  COUNT(*) FILTER (
+    WHERE COALESCE(p.max_order_seen, -1) = m."order" - 1
+  ) AS drop_after_prev,
+  -- stopped_here: usuários que chegaram neste módulo mas não avançaram além dele
+  -- (se tivessem avançado, max_order_seen seria > módulo atual)
+  -- e que não o passaram (falhou / em andamento)
+  COUNT(*) FILTER (
+    WHERE COALESCE(p.max_order_seen, -1) = m."order"
+      AND COALESCE(p.max_order_passed, -1) < m."order"
+  ) AS stopped_here
 FROM mods m
-LEFT JOIN paths p ON p.course_id = m.course_id
+LEFT JOIN paths p
+  ON p.course_id = m.course_id
 GROUP BY m.course_id, m."order"
 ORDER BY m.course_id, m."order";
 
