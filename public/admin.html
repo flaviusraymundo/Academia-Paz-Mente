@@ -58,11 +58,16 @@
       <button id="anDropoff">Drop-off</button>
       <button id="anDurations">Tempos (p50/p90)</button>
       <button id="anWeekly">Semanas</button>
-      <button id="anExportTime">Export CSV (Time)</button>
       <button id="anExportFunnel">Export CSV (Funnel)</button>
       <button id="anExportQuiz">Export CSV (Quiz)</button>
       <button id="anExportOverview">Export CSV (Overview)</button>
+      <button id="anExportTime">Export CSV (Time)</button>
       <button id="anRefresh">Refresh MVs</button>
+    </div>
+    <!-- Gráficos rápidos -->
+    <div style="display:grid;gap:12px;margin-top:12px">
+      <canvas id="anFunnelChart" width="800" height="220" style="background:#222;border:1px solid #444;border-radius:6px"></canvas>
+      <canvas id="anWeeklyChart" width="800" height="220" style="background:#222;border:1px solid #444;border-radius:6px"></canvas>
     </div>
     <pre id="anOut" style="background:#111;color:#0f0;padding:8px;white-space:pre-wrap;max-height:260px;overflow:auto"></pre>
     <table id="anTable" border="1" style="width:100%;margin-top:8px;font-size:14px;">
@@ -343,6 +348,49 @@ ends_at: 2025-03-01T12:00:00Z
         try { return { status:r.status, json: JSON.parse(txt) }; } catch { return { status:r.status, json: txt }; }
       }
 
+      // ===== Helpers de gráfico (sem libs) =====
+      function barChart(canvasId, labels, values, maxVal){
+        const c = document.getElementById(canvasId);
+        if(!c) return;
+        const ctx = c.getContext('2d');
+        ctx.clearRect(0,0,c.width,c.height);
+        const pad=24;
+        const h = values.length ? (c.height - pad*2)/values.length : 0;
+        const bw = Math.max(8, h*0.6);
+        const max = maxVal || Math.max(1, ...values);
+        ctx.font = '12px sans-serif';
+        labels.forEach((lb,i)=>{
+          const y = pad + i*h + (h-bw)/2;
+          const w = ((c.width - pad*2) * (values[i]/max))|0;
+          ctx.fillStyle = '#333'; ctx.fillRect(pad, y, c.width-pad*2, bw);
+          ctx.fillStyle = '#0af'; ctx.fillRect(pad, y, w, bw);
+          ctx.fillStyle = '#fff';
+          ctx.fillText(lb, 8, y + bw - 2);
+          ctx.fillText(String(values[i]), pad + w + 6, y + bw - 2);
+        });
+      }
+      function lineChart(canvasId, xLabels, values){
+        const c = document.getElementById(canvasId);
+        if(!c) return;
+        const ctx = c.getContext('2d');
+        ctx.clearRect(0,0,c.width,c.height);
+        const pad=32, W=c.width - pad*2, H=c.height - pad*2;
+        const max = Math.max(1, ...values);
+        ctx.strokeStyle = '#666'; ctx.strokeRect(pad, pad, W, H);
+        ctx.beginPath();
+        xLabels.forEach((_,i)=>{
+          const x = pad + (W*(i/(Math.max(1,xLabels.length-1))));
+          const y = pad + H - (H*(values[i]/max));
+          if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+        });
+        ctx.strokeStyle = '#f80'; ctx.lineWidth = 2; ctx.stroke();
+        ctx.fillStyle = '#fff'; ctx.font = '11px sans-serif';
+        xLabels.forEach((lb,i)=>{
+          const x = pad + (W*(i/(Math.max(1,xLabels.length-1))));
+          ctx.fillText(lb, x-16, c.height-8);
+        });
+      }
+
       $('#anOverview')?.addEventListener('click', async ()=>{
         const c=$('#anCourse').value.trim();
         const {status,json}=await fetchJSON(`/api/admin/analytics/overview?courseId=${c}`,{});
@@ -374,7 +422,8 @@ ends_at: 2025-03-01T12:00:00Z
         const mapTime=new Map(timeRows.map(r=>[r.module_id, r.time_spent_secs]));
         const thead=$('#anTable thead'); const tbody=$('#anTable tbody');
         thead.innerHTML = '<tr><th>Módulo</th><th>Ordem</th><th>Tempo(s)</th><th>Started</th><th>Passed</th><th>Failed</th></tr>';
-        tbody.innerHTML = (funnel.json?.rows||[]).map(f=>{
+        const funnelRows=(funnel.json?.rows||[]);
+        tbody.innerHTML = funnelRows.map(f=>{
           const secs = Number(mapTime.get(f.module_id) || 0);
           return `<tr>
             <td>${f.title}</td><td>${f.order}</td>
@@ -384,6 +433,10 @@ ends_at: 2025-03-01T12:00:00Z
             <td>${Number(f.failed_count||0)}</td>
           </tr>`;
         }).join('');
+        // Desenha funil: quantidade de started por módulo
+        const labels = funnelRows.map(r=>`#${r.order} ${r.title}`);
+        const vals   = funnelRows.map(r=>Number(r.started_any||0));
+        barChart('anFunnelChart', labels, vals);
       });
 
       $('#anLeaderboard')?.addEventListener('click', async ()=>{
@@ -439,13 +492,18 @@ ends_at: 2025-03-01T12:00:00Z
         $('#anOut').textContent = JSON.stringify({status,json},null,2);
         const thead=$('#anTable thead'); const tbody=$('#anTable tbody');
         thead.innerHTML = '<tr><th>Week Start</th><th>Users</th><th>Time(s)</th><th>Modules Started</th><th>Modules Passed</th></tr>';
-        tbody.innerHTML = (json?.rows||[]).map(r=>`<tr>
+        const weeklyRows=(json?.rows||[]);
+        tbody.innerHTML = weeklyRows.map(r=>`<tr>
           <td>${r.week_start}</td>
           <td>${Number(r.users_active||0)}</td>
           <td>${Number(r.time_spent_secs||0)}</td>
           <td>${Number(r.modules_started||0)}</td>
           <td>${Number(r.modules_passed||0)}</td>
         </tr>`).join('');
+        // Gráfico linha: usuários ativos por semana (invertendo ordem para cronologia)
+        const labels = weeklyRows.map(r=>String(r.week_start).slice(5,10)).reverse();
+        const vals   = weeklyRows.map(r=>Number(r.users_active||0)).reverse();
+        lineChart('anWeeklyChart', labels, vals);
       });
 
       // Export CSV helper (com Authorization e fallback para localStorage)
