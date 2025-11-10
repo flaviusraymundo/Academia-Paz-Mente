@@ -1,6 +1,8 @@
 // src/server/lib/analytics.ts
 import type { PoolClient } from "pg";
 
+// ...demais funções já existentes...
+
 /** Tempo agregado por módulo dentro de um curso (soma de todos os usuários). */
 export async function getTimeByModule(c: PoolClient, courseId: string) {
   return c.query(
@@ -87,5 +89,23 @@ export async function getUserTimeLeaderboard(c: PoolClient, courseId: string, li
      LIMIT $2
     `,
     [courseId, limit]
+  );
+}
+
+/** Coortes semanais do curso (últimas N semanas). */
+export async function getCourseWeekly(
+  c: PoolClient,
+  courseId: string,
+  weeks = 12
+) {
+  return c.query(
+    `
+    SELECT course_id, week_start, users_active, time_spent_secs, modules_started, modules_passed
+      FROM vw_course_weekly
+     WHERE course_id = $1
+     ORDER BY week_start DESC
+     LIMIT $2
+    `,
+    [courseId, weeks]
   );
 }
