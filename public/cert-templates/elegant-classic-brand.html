@@ -241,59 +241,40 @@
     }
 
     /* QR Code e Selo */
-    .qr {
-      position: absolute;
-      right: 22mm;
-      bottom: 50mm;
-      width: 25mm;
-      height: 25mm;
-      border: 1px solid #ddd;
-      background: #fff;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 1mm 2mm rgba(0,0,0,0.08);
-      z-index: 2;
-    }
-    
-    .qr img {
-      display: block;
-      width: 23mm;
-      height: 23mm;
-    }
-
-    .seal {
+    .qr-box {
       position: absolute;
       right: 22mm;
       bottom: 22mm;
-      width: 24mm;
-      height: 24mm;
-      border-radius: 50%;
-      background: radial-gradient(circle at 30% 30%, rgba(255,255,255,.6), rgba(255,255,255,0) 40%),
-                  radial-gradient(circle at 70% 70%, rgba(0,0,0,.08), rgba(0,0,0,0) 42%),
-                  #f7f4ea;
-      border: 2px solid #b49a54;
-      box-shadow: inset 0 1mm 2mm rgba(0,0,0,.08), 0 1mm 3mm rgba(0,0,0,.08);
+      width: 36mm;
+      height: 36mm;
+      border: 1px solid #ddd;
+      border-radius: 6px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-variant: small-caps;
-      letter-spacing: 0.5pt;
-      text-align: center;
-      line-height: 1.1;
-      color: #806f39;
-      font-size: 8pt;
+      overflow: hidden;
+      background: #fff;
+      box-shadow: 0 1mm 2mm rgba(0,0,0,0.08);
       z-index: 2;
     }
-    
-    .seal .dot {
-      width: 17mm;
-      height: 17mm;
+
+    .qr-box img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+    }
+
+    .seal-img {
+      position: absolute;
+      right: 20mm;
+      bottom: 20mm;
+      width: 40mm;
+      height: 40mm;
       border-radius: 50%;
-      border: 1px solid rgba(180,154,84,.5);
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      object-fit: contain;
+      border: 0;
+      z-index: 1;
     }
 
     /* Marca d'água */
@@ -436,16 +417,10 @@
     <p class="date">Florianópolis, {{ISSUED_DATE_BR}}</p>
 
     <!-- QR Code -->
-    <div class="qr">
-      <img src="{{QR_DATA_URL}}" alt="QR para verificação" />
-    </div>
+    <div class="qr-box"><img src="{{QR_DATA_URL}}" alt="QR" /></div>
 
-    <!-- Selo -->
-    <div class="seal" aria-hidden="true">
-      <div class="dot">
-        <span>SELO<br/>OFICIAL</span>
-      </div>
-    </div>
+    <!-- selo novo (logo) -->
+    <img class="seal-img" src="{{SEAL_DATA_URL}}" alt="Selo" />
   </main>
 </body>
 </html>

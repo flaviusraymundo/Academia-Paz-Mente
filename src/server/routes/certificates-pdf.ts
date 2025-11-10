@@ -110,39 +110,39 @@ async function loadCertTemplate(req: Request): Promise<string> {
 // ============================================
 // CORREÇÃO 3: Logo inline sem cache global
 // ============================================
-async function loadLogoDataUrl(req: Request): Promise<string | null> {
-  // Tenta carregar do filesystem
-  const logoPath = findFile("public/images/logo.png");
-  
-  if (logoPath) {
+async function loadAssetDataUrl(
+  req: Request,
+  relPath: string,
+  mime: string
+): Promise<string | null> {
+  const fsPath = findFile(`public/${relPath.replace(/^\/+/, "")}`);
+  if (fsPath) {
     try {
-      const buf = fs.readFileSync(logoPath);
-      console.log(`[cert-pdf] Logo carregado do filesystem: ${buf.length} bytes`);
-      return `data:image/png;base64,${buf.toString("base64")}`;
+      const buf = fs.readFileSync(fsPath);
+      return `data:${mime};base64,${buf.toString("base64")}`;
     } catch (error) {
-      console.error("[cert-pdf] Erro ao ler logo do filesystem:", error);
+      console.error(`[cert-pdf] Erro ao ler ${relPath} do filesystem:`, error);
     }
   }
 
-  // Fallback: busca via HTTP
   try {
-    const url = `${publicOrigin(req)}/images/logo.png`;
-    console.log(`[cert-pdf] Buscando logo em: ${url}`);
-    
+    const url = `${publicOrigin(req)}/${relPath.replace(/^\/+/, "")}`;
     const response = await fetch(url);
-    if (!response.ok) {
-      console.warn(`[cert-pdf] Logo não encontrado via HTTP: ${response.status}`);
-      return null;
-    }
-    
+    if (!response.ok) return null;
     const arr = await response.arrayBuffer();
-    const buf = Buffer.from(arr);
-    console.log(`[cert-pdf] Logo carregado via HTTP: ${buf.length} bytes`);
-    return `data:image/png;base64,${buf.toString("base64")}`;
+    return `data:${mime};base64,${Buffer.from(arr).toString("base64")}`;
   } catch (error) {
-    console.error("[cert-pdf] Erro ao buscar logo via HTTP:", error);
+    console.error(`[cert-pdf] Erro ao buscar ${relPath} via HTTP:`, error);
     return null;
   }
+}
+
+async function loadLogoDataUrl(req: Request): Promise<string | null> {
+  return loadAssetDataUrl(req, "/images/logo.png", "image/png");
+}
+
+async function loadSealDataUrl(req: Request): Promise<string | null> {
+  return loadAssetDataUrl(req, "/images/selo.png", "image/png");
 }
 
 async function inlineLogo(html: string, req: Request): Promise<string> {
@@ -219,20 +219,6 @@ function buildVerifyUrl(serial: string): string {
   return `${finalBase}${separator}${encodeURIComponent(serial)}`;
 }
 
-async function makeQrDataUrl(url: string): Promise<string> {
-  if (!url) return FALLBACK_QR_DATA_URL;
-  try {
-    return await QRCode.toDataURL(url, {
-      width: 360,
-      margin: 0,
-      errorCorrectionLevel: "M",
-      color: { dark: "#000000", light: "#FFFFFF" },
-    });
-  } catch {
-    return FALLBACK_QR_DATA_URL;
-  }
-}
-
 function buildHtml(
   template: string,
   params: {
@@ -243,6 +229,7 @@ function buildHtml(
     serial: string;
     verifyUrl: string;
     qrDataUrl: string;
+    sealDataUrl?: string;
     directorName?: string;
     coordinatorName?: string;
   }
@@ -257,6 +244,7 @@ function buildHtml(
     COORD_NAME: escapeHtml(params.coordinatorName || COORD_NAME),
     ISSUED_DATE_BR: escapeHtml(issuedDateStr),
     QR_DATA_URL: params.qrDataUrl || FALLBACK_QR_DATA_URL,
+    SEAL_DATA_URL: params.sealDataUrl || "",
     VERIFY_URL: escapeHtml(sanitizeUrl(params.verifyUrl)),
   };
 
@@ -295,10 +283,21 @@ async function renderCertificatePdf(row: Row, req: Request, res: Response): Prom
   const issuedAt = new Date(row.issued_at);
   const city = process.env.CERT_CITY || "Florianópolis";
   const serial = row.serial || "cert";
+  const sealDataUrl = await loadSealDataUrl(req);
   const verifyUrl =
     buildVerifyUrl(serial) ||
     `${publicOrigin(req)}/api/certificates/verify/${encodeURIComponent(serial)}`;
-  const qrDataUrl = await makeQrDataUrl(verifyUrl);
+  let qrDataUrl = FALLBACK_QR_DATA_URL;
+  if (verifyUrl) {
+    try {
+      qrDataUrl = await QRCode.toDataURL(verifyUrl, {
+        errorCorrectionLevel: "M",
+        margin: 0,
+      });
+    } catch (error) {
+      console.error("[cert-pdf] Falha ao gerar QR code:", error);
+    }
+  }
 
   console.log(`[cert-pdf] Iniciando renderização: serial=${serial}, user=${row.user_id}`);
 
@@ -313,7 +312,7 @@ async function renderCertificatePdf(row: Row, req: Request, res: Response): Prom
 
   // Faz inline do logo
   const withLogo = await inlineLogo(template, req);
-  
+
   // Monta HTML final
   const htmlDoc = buildHtml(withLogo, {
     fullName,
@@ -323,6 +322,7 @@ async function renderCertificatePdf(row: Row, req: Request, res: Response): Prom
     serial,
     verifyUrl,
     qrDataUrl,
+    sealDataUrl,
   });
 
   console.log(`[cert-pdf] HTML montado: ${htmlDoc.length} bytes`);
