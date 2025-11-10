@@ -55,6 +55,8 @@
       <button id="anOverview">Overview</button>
       <button id="anTables">Tabelas (Time/Funnel/Quiz)</button>
       <button id="anLeaderboard">Leaderboard Tempo</button>
+      <button id="anWeekly">Semanas</button>
+      <button id="anExportTime">Export CSV (Time)</button>
       <button id="anRefresh">Refresh MVs</button>
     </div>
     <pre id="anOut" style="background:#111;color:#0f0;padding:8px;white-space:pre-wrap;max-height:260px;overflow:auto"></pre>
@@ -388,6 +390,73 @@ ends_at: 2025-03-01T12:00:00Z
         tbody.innerHTML = (json?.rows||[]).map(r=>`<tr>
           <td>${r.email||''}</td><td>${r.user_id}</td><td>${Number(r.time_spent_secs||0)}</td>
         </tr>`).join('');
+      });
+
+      // Semanas (weekly cohorts). Mostra erro claro se rota não existir (404).
+      $('#anWeekly')?.addEventListener('click', async ()=>{
+        const c=$('#anCourse').value.trim();
+        const {status,json}=await fetchJSON(`/api/admin/analytics/weekly?courseId=${c}&weeks=12`,{});
+        if (status === 404) {
+          $('#anOut').textContent = JSON.stringify({
+            status,
+            error: "weekly_endpoint_missing",
+            hint: "Backend sem /api/admin/analytics/weekly ou migração da MV."
+          }, null, 2);
+          $('#anTable thead').innerHTML = '';
+          $('#anTable tbody').innerHTML = '';
+          return;
+        }
+        $('#anOut').textContent = JSON.stringify({status,json},null,2);
+        const thead=$('#anTable thead'); const tbody=$('#anTable tbody');
+        thead.innerHTML = '<tr><th>Week Start</th><th>Users</th><th>Time(s)</th><th>Modules Started</th><th>Modules Passed</th></tr>';
+        tbody.innerHTML = (json?.rows||[]).map(r=>`<tr>
+          <td>${r.week_start}</td>
+          <td>${Number(r.users_active||0)}</td>
+          <td>${Number(r.time_spent_secs||0)}</td>
+          <td>${Number(r.modules_started||0)}</td>
+          <td>${Number(r.modules_passed||0)}</td>
+        </tr>`).join('');
+      });
+
+      // Export CSV (Time) usando o endpoint /export (já existente) com Authorization
+      async function exportCSV(kind, courseId) {
+        const token = (document.getElementById("jwt")?.value || "").trim().replace(/^['"]+|['"]+$/g,"");
+        const params = new URLSearchParams({ kind, courseId });
+        const resp = await fetch(`/api/admin/analytics/export?${params.toString()}`, {
+          headers: {
+            "Authorization": token ? `Bearer ${token}` : "",
+            "Accept": "text/csv"
+          }
+        });
+        if (!resp.ok) {
+          const txt = await resp.text().catch(()=> "");
+          $('#anOut').textContent = JSON.stringify({ status: resp.status, body: txt }, null, 2);
+          alert(`Falha ao exportar (${resp.status}).`);
+          return;
+        }
+        const blob = await resp.blob();
+        const cd = resp.headers.get("content-disposition") || "";
+        const match = cd.match(/filename="?([^"]+)"?/i);
+        const filename = match?.[1] || `${kind}_${courseId}.csv`;
+        const url = URL.createObjectURL(blob);
+        try {
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+        } finally {
+          URL.revokeObjectURL(url);
+        }
+      }
+      $('#anExportTime')?.addEventListener('click', async ()=>{
+        const c=$('#anCourse').value.trim();
+        if (!c) {
+          alert('Informe courseId antes de exportar.');
+          return;
+        }
+        await exportCSV('time', c);
       });
 
       $('#anRefresh')?.addEventListener('click', async ()=>{
