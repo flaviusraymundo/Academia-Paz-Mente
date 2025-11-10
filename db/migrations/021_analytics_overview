@@ -1,0 +1,49 @@
+-- db/migrations/021_analytics_overview.sql
+-- Idempotente: DROP + CREATE das MVs de overview de curso.
+
+-- Remoção prévia (ordem sem dependências relevantes aqui)
+DROP MATERIALIZED VIEW IF EXISTS vw_course_overview;
+DROP MATERIALIZED VIEW IF EXISTS vw_course_time;
+
+-- 1) Tempo por curso (soma do tempo dos módulos considerando todos os usuários)
+CREATE MATERIALIZED VIEW vw_course_time AS
+SELECT
+  m.course_id,
+  SUM(COALESCE(v.time_spent_secs,0))::bigint AS time_spent_secs_total
+FROM modules m
+LEFT JOIN vw_module_time v ON v.module_id = m.id
+GROUP BY m.course_id;
+
+CREATE UNIQUE INDEX vw_course_time_unique
+  ON vw_course_time(course_id);
+
+-- 2) Overview por curso
+-- Soma das métricas de funil por curso (cada valor já é contagem de usuários por módulo; somar combina todos os módulos).
+CREATE MATERIALIZED VIEW vw_course_overview AS
+WITH mods AS (
+  SELECT course_id, COUNT(*)::int AS total_modules
+  FROM modules
+  GROUP BY course_id
+),
+agg AS (
+  SELECT
+    f.course_id,
+    SUM(f.started_any)::bigint AS started_any_sum,
+    SUM(f.passed_count)::bigint AS passed_sum,
+    SUM(f.failed_count)::bigint AS failed_sum
+  FROM vw_course_funnel f
+  GROUP BY f.course_id
+)
+SELECT
+  mo.course_id,
+  COALESCE(ct.time_spent_secs_total,0)::bigint AS time_spent_secs_total,
+  mo.total_modules,
+  COALESCE(agg.started_any_sum,0)::bigint AS started_any_sum,
+  COALESCE(agg.passed_sum,0)::bigint      AS passed_sum,
+  COALESCE(agg.failed_sum,0)::bigint      AS failed_sum
+FROM mods mo
+LEFT JOIN agg ON agg.course_id = mo.course_id
+LEFT JOIN vw_course_time ct ON ct.course_id = mo.course_id;
+
+CREATE UNIQUE INDEX vw_course_overview_unique
+  ON vw_course_overview(course_id);
