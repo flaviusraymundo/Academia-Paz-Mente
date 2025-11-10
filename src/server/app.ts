@@ -21,6 +21,7 @@ import { requireAuth } from "./middleware/auth.js";
 import { requireAdmin } from "./middleware/admin.js";
 import entitlementsRouter from "./routes/entitlements.js";
 import { attachAuthIfPresent } from "./middleware/auth-optional.js";
+import { requireRole } from "./middleware/roles.js";
 
 const app = express();
 app.set("trust proxy", true); // faz req.protocol/hostname respeitarem x-forwarded-*
@@ -80,5 +81,9 @@ app.use("/api/admin/analytics", requireAuth, requireAdmin, adminAnalyticsExportR
 
 // Admin (protegido) — por último
 app.use("/api/admin", requireAuth, requireAdmin, adminRouter);
+
+// Exemplo futuro (Studio para instrutores):
+// import studioRouter from "./routes/studio.js";
+// app.use("/api/studio", requireAuth, requireRole('instructor','admin'), studioRouter);
 
 export default app;
