@@ -61,3 +61,31 @@ export async function getQuizStats(c: PoolClient, courseId: string) {
     [courseId]
   );
 }
+
+/** Overview do curso (síntese tempo + somas de funnel). */
+export async function getCourseOverview(c: PoolClient, courseId: string) {
+  return c.query(
+    `
+    SELECT *
+      FROM vw_course_overview
+     WHERE course_id = $1
+     LIMIT 1
+    `,
+    [courseId]
+  );
+}
+
+/** Leaderboard de tempo por usuário para um curso (top N). */
+export async function getUserTimeLeaderboard(c: PoolClient, courseId: string, limit = 20) {
+  return c.query(
+    `
+    SELECT u.email, t.user_id, t.time_spent_secs
+      FROM vw_user_course_time t
+ LEFT JOIN users u ON u.id = t.user_id
+     WHERE t.course_id = $1
+     ORDER BY t.time_spent_secs DESC
+     LIMIT $2
+    `,
+    [courseId, limit]
+  );
+}

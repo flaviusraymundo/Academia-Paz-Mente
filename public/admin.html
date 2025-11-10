@@ -47,6 +47,24 @@
 
   <hr />
 
+  <!-- Analytics (curso) -->
+  <section style="margin:16px 0;border:1px solid #ccc;padding:12px;border-radius:8px">
+    <h2>Analytics (curso)</h2>
+    <label>CourseId: <input id="anCourse" size="40" value="90db6f02-205f-43b6-a919-a7c01a559177"></label>
+    <div style="margin:8px 0; display:flex; gap:8px; flex-wrap:wrap">
+      <button id="anOverview">Overview</button>
+      <button id="anTables">Tabelas (Time/Funnel/Quiz)</button>
+      <button id="anLeaderboard">Leaderboard Tempo</button>
+      <button id="anRefresh">Refresh MVs</button>
+    </div>
+    <pre id="anOut" style="background:#111;color:#0f0;padding:8px;white-space:pre-wrap;max-height:260px;overflow:auto"></pre>
+    <table id="anTable" border="1" style="width:100%;margin-top:8px;font-size:14px;">
+      <thead></thead><tbody></tbody>
+    </table>
+  </section>
+
+  <hr />
+
   <section>
     <h2>Criar aluno</h2>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;max-width:900px">
@@ -298,5 +316,85 @@ ends_at: 2025-03-01T12:00:00Z
   <p><a href="/admin-dnd.html">Abrir o Reordenador de Itens (drag-and-drop)</a></p>
 
   <script src="/admin.js"></script>
+  <script>
+    (function(){
+      const $ = (s)=>document.querySelector(s);
+
+      async function fetchJSON(url, init){
+        // Se admin.js definiu 'api', preferir para manter header Authorization padronizado
+        if (typeof window.api === 'function' && (!init || !init.headers)) {
+          const { status, body } = await window.api(url, init);
+          return { status, json: body };
+        }
+        const h = new Headers(init?.headers || {});
+        if (!h.has("Authorization")) {
+          const t = (document.getElementById("jwt")?.value || "").trim().replace(/^['"]+|['"]+$/g,"");
+          if (t) h.set("Authorization", `Bearer ${t}`);
+        }
+        const r = await fetch(url, { ...init, headers: h });
+        const txt = await r.text();
+        try { return { status:r.status, json: JSON.parse(txt) }; } catch { return { status:r.status, json: txt }; }
+      }
+
+      $('#anOverview')?.addEventListener('click', async ()=>{
+        const c=$('#anCourse').value.trim();
+        const {status,json}=await fetchJSON(`/api/admin/analytics/overview?courseId=${c}`,{});
+        $('#anOut').textContent = JSON.stringify({status,json},null,2);
+        const row=json?.row||null;
+        const thead=$('#anTable thead'); const tbody=$('#anTable tbody');
+        thead.innerHTML = '<tr><th>time_total(s)</th><th>modules</th><th>started_sum</th><th>passed_sum</th><th>failed_sum</th></tr>';
+        tbody.innerHTML = row ? `<tr>
+          <td>${Number(row.time_spent_secs_total||0)}</td>
+          <td>${Number(row.total_modules||0)}</td>
+          <td>${Number(row.started_any_sum||0)}</td>
+          <td>${Number(row.passed_sum||0)}</td>
+          <td>${Number(row.failed_sum||0)}</td>
+        </tr>` : '';
+      });
+
+      $('#anTables')?.addEventListener('click', async ()=>{
+        const c=$('#anCourse').value.trim();
+        const [time,funnel,quiz] = await Promise.all([
+          fetchJSON(`/api/admin/analytics/time?courseId=${c}`,{}),
+          fetchJSON(`/api/admin/analytics/funnel?courseId=${c}`,{}),
+          fetchJSON(`/api/admin/analytics/quiz?courseId=${c}`,{}),
+        ]);
+        $('#anOut').textContent = JSON.stringify({time,funnel,quiz},null,2);
+
+        const timeRows = (time.json?.rows||[]).map(r => ({
+          ...r, time_spent_secs: Number(r.time_spent_secs || 0)
+        }));
+        const mapTime=new Map(timeRows.map(r=>[r.module_id, r.time_spent_secs]));
+        const thead=$('#anTable thead'); const tbody=$('#anTable tbody');
+        thead.innerHTML = '<tr><th>Módulo</th><th>Ordem</th><th>Tempo(s)</th><th>Started</th><th>Passed</th><th>Failed</th></tr>';
+        tbody.innerHTML = (funnel.json?.rows||[]).map(f=>{
+          const secs = Number(mapTime.get(f.module_id) || 0);
+          return `<tr>
+            <td>${f.title}</td><td>${f.order}</td>
+            <td>${secs}</td>
+            <td>${Number(f.started_any||0)}</td>
+            <td>${Number(f.passed_count||0)}</td>
+            <td>${Number(f.failed_count||0)}</td>
+          </tr>`;
+        }).join('');
+      });
+
+      $('#anLeaderboard')?.addEventListener('click', async ()=>{
+        const c=$('#anCourse').value.trim();
+        const {status,json}=await fetchJSON(`/api/admin/analytics/time/users?courseId=${c}&limit=20`,{});
+        $('#anOut').textContent = JSON.stringify({status,json},null,2);
+        const thead=$('#anTable thead'); const tbody=$('#anTable tbody');
+        thead.innerHTML = '<tr><th>Email</th><th>UserId</th><th>Tempo(s)</th></tr>';
+        tbody.innerHTML = (json?.rows||[]).map(r=>`<tr>
+          <td>${r.email||''}</td><td>${r.user_id}</td><td>${Number(r.time_spent_secs||0)}</td>
+        </tr>`).join('');
+      });
+
+      $('#anRefresh')?.addEventListener('click', async ()=>{
+        const {status,json}=await fetchJSON(`/api/admin/analytics/refresh`,{method:'POST'});
+        $('#anOut').textContent = JSON.stringify({status,json},null,2);
+      });
+    })();
+  </script>
 </body>
 </html>
