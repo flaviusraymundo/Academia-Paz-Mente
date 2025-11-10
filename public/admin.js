@@ -293,6 +293,7 @@ document.getElementById("btnCloneCourse")?.addEventListener("click", async () =>
   const newTitle = (document.getElementById("cl-title")?.value || "").trim();
   const blankMedia = !!document.getElementById("cl-blank")?.checked;
   const includeQuestions = !!document.getElementById("cl-questions")?.checked;
+  const simulate = !!document.getElementById("cl-simulate")?.checked;
   const mode = document.getElementById("cl-mode")?.value || "clone";
   if (!source || !newSlug || !newTitle) {
     setOut("cl-out", { error: "source, newSlug e newTitle são obrigatórios" });
@@ -300,7 +301,7 @@ document.getElementById("btnCloneCourse")?.addEventListener("click", async () =>
   }
   const { status, body } = await api(`/api/admin/courses/${encodeURIComponent(source)}/clone`, {
     method: "POST",
-    body: JSON.stringify({ newSlug, newTitle, mode, blankMedia, includeQuestions })
+    body: JSON.stringify({ newSlug, newTitle, mode, blankMedia, includeQuestions, simulate })
   });
   setOut("cl-out", { status, body });
   if (status === 200 && body?.course?.id) {

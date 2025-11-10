@@ -353,7 +353,10 @@ router.post("/courses/:courseId/clone", async (req, res) => {
     mode = "clone",
     blankMedia = false,
     includeQuestions = true,
+    simulate: simulateBody,
   } = req.body || {};
+  // também aceita via query: ?simulate=1
+  const simulate = Boolean(simulateBody) || String(req.query.simulate || "") === "1";
   if (!newSlug || !newTitle) {
     return res.status(400).json({ error: "missing_newSlug_or_newTitle" });
   }
@@ -366,15 +369,12 @@ router.post("/courses/:courseId/clone", async (req, res) => {
 
   const client = await pool.connect();
   try {
-    await client.query("BEGIN");
-
-    // Verifica slug duplicado cedo
+    // Slug não pode existir nem em draft nem publicado
     const dupe = await client.query(
       `select 1 from courses where slug = $1 and deleted_at is null limit 1`,
       [newSlug]
     );
     if (dupe.rowCount) {
-      await client.query("ROLLBACK");
       return res.status(409).json({ error: "duplicate_slug" });
     }
 
@@ -388,7 +388,6 @@ router.post("/courses/:courseId/clone", async (req, res) => {
       [sourceId]
     );
     if (!courseOrig.rowCount) {
-      await client.query("ROLLBACK");
       return res.status(404).json({ error: "source_course_not_found" });
     }
     const source = courseOrig.rows[0];
@@ -430,6 +429,56 @@ router.post("/courses/:courseId/clone", async (req, res) => {
       );
       questions = qs.rows;
     }
+
+    // Se for simulação, apenas monta plano e retorna sem inserts
+    if (simulate) {
+      // Projeção dos IDs fictícios (não geramos realmente, apenas preview)
+      const projectedModules = modules.rows.map((m) => ({
+        tempId: `mod-${m.id.slice(0, 8)}-new`,
+        title: m.title,
+        order: m.order,
+      }));
+      const moduleTempMap = new Map<string, string>();
+      projectedModules.forEach((pm, idx) => {
+        moduleTempMap.set(modules.rows[idx].id, pm.tempId);
+      });
+      const projectedItems = modules.rows.reduce<Record<string, any[]>>((acc, m) => {
+        const tempId = moduleTempMap.get(m.id);
+        if (!tempId) return acc;
+        const its = items.rows
+          .filter((it) => it.module_id === m.id)
+          .map((it) => ({
+            type: it.type,
+            order: it.order,
+            payloadPreview: blankMedia ? "cleared" : "kept",
+          }));
+        acc[tempId] = its;
+        return acc;
+      }, {});
+      const projectedQuiz = quizzes.rows.reduce<Record<string, string>>((acc, q) => {
+        const tempId = moduleTempMap.get(q.module_id);
+        if (tempId) acc[tempId] = `quiz-new-for-${tempId}`;
+        return acc;
+      }, {});
+      return res.json({
+        simulate: true,
+        mode,
+        blankMedia: !!blankMedia,
+        includeQuestions: !!includeQuestions,
+        newSlug,
+        newTitle,
+        sourceCourseId: sourceId,
+        projected: {
+          course: { slug: newSlug, title: newTitle, draft: true },
+          modules: projectedModules,
+          items: projectedItems,
+          quiz: projectedQuiz,
+          questionsCopied: includeQuestions ? questions.length : 0,
+        },
+      });
+    }
+
+    await client.query("BEGIN");
 
     // Insere novo curso (sempre draft=true, active=false)
     const newCourse = await client.query(
@@ -525,6 +574,7 @@ router.post("/courses/:courseId/clone", async (req, res) => {
       blankMedia: !!blankMedia,
       includeQuestions: !!includeQuestions,
       mode,
+      simulate: false,
     });
   } catch (e: any) {
     try { await client.query("ROLLBACK"); } catch {}
