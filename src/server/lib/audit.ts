@@ -19,7 +19,8 @@ async function ensureTable(client: PoolClient) {
 }
 
 /**
- * Permite garantir a existência da tabela usando apenas o Pool (ex.: leitura inicial /audit).
+ * Garante a existência da tabela audit_events usando apenas o Pool.
+ * Útil antes de leituras (ex.: GET /api/admin/audit) para ambientes sem eventos prévios.
  */
 export async function ensureAuditTable(pool: Pool) {
   const client = await pool.connect();
@@ -32,8 +33,8 @@ export async function ensureAuditTable(pool: Pool) {
 
 export type AuditEvent = {
   actorEmail?: string | null;
-  action: string;
-  entityType: string;
+  action: string;       // ex.: "courses.duplicate"
+  entityType: string;   // ex.: "course" | "module" | "item" | "quiz" | "import"
   entityId?: string | null;
   payload?: any;
 };
