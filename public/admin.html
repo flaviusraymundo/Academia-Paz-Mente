@@ -482,6 +482,21 @@ ends_at: 2025-03-01T12:00:00Z
     <pre id="graphRaw" style="white-space:pre-wrap;border:1px solid #ddd;padding:8px;"></pre>
   </section>
 
+  <!-- === Gerenciar Itens e Módulos === -->
+  <section>
+    <h2>Itens e Módulos</h2>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <input id="im-moduleId" placeholder="moduleId" size="40" />
+      <button id="im-load-items" type="button">Listar itens do módulo</button>
+      <button id="im-delete-module" type="button" style="color:#b00;border-color:#b00">Excluir módulo</button>
+    </div>
+    <div style="margin-top:8px;">
+      <button id="im-save-order" type="button" disabled>Salvar ordem</button>
+    </div>
+    <div id="im-items" style="margin-top:8px;display:grid;gap:8px;"></div>
+    <pre id="im-out" style="white-space:pre-wrap;border:1px solid #ddd;padding:8px;margin-top:8px;"></pre>
+  </section>
+
   <hr />
 
   <!-- Reordenar itens? Use a página dedicada: -->

@@ -1191,3 +1191,228 @@ if ($btnVideoBeat) {
 
   loadCourses();
 })();
+
+// ===== Itens e Módulos (UI) =====
+(function(){
+  const $ = (id) => document.getElementById(id);
+
+  // Usa o mesmo helper 'api' e 'authHeader' já existentes no admin.js
+  // Se não existirem, defina versões mínimas:
+  async function authHeaderSafe() {
+    try { return typeof authHeader === "function" ? await authHeader() : {}; } catch { return {}; }
+  }
+  async function apiSafe(path, init={}) {
+    try { return typeof api === "function" ? await api(path, init) : await (async () => {
+      const headers = { "Content-Type":"application/json", ...(await authHeaderSafe()), ...(init.headers||{}) };
+      const res = await fetch(path, { ...init, headers });
+      let body = null; try { body = await res.json(); } catch { body = await res.text(); }
+      return { status: res.status, body };
+    })(); } catch (e) { return { status: 0, body: { error: "network_error", detail: String(e) } }; }
+  }
+
+  const state = {
+    moduleId: null,
+    items: [], // [{ id, type, order, payload_ref }]
+    dirtyOrder: false,
+  };
+
+  function setOut(obj) {
+    const out = $("im-out");
+    if (!out) return;
+    out.textContent = typeof obj === "string" ? obj : JSON.stringify(obj, null, 2);
+  }
+
+  function markOrderDirty(flag) {
+    state.dirtyOrder = flag;
+    const btn = $("im-save-order");
+    if (btn) btn.disabled = !flag;
+  }
+
+  function renderItems() {
+    const root = $("im-items");
+    if (!root) return;
+    if (!Array.isArray(state.items) || state.items.length === 0) {
+      root.innerHTML = "<em>Nenhum item</em>";
+      markOrderDirty(false);
+      return;
+    }
+    root.innerHTML = "";
+    state.items
+      .sort((a,b)=>Number(a.order)-Number(b.order))
+      .forEach((it, idx) => {
+        const wrap = document.createElement("div");
+        wrap.style.border = "1px solid #eee";
+        wrap.style.padding = "8px";
+        wrap.style.borderRadius = "6px";
+        wrap.style.display = "grid";
+        wrap.style.gap = "6px";
+
+        const head = document.createElement("div");
+        head.style.display = "flex";
+        head.style.justifyContent = "space-between";
+        head.style.alignItems = "center";
+        head.innerHTML = `
+          <div><b>Item</b> ${idx+1} — <code>${it.id}</code></div>
+          <div style="display:flex;gap:6px;">
+            <button data-up="${it.id}" ${idx===0 ? "disabled":""}>↑</button>
+            <button data-down="${it.id}" ${idx===state.items.length-1 ? "disabled":""}>↓</button>
+            <button data-del="${it.id}" style="color:#b00;border-color:#b00">Excluir</button>
+          </div>
+        `;
+        wrap.appendChild(head);
+
+        const row = document.createElement("div");
+        row.style.display = "grid";
+        row.style.gridTemplateColumns = "160px 1fr";
+        row.style.gap = "6px";
+        row.innerHTML = `
+          <label>Tipo
+            <select data-type="${it.id}">
+              <option value="video">video</option>
+              <option value="text">text</option>
+              <option value="quiz">quiz</option>
+            </select>
+          </label>
+          <label>payload_ref (JSON)
+            <textarea data-payload="${it.id}" rows="4" style="width:100%;font-family:ui-monospace;"></textarea>
+          </label>
+        `;
+        wrap.appendChild(row);
+
+        const saveRow = document.createElement("div");
+        saveRow.style.textAlign = "right";
+        saveRow.innerHTML = `<button data-save="${it.id}">Salvar alterações</button>`;
+        wrap.appendChild(saveRow);
+
+        root.appendChild(wrap);
+
+        // Fill values
+        const sel = root.querySelector(`select[data-type="${it.id}"]`);
+        const txt = root.querySelector(`textarea[data-payload="${it.id}"]`);
+        if (sel) sel.value = it.type;
+        if (txt) txt.value = JSON.stringify(it.payload_ref ?? {}, null, 2);
+      });
+
+    // wire actions
+    root.querySelectorAll("button[data-up]").forEach((b) => {
+      b.addEventListener("click", () => moveItem(b.getAttribute("data-up"), -1));
+    });
+    root.querySelectorAll("button[data-down]").forEach((b) => {
+      b.addEventListener("click", () => moveItem(b.getAttribute("data-down"), +1));
+    });
+    root.querySelectorAll("button[data-del]").forEach((b) => {
+      b.addEventListener("click", async () => {
+        const id = b.getAttribute("data-del");
+        if (!confirm("Excluir este item?")) return;
+        const r = await apiSafe(`/api/admin/items/${encodeURIComponent(id)}`, { method:"DELETE" });
+        setOut({ deleteItem: r });
+        if (r.status === 200) {
+          state.items = state.items.filter(x => x.id !== id);
+          renderItems();
+        }
+      });
+    });
+    root.querySelectorAll("button[data-save]").forEach((b) => {
+      b.addEventListener("click", async () => {
+        const id = b.getAttribute("data-save");
+        const sel = root.querySelector(`select[data-type="${id}"]`);
+        const txt = root.querySelector(`textarea[data-payload="${id}"]`);
+        let payload;
+        try { payload = txt?.value ? JSON.parse(txt.value) : {}; }
+        catch { return setOut({ error:"payload_ref inválido (JSON)" }); }
+        const r = await apiSafe(`/api/admin/items/${encodeURIComponent(id)}`, {
+          method:"PUT",
+          body: JSON.stringify({ type: sel?.value, payloadRef: payload })
+        });
+        setOut({ saveItem: r });
+        if (r.status === 200) {
+          // Atualiza no estado
+          const idx = state.items.findIndex(x => x.id === id);
+          if (idx >= 0) {
+            state.items[idx].type = r.body?.item?.type ?? state.items[idx].type;
+            state.items[idx].payload_ref = r.body?.item?.payload_ref ?? state.items[idx].payload_ref;
+          }
+          renderItems();
+        }
+      });
+    });
+  }
+
+  function moveItem(id, delta) {
+    const items = state.items.sort((a,b)=>Number(a.order)-Number(b.order));
+    const i = items.findIndex(x => x.id === id);
+    if (i < 0) return;
+    const j = i + delta;
+    if (j < 0 || j >= items.length) return;
+    // swap orders in memory
+    const oi = items[i].order;
+    items[i].order = items[j].order;
+    items[j].order = oi;
+    // then stable sort by order
+    const ords = items.map(x => x).sort((a,b)=>Number(a.order)-Number(b.order));
+    // renum 1..N to keep clean
+    ords.forEach((x, idx) => x.order = idx + 1);
+    state.items = ords;
+    markOrderDirty(true);
+    renderItems();
+  }
+
+  async function saveOrder() {
+    if (!state.moduleId) return setOut({ error:"moduleId ausente" });
+    const itemIds = state.items
+      .sort((a,b)=>Number(a.order)-Number(b.order))
+      .map(x => x.id);
+    const r = await apiSafe(`/api/admin/modules/${encodeURIComponent(state.moduleId)}/reorder`, {
+      method:"PATCH",
+      body: JSON.stringify({ itemIds })
+    });
+    setOut({ reorder: r });
+    if (r.status === 200) {
+      // atualizar orders retornados
+      const ret = r.body?.items || [];
+      const map = new Map(ret.map(x => [x.id, Number(x.order)]));
+      state.items.forEach(x => { x.order = map.get(x.id) ?? x.order; });
+      markOrderDirty(false);
+      renderItems();
+    }
+  }
+
+  async function loadItems() {
+    const moduleId = String($("im-moduleId")?.value || "").trim();
+    if (!moduleId) return setOut({ error:"Informe moduleId" });
+    state.moduleId = moduleId;
+    const r = await apiSafe(`/api/admin/modules/${encodeURIComponent(moduleId)}/items`);
+    setOut({ listItems: r });
+    if (r.status === 200) {
+      // r.body.items: [{ id, module_id, type, order }]
+      // Precisamos também do payload_ref para edição; se o endpoint atual não retorna, ajuste server para incluir.
+      // Caso o endpoint só retorne id/type/order, deixe payload vazio para edição manual.
+      const list = Array.isArray(r.body?.items) ? r.body.items : [];
+      state.items = list.map(x => ({
+        id: x.id,
+        type: x.type,
+        order: Number(x.order),
+        payload_ref: x.payload_ref ?? {} // se o endpoint incluir esse campo; caso contrário, fica {}
+      }));
+      markOrderDirty(false);
+      renderItems();
+    }
+  }
+
+  async function deleteModule() {
+    const moduleId = String($("im-moduleId")?.value || "").trim();
+    if (!moduleId) return setOut({ error:"Informe moduleId" });
+    if (!confirm("Excluir módulo (itens/quiz/questões/progress serão removidos)?")) return;
+    const r = await apiSafe(`/api/admin/modules/${encodeURIComponent(moduleId)}`, { method:"DELETE" });
+    setOut({ deleteModule: r });
+    if (r.status === 200) {
+      state.moduleId = null;
+      state.items = [];
+      renderItems();
+    }
+  }
+
+  $("im-load-items")?.addEventListener("click", loadItems);
+  $("im-delete-module")?.addEventListener("click", deleteModule);
+  $("im-save-order")?.addEventListener("click", saveOrder);
+})();
