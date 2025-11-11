@@ -1912,3 +1912,114 @@ if ($btnVideoBeat) {
     out({ addQuestion: r });
   });
 })();
+
+// ===== Toast System (append-only) =====
+(function(){
+  if (window.showToast) return; // evita redefinir
+  function showToast(msg, variant="info", ttl=4000) {
+    const container = document.getElementById("toast-container");
+    if (!container) return console.warn("toast-container ausente");
+    const el = document.createElement("div");
+    el.textContent = msg;
+    el.style.cssText = `
+      font: 13px/1.4 system-ui, sans-serif;
+      padding:10px 14px;
+      border-radius:8px;
+      box-shadow:0 4px 12px rgba(0,0,0,.15);
+      background:${variant==="error"?"#ffe5e5":variant==="success"?"#e7f9ed":variant==="warn"?"#fff7d6":"#f0f4ff"};
+      color:#222;
+      border:1px solid ${variant==="error"?"#ffb4b4":variant==="success"?"#b8e7c7":variant==="warn"?"#ffe08a":"#c6dafd"};
+      opacity:0;
+      transform:translateY(-6px);
+      transition:opacity .25s ease, transform .25s ease;
+      max-width:320px;
+      word-break:break-word;
+    `;
+    container.appendChild(el);
+    requestAnimationFrame(()=>{
+      el.style.opacity="1";
+      el.style.transform="translateY(0)";
+    });
+    setTimeout(()=>{
+      el.style.opacity="0";
+      el.style.transform="translateY(-4px)";
+      setTimeout(()=>{ el.remove(); }, 300);
+    }, ttl);
+    return el;
+  }
+  window.showToast = showToast;
+})();
+
+// ===== Duplicar curso (server-side) =====
+(function(){
+  const $ = (sel) => document.querySelector(sel);
+  if (!$("#dcs-run")) return;
+
+  async function call(path, init={}) {
+    if (typeof window.api === "function") return window.api(path, init);
+    const headers = { "Content-Type":"application/json", ...(init.headers||{}) };
+    const res = await fetch(path, { ...init, headers });
+    let body=null; try{ body=await res.json(); } catch{ body=await res.text(); }
+    return { status: res.status, body };
+  }
+
+  function slugify(s) {
+    return s
+      .toLowerCase()
+      .normalize("NFKD").replace(/[\u0300-\u036f]/g,"")
+      .replace(/[^a-z0-9]+/g,"-")
+      .replace(/^-+|-+$/g,"")
+      .replace(/--+/g,"-")
+      .slice(0,64) || ("copy-" + Date.now().toString(36));
+  }
+
+  $("#dcs-run").addEventListener("click", async () => {
+    const courseId = ($("#dcs-courseId")?.value || "").trim();
+    let slug = ($("#dcs-slug")?.value || "").trim();
+    const title = ($("#dcs-title")?.value || "").trim();
+    const blankMedia = !!$("#dcs-blank")?.checked;
+    const sanitize = !!$("#dcs-sanitize")?.checked;
+    const includeQuestions = !!$("#dcs-questions")?.checked;
+    const active = !!$("#dcs-active")?.checked;
+    const simulate = !!$("#dcs-simulate")?.checked;
+
+    if (!courseId) {
+      $("#dcs-out").textContent = "courseId requerido";
+      if (window.showToast) showToast("Informe o courseId origem", "warn");
+      return;
+    }
+    if (slug) slug = slugify(slug);
+
+    const payload = {
+      slug: slug || undefined,
+      title: title || undefined,
+      blankMedia,
+      sanitize,
+      includeQuestions,
+      active,
+      simulate
+    };
+
+    const { status, body } = await call(`/api/admin/courses/${encodeURIComponent(courseId)}/duplicate`, {
+      method:"POST",
+      body: JSON.stringify(payload)
+    });
+
+    $("#dcs-out").textContent = JSON.stringify({ status, body }, null, 2);
+
+    if (status === 200) {
+      if (window.showToast) showToast(simulate ? "Prévia gerada com sucesso" : "Curso duplicado", simulate ? "info" : "success");
+      if (!simulate) {
+        const newId = body?.course?.id;
+        if (newId) {
+          const ce = document.getElementById("ce-courseId");
+          if (ce) ce.value = newId;
+        }
+      }
+    } else if (status === 409 && body?.error === "duplicate_slug") {
+      if (window.showToast) showToast("Slug duplicado, tente outro.", "error");
+    } else {
+      if (window.showToast) showToast(`Falha ao duplicar (${status})`, "error");
+    }
+  });
+})();
