@@ -558,6 +558,62 @@ ends_at: 2025-03-01T12:00:00Z
   <!-- Reordenar itens? Use a página dedicada: -->
   <p><a href="/admin-dnd.html">Abrir o Reordenador de Itens (drag-and-drop)</a></p>
 
+  <!-- === Módulos: criar / renomear / reordenar === -->
+  <section>
+    <h2>Módulos (criar / renomear / reordenar)</h2>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <input id="md-courseId" placeholder="courseId" size="38" />
+      <input id="md-new-title" placeholder="Novo módulo: título" size="38" />
+      <button id="md-create" type="button">Criar módulo</button>
+      <button id="md-load" type="button">Listar módulos</button>
+      <button id="md-save-order" type="button" disabled>Salvar ordem</button>
+    </div>
+    <div id="md-list" style="margin-top:8px;"></div>
+    <pre id="md-out" style="white-space:pre-wrap;border:1px solid #ddd;padding:8px;margin-top:8px;"></pre>
+  </section>
+
+  <!-- === Adicionar item ao módulo === -->
+  <section>
+    <h2>Adicionar item ao módulo</h2>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <input id="ai-moduleId" placeholder="moduleId" size="34" />
+      <select id="ai-type">
+        <option value="video">video</option>
+        <option value="text">text</option>
+        <option value="quiz">quiz</option>
+      </select>
+      <input id="ai-order" type="number" min="1" placeholder="order (opcional)" />
+      <input id="ai-payload" placeholder='payloadRef JSON (opcional)' size="40" />
+      <button id="ai-add" type="button">Adicionar item</button>
+    </div>
+    <pre id="ai-out" style="white-space:pre-wrap;border:1px solid #ddd;padding:8px;margin-top:8px;"></pre>
+  </section>
+
+  <!-- === Quiz: passScore + criar questão === -->
+  <section>
+    <h2>Quiz (passScore / criar questão)</h2>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <input id="qz-quizId" placeholder="quizId" size="36" />
+      <input id="qz-pass" type="number" min="0" max="100" placeholder="passScore (0-100)" />
+      <button id="qz-save-pass" type="button">Salvar passScore</button>
+    </div>
+    <details style="margin-top:8px;">
+      <summary>Nova questão</summary>
+      <div style="display:grid;gap:6px;margin-top:6px;max-width:900px">
+        <select id="qz-kind">
+          <option value="single">single</option>
+          <option value="multiple">multiple</option>
+          <option value="truefalse">true/false</option>
+        </select>
+        <input id="qz-prompt" placeholder="Enunciado (prompt)" />
+        <textarea id="qz-choices" rows="4" placeholder='choices JSON (ex.: [{"id":"A","text":"Opção A"},{"id":"B","text":"Opção B"}])' style="width:100%;font-family:ui-monospace;"></textarea>
+        <input id="qz-answer" placeholder='answerKey (single/multiple: ["A"], true/false: true|false)' />
+        <button id="qz-add-question" type="button">Adicionar questão</button>
+      </div>
+    </details>
+    <pre id="qz-out" style="white-space:pre-wrap;border:1px solid #ddd;padding:8px;margin-top:8px;"></pre>
+  </section>
+
   <script src="/admin.js"></script>
   <script>
     (function(){
