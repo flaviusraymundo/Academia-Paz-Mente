@@ -1915,7 +1915,7 @@ if ($btnVideoBeat) {
 
 // ===== Duplicar curso (export+import, one-click) =====
 (function(){
-  const $ = (id) => document.getElementById(id);
+  const $ = (sel) => document.querySelector(sel);
   if (!$("#dpl-run")) return;
 
   // Uses global window.api if present (so Authorization is injected)
@@ -1953,64 +1953,66 @@ if ($btnVideoBeat) {
   }
 
   async function duplicate() {
-    const courseId = $("#dpl-courseId").value.trim();
-    const slugInput = $("#dpl-slug").value.trim();
-    const newTitle = $("#dpl-title").value.trim();
-    const blankMedia = !!$("#dpl-blank").checked;
-    const sanitize = !!$("#dpl-sanitize").checked;
+    const courseIdEl = $("#dpl-courseId");
+    const slugEl = $("#dpl-slug");
+    const titleEl = $("#dpl-title");
+    const blankEl = $("#dpl-blank");
+    const sanitizeEl = $("#dpl-sanitize");
+
+    const courseId = (courseIdEl?.value || "").trim();
+    const slugInput = (slugEl?.value || "").trim();
+    const newTitle = (titleEl?.value || "").trim();
+    const blankMedia = !!blankEl?.checked;
+    const sanitize = !!sanitizeEl?.checked;
+
     if (!courseId) {
-      $("#dpl-out").textContent = "courseId requerido";
+      const out = $("#dpl-out");
+      if (out) out.textContent = "courseId requerido";
       return;
     }
 
     const ex = await exportCourse(courseId, { blankMedia, sanitize });
     if (ex.status !== 200 || !ex.body?.export) {
-      $("#dpl-out").textContent = JSON.stringify({ step:"export", status:ex.status, body:ex.body }, null, 2);
+      const out = $("#dpl-out");
+      if (out) out.textContent = JSON.stringify({ step:"export", status:ex.status, body:ex.body }, null, 2);
       return;
     }
 
     const data = ex.body.export;
     const src = data.course || {};
-    // Prepare new slug/title
     const baseSlug = slugInput || `${src.slug || "curso"}-copy-${Date.now().toString(36)}`;
     let slug = slugify(baseSlug);
     const title = newTitle || `${src.title || "Curso"} (cópia)`;
 
-    // Compose payload for import (round-trip)
     const importPayload = {
       blankMedia: !!blankMedia,
       course: {
         ...data.course,
-        id: undefined, // ensure no id
+        id: undefined,
         slug,
         title,
-        active: false // avoid accidental publish
+        active: false
       },
       modules: data.modules || []
     };
 
-    // First attempt
     let imp = await importCourse(importPayload);
     if (imp.status === 409 && (imp.body?.error === "duplicate_slug")) {
-      // Retry once with a different suffix
       slug = slugify(`${baseSlug}-${Math.floor(Math.random()*1e6).toString(36)}`);
       importPayload.course.slug = slug;
       imp = await importCourse(importPayload);
     }
 
-    $("#dpl-out").textContent = JSON.stringify({ status:imp.status, body:imp.body, slugAttempted: slug }, null, 2);
+    const out = $("#dpl-out");
+    if (out) out.textContent = JSON.stringify({ status:imp.status, body:imp.body, slugAttempted: slug }, null, 2);
 
-    // If success, prefill Course Editor with new id
     const newId = imp.body?.course?.id;
     if (newId) {
       const ce = document.getElementById("ce-courseId");
       if (ce) ce.value = newId;
-      // Optionally scroll to Course Editor area
-      const anchor = document.querySelector('h2:contains("Curso (editar / full / restore)")') || document.getElementById("ce-courseId");
-      if (anchor && anchor.scrollIntoView) anchor.scrollIntoView({ behavior:"smooth" });
     }
   }
 
-  $("#dpl-run").addEventListener("click", duplicate);
+  $("#dpl-run")?.addEventListener("click", duplicate);
 })();
 
