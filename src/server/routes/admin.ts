@@ -262,13 +262,14 @@ router.get("/modules/:id/items", async (req, res) => {
 
   const items = await pool.query(
     `
-    SELECT id, module_id, type, "order"
+    SELECT id, module_id, type, "order", payload_ref
       FROM module_items
      WHERE module_id = $1
      ORDER BY "order" ASC, id ASC
     `,
     [moduleId]
   );
+  // payload_ref já vem como jsonb → o driver devolve como objeto JS
   return res.json({ items: items.rows });
 });
 

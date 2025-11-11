@@ -1212,7 +1212,9 @@ if ($btnVideoBeat) {
 
   const state = {
     moduleId: null,
-    items: [], // [{ id, type, order, payload_ref }]
+    // Estrutura dos itens no estado:
+    // { id, type, order, payload_ref, __orig: { type, payloadRaw } }
+    items: [],
     dirtyOrder: false,
   };
 
@@ -1274,7 +1276,7 @@ if ($btnVideoBeat) {
             </select>
           </label>
           <label>payload_ref (JSON)
-            <textarea data-payload="${it.id}" rows="4" style="width:100%;font-family:ui-monospace;"></textarea>
+            <textarea data-payload="${it.id}" rows="6" style="width:100%;font-family:ui-monospace;"></textarea>
           </label>
         `;
         wrap.appendChild(row);
@@ -1286,11 +1288,13 @@ if ($btnVideoBeat) {
 
         root.appendChild(wrap);
 
-        // Fill values
+        // Preenche valores atuais
         const sel = root.querySelector(`select[data-type="${it.id}"]`);
         const txt = root.querySelector(`textarea[data-payload="${it.id}"]`);
         if (sel) sel.value = it.type;
-        if (txt) txt.value = JSON.stringify(it.payload_ref ?? {}, null, 2);
+        // Usa o payload original serializado. Se o backend não retornou payload_ref, deixa em branco.
+        const initialRaw = it.__orig?.payloadRaw ?? (it.payload_ref != null ? JSON.stringify(it.payload_ref, null, 2) : "");
+        if (txt) txt.value = initialRaw;
       });
 
     // wire actions
@@ -1315,23 +1319,62 @@ if ($btnVideoBeat) {
     root.querySelectorAll("button[data-save]").forEach((b) => {
       b.addEventListener("click", async () => {
         const id = b.getAttribute("data-save");
+        const it = state.items.find(x => x.id === id);
+        if (!it) return;
+
         const sel = root.querySelector(`select[data-type="${id}"]`);
         const txt = root.querySelector(`textarea[data-payload="${id}"]`);
-        let payload;
-        try { payload = txt?.value ? JSON.parse(txt.value) : {}; }
-        catch { return setOut({ error:"payload_ref inválido (JSON)" }); }
+
+        const wantType = sel?.value ?? it.type;
+
+        // Monta body só com campos alterados
+        const body = {};
+        if (wantType !== it.__orig?.type) {
+          body.type = wantType;
+        }
+
+        // Só envia payloadRef se o conteúdo do textarea mudou vs original
+        let sendPayload = false;
+        let newPayloadObj = undefined;
+        const currentRaw = (txt?.value ?? "").trim();
+        const origRaw = (it.__orig?.payloadRaw ?? "").trim();
+        if (currentRaw !== origRaw) {
+          if (currentRaw.length === 0) {
+            // Texto vazio: considera payloadRef = {} (limpeza explícita)
+            newPayloadObj = {};
+            sendPayload = true;
+          } else {
+            try {
+              newPayloadObj = JSON.parse(currentRaw);
+              sendPayload = true;
+            } catch {
+              return setOut({ error:"payload_ref inválido (JSON malformado)" });
+            }
+          }
+        }
+        if (sendPayload) {
+          body.payloadRef = newPayloadObj;
+        }
+
+        if (Object.keys(body).length === 0) {
+          return setOut({ info:"Nada para salvar (sem alterações detectadas)" });
+        }
+
         const r = await apiSafe(`/api/admin/items/${encodeURIComponent(id)}`, {
           method:"PUT",
-          body: JSON.stringify({ type: sel?.value, payloadRef: payload })
+          body: JSON.stringify(body)
         });
         setOut({ saveItem: r });
+
         if (r.status === 200) {
-          // Atualiza no estado
-          const idx = state.items.findIndex(x => x.id === id);
-          if (idx >= 0) {
-            state.items[idx].type = r.body?.item?.type ?? state.items[idx].type;
-            state.items[idx].payload_ref = r.body?.item?.payload_ref ?? state.items[idx].payload_ref;
-          }
+          // Atualiza estado e baseline
+          const updated = r.body?.item || {};
+          it.type = updated.type ?? wantType ?? it.type;
+          it.payload_ref = updated.payload_ref ?? (sendPayload ? newPayloadObj : it.payload_ref);
+          it.__orig = {
+            type: it.type,
+            payloadRaw: it.payload_ref != null ? JSON.stringify(it.payload_ref, null, 2) : ""
+          };
           renderItems();
         }
       });
@@ -1344,15 +1387,14 @@ if ($btnVideoBeat) {
     if (i < 0) return;
     const j = i + delta;
     if (j < 0 || j >= items.length) return;
-    // swap orders in memory
+    // swap orders em memória e renumera em seguida
     const oi = items[i].order;
     items[i].order = items[j].order;
     items[j].order = oi;
-    // then stable sort by order
-    const ords = items.map(x => x).sort((a,b)=>Number(a.order)-Number(b.order));
-    // renum 1..N to keep clean
-    ords.forEach((x, idx) => x.order = idx + 1);
-    state.items = ords;
+    // renum sequencial
+    items.sort((a,b)=>Number(a.order)-Number(b.order))
+         .forEach((x, idx) => x.order = idx + 1);
+    state.items = items;
     markOrderDirty(true);
     renderItems();
   }
@@ -1384,16 +1426,21 @@ if ($btnVideoBeat) {
     const r = await apiSafe(`/api/admin/modules/${encodeURIComponent(moduleId)}/items`);
     setOut({ listItems: r });
     if (r.status === 200) {
-      // r.body.items: [{ id, module_id, type, order }]
-      // Precisamos também do payload_ref para edição; se o endpoint atual não retorna, ajuste server para incluir.
-      // Caso o endpoint só retorne id/type/order, deixe payload vazio para edição manual.
       const list = Array.isArray(r.body?.items) ? r.body.items : [];
-      state.items = list.map(x => ({
-        id: x.id,
-        type: x.type,
-        order: Number(x.order),
-        payload_ref: x.payload_ref ?? {} // se o endpoint incluir esse campo; caso contrário, fica {}
-      }));
+      state.items = list.map(x => {
+        const ref = (x.payload_ref ?? x.payloadRef);
+        const payloadRaw = ref != null ? JSON.stringify(ref, null, 2) : "";
+        return {
+          id: x.id,
+          type: x.type,
+          order: Number(x.order),
+          payload_ref: ref,
+          __orig: {
+            type: x.type,
+            payloadRaw,
+          }
+        };
+      });
       markOrderDirty(false);
       renderItems();
     }
