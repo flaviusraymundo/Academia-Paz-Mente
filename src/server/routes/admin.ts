@@ -6,7 +6,7 @@ import { isUuid, paramUuid } from "../utils/ids.js";
 import { requireAuth } from "../middleware/auth.js";
 import { requireAdmin } from "../middleware/admin.js";
 import { issueCertificate } from "../lib/certificates.js";
-import { sanitizePayloadRef, resolveMode } from "../lib/sanitize";
+import { sanitizePayloadRef, resolveMode } from "../lib/sanitize.js";
 
 const router = Router();
 
