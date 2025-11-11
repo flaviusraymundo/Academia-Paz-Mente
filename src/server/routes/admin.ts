@@ -293,6 +293,14 @@ const ItemBody = z.object({
   order: z.number().int().nonnegative().default(0),
   payloadRef: z.record(z.any()).default({}),
 });
+const ItemUpdateBody = z
+  .object({
+    type: z.enum(["video", "text", "quiz"]).optional(),
+    payloadRef: z.record(z.any()).optional(),
+  })
+  .refine((v) => v.type !== undefined || v.payloadRef !== undefined, {
+    message: "no_fields",
+  });
 
 const QuizBody = z.object({
   moduleId: z.string().uuid(),
@@ -1105,6 +1113,51 @@ router.patch("/modules/:id/reorder", async (req, res) => {
   }
 });
 
+// DELETE /api/admin/modules/:id  -> exclui módulo e dependências (itens, quizzes, questions, progress)
+router.delete("/modules/:id", async (req, res) => {
+  const moduleId = String(req.params.id || "");
+  if (!isUuid(moduleId)) return res.status(400).json({ error: "invalid_module_id" });
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const exists = await client.query(`select id from modules where id = $1`, [moduleId]);
+    if (exists.rowCount === 0) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "module_not_found" });
+    }
+
+    // Limpa progresso referente ao módulo (evita órfãos)
+    await client.query(`delete from progress where module_id = $1`, [moduleId]);
+    // Apaga questões e quizzes do módulo
+    await client.query(
+      `delete from questions where quiz_id in (select id from quizzes where module_id = $1)`,
+      [moduleId]
+    );
+    await client.query(`delete from quizzes where module_id = $1`, [moduleId]);
+    // Apaga itens
+    await client.query(`delete from module_items where module_id = $1`, [moduleId]);
+    // Apaga módulo
+    const del = await client.query(`delete from modules where id = $1 returning id`, [moduleId]);
+
+    await client.query("COMMIT");
+    return res.json({ ok: true, moduleId: del.rows[0].id });
+  } catch (e) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      // ignore rollback error
+    }
+    return res.status(500).json({
+      error: "server_error",
+      detail: String((e as any)?.message || e),
+    });
+  } finally {
+    client.release();
+  }
+});
+
 // ===== Itens =====
 router.post("/items", async (req, res) => {
   const parsed = ItemBody.safeParse(req.body);
@@ -1116,6 +1169,46 @@ router.post("/items", async (req, res) => {
     [it.moduleId, it.type, it.order, it.payloadRef]
   );
   res.json(rows[0]);
+});
+
+// PUT /api/admin/items/:itemId  -> atualiza type/payloadRef do item
+router.put("/items/:itemId", async (req, res) => {
+  const itemId = String(req.params.itemId || "");
+  if (!isUuid(itemId)) return res.status(400).json({ error: "invalid_item_id" });
+
+  const parsed = ItemUpdateBody.safeParse(req.body || {});
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+  const fields: string[] = [];
+  const values: any[] = [];
+  if (parsed.data.type !== undefined) {
+    fields.push(`type = $${fields.length + 1}`);
+    values.push(parsed.data.type);
+  }
+  if (parsed.data.payloadRef !== undefined) {
+    fields.push(`payload_ref = $${fields.length + 1}::jsonb`);
+    values.push(JSON.stringify(parsed.data.payloadRef));
+  }
+
+  if (fields.length === 0) return res.status(400).json({ error: "no_fields" });
+
+  values.push(itemId);
+  const sql = `update module_items set ${fields.join(", ")} where id = $${values.length} returning id, module_id, type, "order", payload_ref`;
+  const r = await pool.query(sql, values);
+  if (r.rowCount === 0) return res.status(404).json({ error: "not_found" });
+
+  return res.json({ item: r.rows[0] });
+});
+
+// DELETE /api/admin/items/:itemId  -> exclui item
+router.delete("/items/:itemId", async (req, res) => {
+  const itemId = String(req.params.itemId || "");
+  if (!isUuid(itemId)) return res.status(400).json({ error: "invalid_item_id" });
+
+  const r = await pool.query(`delete from module_items where id = $1 returning id`, [itemId]);
+  if (r.rowCount === 0) return res.status(404).json({ error: "not_found" });
+
+  return res.json({ ok: true, id: r.rows[0].id });
 });
 
 // ===== Quizzes =====
