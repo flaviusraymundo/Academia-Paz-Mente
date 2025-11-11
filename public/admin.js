@@ -1191,3 +1191,275 @@ if ($btnVideoBeat) {
 
   loadCourses();
 })();
+
+// ===== Itens e Módulos (UI) =====
+(function(){
+  const $ = (id) => document.getElementById(id);
+
+  // Usa o mesmo helper 'api' e 'authHeader' já existentes no admin.js
+  // Se não existirem, defina versões mínimas:
+  async function authHeaderSafe() {
+    try { return typeof authHeader === "function" ? await authHeader() : {}; } catch { return {}; }
+  }
+  async function apiSafe(path, init={}) {
+    try { return typeof api === "function" ? await api(path, init) : await (async () => {
+      const headers = { "Content-Type":"application/json", ...(await authHeaderSafe()), ...(init.headers||{}) };
+      const res = await fetch(path, { ...init, headers });
+      let body = null; try { body = await res.json(); } catch { body = await res.text(); }
+      return { status: res.status, body };
+    })(); } catch (e) { return { status: 0, body: { error: "network_error", detail: String(e) } }; }
+  }
+
+  const state = {
+    moduleId: null,
+    // Estrutura dos itens no estado:
+    // { id, type, order, payload_ref, __orig: { type, payloadRaw } }
+    items: [],
+    dirtyOrder: false,
+  };
+
+  function setOut(obj) {
+    const out = $("im-out");
+    if (!out) return;
+    out.textContent = typeof obj === "string" ? obj : JSON.stringify(obj, null, 2);
+  }
+
+  function markOrderDirty(flag) {
+    state.dirtyOrder = flag;
+    const btn = $("im-save-order");
+    if (btn) btn.disabled = !flag;
+  }
+
+  function renderItems() {
+    const root = $("im-items");
+    if (!root) return;
+    if (!Array.isArray(state.items) || state.items.length === 0) {
+      root.innerHTML = "<em>Nenhum item</em>";
+      markOrderDirty(false);
+      return;
+    }
+    root.innerHTML = "";
+    state.items
+      .sort((a,b)=>Number(a.order)-Number(b.order))
+      .forEach((it, idx) => {
+        const wrap = document.createElement("div");
+        wrap.style.border = "1px solid #eee";
+        wrap.style.padding = "8px";
+        wrap.style.borderRadius = "6px";
+        wrap.style.display = "grid";
+        wrap.style.gap = "6px";
+
+        const head = document.createElement("div");
+        head.style.display = "flex";
+        head.style.justifyContent = "space-between";
+        head.style.alignItems = "center";
+        head.innerHTML = `
+          <div><b>Item</b> ${idx+1} — <code>${it.id}</code></div>
+          <div style="display:flex;gap:6px;">
+            <button data-up="${it.id}" ${idx===0 ? "disabled":""}>↑</button>
+            <button data-down="${it.id}" ${idx===state.items.length-1 ? "disabled":""}>↓</button>
+            <button data-del="${it.id}" style="color:#b00;border-color:#b00">Excluir</button>
+          </div>
+        `;
+        wrap.appendChild(head);
+
+        const row = document.createElement("div");
+        row.style.display = "grid";
+        row.style.gridTemplateColumns = "160px 1fr";
+        row.style.gap = "6px";
+        row.innerHTML = `
+          <label>Tipo
+            <select data-type="${it.id}">
+              <option value="video">video</option>
+              <option value="text">text</option>
+              <option value="quiz">quiz</option>
+            </select>
+          </label>
+          <label>payload_ref (JSON)
+            <textarea data-payload="${it.id}" rows="6" style="width:100%;font-family:ui-monospace;"></textarea>
+          </label>
+        `;
+        wrap.appendChild(row);
+
+        const saveRow = document.createElement("div");
+        saveRow.style.textAlign = "right";
+        saveRow.innerHTML = `<button data-save="${it.id}">Salvar alterações</button>`;
+        wrap.appendChild(saveRow);
+
+        root.appendChild(wrap);
+
+        // Preenche valores atuais
+        const sel = root.querySelector(`select[data-type="${it.id}"]`);
+        const txt = root.querySelector(`textarea[data-payload="${it.id}"]`);
+        if (sel) sel.value = it.type;
+        // Usa o payload original serializado. Se o backend não retornou payload_ref, deixa em branco.
+        const initialRaw = it.__orig?.payloadRaw ?? (it.payload_ref != null ? JSON.stringify(it.payload_ref, null, 2) : "");
+        if (txt) txt.value = initialRaw;
+      });
+
+    // wire actions
+    root.querySelectorAll("button[data-up]").forEach((b) => {
+      b.addEventListener("click", () => moveItem(b.getAttribute("data-up"), -1));
+    });
+    root.querySelectorAll("button[data-down]").forEach((b) => {
+      b.addEventListener("click", () => moveItem(b.getAttribute("data-down"), +1));
+    });
+    root.querySelectorAll("button[data-del]").forEach((b) => {
+      b.addEventListener("click", async () => {
+        const id = b.getAttribute("data-del");
+        if (!confirm("Excluir este item?")) return;
+        const r = await apiSafe(`/api/admin/items/${encodeURIComponent(id)}`, { method:"DELETE" });
+        setOut({ deleteItem: r });
+        if (r.status === 200) {
+          state.items = state.items.filter(x => x.id !== id);
+          renderItems();
+        }
+      });
+    });
+    root.querySelectorAll("button[data-save]").forEach((b) => {
+      b.addEventListener("click", async () => {
+        const id = b.getAttribute("data-save");
+        const it = state.items.find(x => x.id === id);
+        if (!it) return;
+
+        const sel = root.querySelector(`select[data-type="${id}"]`);
+        const txt = root.querySelector(`textarea[data-payload="${id}"]`);
+
+        const wantType = sel?.value ?? it.type;
+
+        // Monta body só com campos alterados
+        const body = {};
+        if (wantType !== it.__orig?.type) {
+          body.type = wantType;
+        }
+
+        // Só envia payloadRef se o conteúdo do textarea mudou vs original
+        let sendPayload = false;
+        let newPayloadObj = undefined;
+        const currentRaw = (txt?.value ?? "").trim();
+        const origRaw = (it.__orig?.payloadRaw ?? "").trim();
+        if (currentRaw !== origRaw) {
+          if (currentRaw.length === 0) {
+            // Texto vazio: considera payloadRef = {} (limpeza explícita)
+            newPayloadObj = {};
+            sendPayload = true;
+          } else {
+            try {
+              newPayloadObj = JSON.parse(currentRaw);
+              sendPayload = true;
+            } catch {
+              return setOut({ error:"payload_ref inválido (JSON malformado)" });
+            }
+          }
+        }
+        if (sendPayload) {
+          body.payloadRef = newPayloadObj;
+        }
+
+        if (Object.keys(body).length === 0) {
+          return setOut({ info:"Nada para salvar (sem alterações detectadas)" });
+        }
+
+        const r = await apiSafe(`/api/admin/items/${encodeURIComponent(id)}`, {
+          method:"PUT",
+          body: JSON.stringify(body)
+        });
+        setOut({ saveItem: r });
+
+        if (r.status === 200) {
+          // Atualiza estado e baseline
+          const updated = r.body?.item || {};
+          it.type = updated.type ?? wantType ?? it.type;
+          it.payload_ref = updated.payload_ref ?? (sendPayload ? newPayloadObj : it.payload_ref);
+          it.__orig = {
+            type: it.type,
+            payloadRaw: it.payload_ref != null ? JSON.stringify(it.payload_ref, null, 2) : ""
+          };
+          renderItems();
+        }
+      });
+    });
+  }
+
+  function moveItem(id, delta) {
+    const items = state.items.sort((a,b)=>Number(a.order)-Number(b.order));
+    const i = items.findIndex(x => x.id === id);
+    if (i < 0) return;
+    const j = i + delta;
+    if (j < 0 || j >= items.length) return;
+    // swap orders em memória e renumera em seguida
+    const oi = items[i].order;
+    items[i].order = items[j].order;
+    items[j].order = oi;
+    // renum sequencial
+    items.sort((a,b)=>Number(a.order)-Number(b.order))
+         .forEach((x, idx) => x.order = idx + 1);
+    state.items = items;
+    markOrderDirty(true);
+    renderItems();
+  }
+
+  async function saveOrder() {
+    if (!state.moduleId) return setOut({ error:"moduleId ausente" });
+    const itemIds = state.items
+      .sort((a,b)=>Number(a.order)-Number(b.order))
+      .map(x => x.id);
+    const r = await apiSafe(`/api/admin/modules/${encodeURIComponent(state.moduleId)}/reorder`, {
+      method:"PATCH",
+      body: JSON.stringify({ itemIds })
+    });
+    setOut({ reorder: r });
+    if (r.status === 200) {
+      // atualizar orders retornados
+      const ret = r.body?.items || [];
+      const map = new Map(ret.map(x => [x.id, Number(x.order)]));
+      state.items.forEach(x => { x.order = map.get(x.id) ?? x.order; });
+      markOrderDirty(false);
+      renderItems();
+    }
+  }
+
+  async function loadItems() {
+    const moduleId = String($("im-moduleId")?.value || "").trim();
+    if (!moduleId) return setOut({ error:"Informe moduleId" });
+    state.moduleId = moduleId;
+    const r = await apiSafe(`/api/admin/modules/${encodeURIComponent(moduleId)}/items`);
+    setOut({ listItems: r });
+    if (r.status === 200) {
+      const list = Array.isArray(r.body?.items) ? r.body.items : [];
+      state.items = list.map(x => {
+        const ref = (x.payload_ref ?? x.payloadRef);
+        const payloadRaw = ref != null ? JSON.stringify(ref, null, 2) : "";
+        return {
+          id: x.id,
+          type: x.type,
+          order: Number(x.order),
+          payload_ref: ref,
+          __orig: {
+            type: x.type,
+            payloadRaw,
+          }
+        };
+      });
+      markOrderDirty(false);
+      renderItems();
+    }
+  }
+
+  async function deleteModule() {
+    const moduleId = String($("im-moduleId")?.value || "").trim();
+    if (!moduleId) return setOut({ error:"Informe moduleId" });
+    if (!confirm("Excluir módulo (itens/quiz/questões/progress serão removidos)?")) return;
+    const r = await apiSafe(`/api/admin/modules/${encodeURIComponent(moduleId)}`, { method:"DELETE" });
+    setOut({ deleteModule: r });
+    if (r.status === 200) {
+      state.moduleId = null;
+      state.items = [];
+      renderItems();
+    }
+  }
+
+  $("im-load-items")?.addEventListener("click", loadItems);
+  $("im-delete-module")?.addEventListener("click", deleteModule);
+  $("im-save-order")?.addEventListener("click", saveOrder);
+})();
