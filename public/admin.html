@@ -47,6 +47,36 @@
 
   <hr />
 
+  <!-- === Curso: Editar / Visão Completa / Restore === -->
+  <section>
+    <h2>Curso (editar / full / restore)</h2>
+    <div style="display:grid;gap:8px;max-width:900px">
+      <label>courseId
+        <input id="ce-courseId" placeholder="UUID do curso" />
+      </label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button id="ce-load-full">Carregar full</button>
+        <button id="ce-restore" style="color:#b06500;border-color:#b06500">Restaurar (undo delete)</button>
+      </div>
+      <details>
+        <summary>Edição básica do curso</summary>
+        <div style="display:grid;gap:6px;margin-top:6px;">
+          <input id="ce-title" placeholder="Novo título" />
+          <textarea id="ce-summary" placeholder="Novo summary" rows="3" style="width:100%;font-family:ui-monospace"></textarea>
+          <input id="ce-level" placeholder="level (ex: beginner, advanced)" />
+          <label style="display:flex;align-items:center;gap:6px;">
+            <input type="checkbox" id="ce-active" /> active
+          </label>
+          <input id="ce-slug" placeholder="Novo slug (opcional)" />
+          <button id="ce-save" style="margin-top:4px;">Salvar alterações (PATCH)</button>
+        </div>
+      </details>
+      <pre id="ce-out" style="white-space:pre-wrap;border:1px solid #ddd;padding:8px;margin-top:8px;"></pre>
+    </div>
+  </section>
+
+  <hr />
+
   <!-- Analytics (curso) -->
   <section style="margin:16px 0;border:1px solid #ccc;padding:12px;border-radius:8px">
     <h2>Analytics (curso)</h2>
