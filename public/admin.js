@@ -71,10 +71,17 @@ function buildUuidPayloadFromInputs() {
     const el = document.getElementById(id);
     if (el) el.value = value ?? "";
   };
-  const setChecked = (id, checked) => {
-    const el = document.getElementById(id);
-    if (el) el.checked = Boolean(checked);
-  };
+
+  function wireActiveDirty() {
+    const el = document.getElementById("ce-active");
+    if (el && el.dataset.wired !== "1") {
+      el.addEventListener("change", () => {
+        el.dataset.dirty = "1";
+      });
+      el.dataset.wired = "1";
+    }
+  }
+  wireActiveDirty();
 
   document.getElementById("ce-load-full")?.addEventListener("click", async () => {
     const courseId = readValue("ce-courseId");
@@ -87,8 +94,14 @@ function buildUuidPayloadFromInputs() {
       setValue("ce-title", body.course.title || "");
       setValue("ce-summary", body.course.summary || "");
       setValue("ce-level", body.course.level || "");
-      setChecked("ce-active", body.course.active);
       setValue("ce-slug", body.course.slug || "");
+      const activeEl = document.getElementById("ce-active");
+      if (activeEl) {
+        activeEl.checked = Boolean(body.course.active);
+        activeEl.dataset.dirty = "0";
+        activeEl.dataset.initialized = "1";
+      }
+      wireActiveDirty();
     }
   });
 
@@ -103,15 +116,26 @@ function buildUuidPayloadFromInputs() {
     if (summaryEl && summaryEl.value !== "") payload.summary = summaryEl.value;
     const level = readValue("ce-level");
     if (level) payload.level = level;
-    payload.active = Boolean(document.getElementById("ce-active")?.checked);
+    const activeEl = document.getElementById("ce-active");
+    if (activeEl && activeEl.dataset?.dirty === "1") {
+      payload.active = Boolean(activeEl.checked);
+    }
     const slug = readValue("ce-slug");
     if (slug) payload.slug = slug;
+
+    if (Object.keys(payload).length === 0) {
+      return setCourseOut({ error: "no_fields" });
+    }
 
     const { status, body } = await api(`/api/admin/courses/${encodeURIComponent(courseId)}`, {
       method: "PATCH",
       body: JSON.stringify(payload),
     });
     setCourseOut({ status, body });
+
+    if (status === 200 && activeEl) {
+      activeEl.dataset.dirty = "0";
+    }
   });
 
   document.getElementById("ce-restore")?.addEventListener("click", async () => {
