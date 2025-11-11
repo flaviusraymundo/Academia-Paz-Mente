@@ -286,6 +286,39 @@ document.getElementById("createCourse")?.addEventListener("click", async () => {
   show(out, r.status, await r.text());
 });
 
+// === Importação em lote ===
+async function runBatchImport(simulate) {
+  const ta = document.getElementById("batch-json");
+  const blank = document.getElementById("batch-blank");
+  const out = document.getElementById("batchOut");
+  if (!ta || !out) return;
+  let data;
+  try {
+    data = JSON.parse(ta.value || "{}");
+  } catch (e) {
+    out.textContent = "JSON inválido: " + (e?.message || e);
+    return;
+  }
+  if (simulate) data.simulate = true;
+  data.blankMedia = !!blank?.checked;
+
+  const { status, body } = await api("/api/admin/courses/import" + (simulate ? "?simulate=1" : ""), {
+    method: "POST",
+    body: JSON.stringify(data)
+  });
+  out.textContent = JSON.stringify({ status, body }, null, 2);
+
+  // Se import real, preencher campo de publicar/excluir com novo ID
+  if (!simulate && status === 200 && body?.course?.id) {
+    const pub = document.getElementById("pub-course");
+    if (pub) pub.value = body.course.id;
+    updateCreationState({ lastCourseId: body.course.id });
+  }
+}
+
+document.getElementById("btnBatchSimulate")?.addEventListener("click", () => runBatchImport(true));
+document.getElementById("btnBatchImport")?.addEventListener("click", () => runBatchImport(false));
+
 // === Clone / Publish / Delete Draft ===
 document.getElementById("btnCloneCourse")?.addEventListener("click", async () => {
   const source = (document.getElementById("cl-source")?.value || "").trim();
