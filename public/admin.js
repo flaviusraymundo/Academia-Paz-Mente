@@ -1913,16 +1913,16 @@ if ($btnVideoBeat) {
   });
 })();
 
-// ===== Toast System (append-only) =====
+/***** Toast System (único) *****/
 (function(){
-  if (window.showToast) return; // evita redefinir
+  if (window.showToast) return;
   function showToast(msg, variant="info", ttl=4000) {
     const container = document.getElementById("toast-container");
-    if (!container) return console.warn("toast-container ausente");
+    if (!container) return;
     const el = document.createElement("div");
     el.textContent = msg;
     el.style.cssText = `
-      font: 13px/1.4 system-ui, sans-serif;
+      font:13px/1.4 system-ui,sans-serif;
       padding:10px 14px;
       border-radius:8px;
       box-shadow:0 4px 12px rgba(0,0,0,.15);
@@ -1931,7 +1931,7 @@ if ($btnVideoBeat) {
       border:1px solid ${variant==="error"?"#ffb4b4":variant==="success"?"#b8e7c7":variant==="warn"?"#ffe08a":"#c6dafd"};
       opacity:0;
       transform:translateY(-6px);
-      transition:opacity .25s ease, transform .25s ease;
+      transition:opacity .25s, transform .25s;
       max-width:320px;
       word-break:break-word;
     `;
@@ -1943,37 +1943,47 @@ if ($btnVideoBeat) {
     setTimeout(()=>{
       el.style.opacity="0";
       el.style.transform="translateY(-4px)";
-      setTimeout(()=>{ el.remove(); }, 300);
+      setTimeout(()=>{ el.remove(); }, 280);
     }, ttl);
-    return el;
   }
   window.showToast = showToast;
 })();
 
-// ===== Duplicar curso (server-side) =====
+/***** Utilidades compartilhadas *****/
 (function(){
-  const $ = (sel) => document.querySelector(sel);
-  if (!$("#dcs-run")) return;
+  if (window._dupCourseUtilsReady) return;
+  window._dupCourseUtilsReady = true;
 
-  async function call(path, init={}) {
-    if (typeof window.api === "function") return window.api(path, init);
-    const headers = { "Content-Type":"application/json", ...(init.headers||{}) };
-    const res = await fetch(path, { ...init, headers });
-    let body=null; try{ body=await res.json(); } catch{ body=await res.text(); }
-    return { status: res.status, body };
-  }
-
-  function slugify(s) {
-    return s
+  window.slugify = function slugify(s) {
+    return String(s||"")
       .toLowerCase()
       .normalize("NFKD").replace(/[\u0300-\u036f]/g,"")
       .replace(/[^a-z0-9]+/g,"-")
       .replace(/^-+|-+$/g,"")
       .replace(/--+/g,"-")
       .slice(0,64) || ("copy-" + Date.now().toString(36));
-  }
+  };
 
-  $("#dcs-run").addEventListener("click", async () => {
+  window.apiCall = async function apiCall(path, init={}) {
+    // Se já existir window.api (definida em outra parte), usar para headers/auth padronizado
+    if (typeof window.api === "function" && !init._forceRaw) {
+      return window.api(path, init);
+    }
+    const headers = { "Content-Type":"application/json", ...(init.headers||{}) };
+    const res = await fetch(path, { ...init, headers });
+    let body = null;
+    try { body = await res.json(); } catch { body = await res.text(); }
+    return { status: res.status, body };
+  };
+})();
+
+/***** Duplicar curso (server-side) *****/
+(function(){
+  const $ = (sel) => document.querySelector(sel);
+  const runBtn = $("#dcs-run");
+  if (!runBtn) return; // Seção não existe no HTML
+
+  runBtn.addEventListener("click", async () => {
     const courseId = ($("#dcs-courseId")?.value || "").trim();
     let slug = ($("#dcs-slug")?.value || "").trim();
     const title = ($("#dcs-title")?.value || "").trim();
@@ -1985,7 +1995,7 @@ if ($btnVideoBeat) {
 
     if (!courseId) {
       $("#dcs-out").textContent = "courseId requerido";
-      if (window.showToast) showToast("Informe o courseId origem", "warn");
+      showToast("Informe o courseId origem", "warn");
       return;
     }
     if (slug) slug = slugify(slug);
@@ -2000,7 +2010,7 @@ if ($btnVideoBeat) {
       simulate
     };
 
-    const { status, body } = await call(`/api/admin/courses/${encodeURIComponent(courseId)}/duplicate`, {
+    const { status, body } = await apiCall(`/api/admin/courses/${encodeURIComponent(courseId)}/duplicate`, {
       method:"POST",
       body: JSON.stringify(payload)
     });
@@ -2008,7 +2018,7 @@ if ($btnVideoBeat) {
     $("#dcs-out").textContent = JSON.stringify({ status, body }, null, 2);
 
     if (status === 200) {
-      if (window.showToast) showToast(simulate ? "Prévia gerada com sucesso" : "Curso duplicado", simulate ? "info" : "success");
+      showToast(simulate ? "Prévia gerada com sucesso" : "Curso duplicado", simulate ? "info" : "success");
       if (!simulate) {
         const newId = body?.course?.id;
         if (newId) {
@@ -2017,9 +2027,104 @@ if ($btnVideoBeat) {
         }
       }
     } else if (status === 409 && body?.error === "duplicate_slug") {
-      if (window.showToast) showToast("Slug duplicado, tente outro.", "error");
+      showToast("Slug duplicado, tente outro.", "error");
     } else {
-      if (window.showToast) showToast(`Falha ao duplicar (${status})`, "error");
+      showToast(`Falha ao duplicar (${status})`, "error");
     }
   });
+})();
+
+/***** Duplicar curso (export+import, client-side) *****/
+(function(){
+  const $ = (sel) => document.querySelector(sel);
+  const runBtn = $("#dpl-run");
+  if (!runBtn) return; // Seção não existe
+
+  async function exportCourse(courseId, opts) {
+    const qs = new URLSearchParams();
+    qs.set("dropIds","1");
+    if (opts.blankMedia) qs.set("blankMedia","1");
+    else if (opts.sanitize) qs.set("sanitize","1");
+    return apiCall(`/api/admin/courses/${encodeURIComponent(courseId)}/export?${qs.toString()}`);
+  }
+
+  async function importCourse(payload) {
+    return apiCall("/api/admin/courses/import", {
+      method:"POST",
+      body: JSON.stringify(payload)
+    });
+  }
+
+  async function duplicate() {
+    const courseIdEl = $("#dpl-courseId");
+    const slugEl = $("#dpl-slug");
+    const titleEl = $("#dpl-title");
+    const blankEl = $("#dpl-blank");
+    const sanitizeEl = $("#dpl-sanitize");
+
+    const courseId = (courseIdEl?.value || "").trim();
+    const slugInput = (slugEl?.value || "").trim();
+    const newTitle = (titleEl?.value || "").trim();
+    const blankMedia = !!blankEl?.checked;
+    const sanitize = !!sanitizeEl?.checked;
+
+    if (!courseId) {
+      const out = $("#dpl-out");
+      if (out) out.textContent = "courseId requerido";
+      showToast("courseId requerido", "warn");
+      return;
+    }
+
+    const ex = await exportCourse(courseId, { blankMedia, sanitize });
+    if (ex.status !== 200 || !ex.body?.export) {
+      const out = $("#dpl-out");
+      if (out) out.textContent = JSON.stringify({ step:"export", status:ex.status, body:ex.body }, null, 2);
+      showToast("Falha no export", "error");
+      return;
+    }
+
+    const data = ex.body.export;
+    const src = data.course || {};
+    const baseSlug = slugInput || `${src.slug || "curso"}-copy-${Date.now().toString(36)}`;
+    let slug = slugify(baseSlug);
+    const title = newTitle || `${src.title || "Curso"} (cópia)`;
+
+    const importPayload = {
+      blankMedia: !!blankMedia,
+      course: {
+        ...data.course,
+        id: undefined,
+        slug,
+        title,
+        active: false
+      },
+      modules: data.modules || []
+    };
+
+    let imp = await importCourse(importPayload);
+    if (imp.status === 409 && (imp.body?.error === "duplicate_slug")) {
+      // Retry uma vez com sufixo randômico
+      slug = slugify(`${baseSlug}-${Math.floor(Math.random()*1e6).toString(36)}`);
+      importPayload.course.slug = slug;
+      imp = await importCourse(importPayload);
+    }
+
+    const out = $("#dpl-out");
+    if (out) out.textContent = JSON.stringify({ status: imp.status, body: imp.body, slugAttempted: slug }, null, 2);
+
+    if (imp.status === 200) {
+      showToast("Curso duplicado (client)", "success");
+      const newId = imp.body?.course?.id;
+      if (newId) {
+        const ce = document.getElementById("ce-courseId");
+        if (ce) ce.value = newId;
+      }
+    } else if (imp.status === 409 && imp.body?.error === "duplicate_slug") {
+      showToast("Slug duplicado (client)", "error");
+    } else {
+      showToast(`Falha duplicar (client) ${imp.status}`, "error");
+    }
+  }
+
+  runBtn.addEventListener("click", duplicate);
 })();
