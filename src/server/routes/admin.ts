@@ -400,6 +400,11 @@ router.post("/courses/import", async (req: Request, res: Response) => {
         }
       }
     }
+    // Se vier item 'quiz' sem definição de quiz do módulo, rejeita (não teremos quizId novo para apontar)
+    const hasQuizItem = Array.isArray(m.items) && m.items.some((it: any) => it?.type === "quiz");
+    if (hasQuizItem && !m.quiz) {
+      return res.status(400).json({ error: "quiz_item_without_quiz_def", moduleIndex: idx });
+    }
     if (m.quiz) {
       const q = m.quiz;
       const passScore = q.passScore == null ? 70 : Number(q.passScore);
@@ -436,7 +441,10 @@ router.post("/courses/import", async (req: Request, res: Response) => {
         tempId: `mod-${i + 1}`,
         title: m.title,
         order: i + 1,
-        itemCount: (m.items || []).length,
+        itemCount:
+          (m.items || []).length +
+          // se há quiz definido e não há item "quiz", projetamos um item quiz extra
+          (m.quiz && !(m.items || []).some((it: any) => it?.type === "quiz") ? 1 : 0),
         quiz: m.quiz
           ? {
               passScore: m.quiz.passScore == null ? 70 : Number(m.quiz.passScore),
@@ -447,11 +455,16 @@ router.post("/courses/import", async (req: Request, res: Response) => {
       const projectedItems: Record<string, any[]> = {};
       projectedModules.forEach((pm, idx) => {
         const modDef = modules[idx] || {};
-        const its = (modDef.items || []).map((it: any, itIdx: number) => ({
+        const base = (modDef.items || []).map((it: any, itIdx: number) => ({
           type: it.type,
           order: itIdx + 1,
           payloadPreview: blankMedia ? "cleared" : "kept",
         }));
+        // se há quiz definido e nenhum item quiz no array, adiciona um "quiz item" projetado
+        const needsQuizItem = !!modDef.quiz && !(modDef.items || []).some((it: any) => it?.type === "quiz");
+        const its = needsQuizItem
+          ? [...base, { type: "quiz", order: base.length + 1, payloadPreview: "quizId:new" }]
+          : base;
         projectedItems[pm.tempId] = its;
       });
       const quizQuestionsTotal = modules.reduce((sum, m) => {
@@ -512,22 +525,8 @@ router.post("/courses/import", async (req: Request, res: Response) => {
       const newModuleId = mRes.rows[0].id;
       newModules.push(mRes.rows[0]);
 
-      // Itens
-      const itemsDef = m.items || [];
-      for (let itIdx = 0; itIdx < itemsDef.length; itIdx++) {
-        const it = itemsDef[itIdx];
-        const payloadRef = sanitize(it.payloadRef);
-        const iRes = await client.query(
-          `insert into module_items(id, module_id, type, "order", payload_ref)
-           values (gen_random_uuid(), $1, $2, $3, $4::jsonb)
-           returning id, type, "order"`,
-          [newModuleId, it.type, itIdx + 1, JSON.stringify(payloadRef)]
-        );
-        if (!newItemsByModule[newModuleId]) newItemsByModule[newModuleId] = [];
-        newItemsByModule[newModuleId].push(iRes.rows[0]);
-      }
-
-      // Quiz opcional
+      // Quiz opcional — cria primeiro para ter quizId disponível aos itens "quiz"
+      let quizId: string | null = null;
       if (m.quiz) {
         const passScore = m.quiz.passScore == null ? 70 : Number(m.quiz.passScore);
         const qRes = await client.query(
@@ -536,7 +535,7 @@ router.post("/courses/import", async (req: Request, res: Response) => {
            returning id`,
           [newModuleId, passScore]
         );
-        const quizId = qRes.rows[0].id;
+        quizId = qRes.rows[0].id;
         newQuizIds[newModuleId] = quizId;
 
         const questionsDef = Array.isArray(m.quiz.questions) ? m.quiz.questions : [];
@@ -554,6 +553,43 @@ router.post("/courses/import", async (req: Request, res: Response) => {
           );
           questionsCreated++;
         }
+      }
+
+      // Itens — insere e garante item "quiz" atrelado ao quizId (se houver quiz definido)
+      const itemsDef = m.items || [];
+      let insertedQuizItem = false;
+      for (let itIdx = 0; itIdx < itemsDef.length; itIdx++) {
+        const it = itemsDef[itIdx];
+        let payloadRef = sanitize(it.payloadRef);
+        if (it.type === "quiz") {
+          // força o vínculo com o quiz recém-criado
+          if (!quizId) {
+            await client.query("ROLLBACK");
+            return res.status(400).json({ error: "quiz_item_without_quiz_def", moduleIndex: i });
+          }
+          payloadRef = { ...(payloadRef || {}), quiz_id: quizId };
+          insertedQuizItem = true;
+        }
+        const iRes = await client.query(
+          `insert into module_items(id, module_id, type, "order", payload_ref)
+           values (gen_random_uuid(), $1, $2, $3, $4::jsonb)
+           returning id, type, "order"`,
+          [newModuleId, it.type, itIdx + 1, JSON.stringify(payloadRef)]
+        );
+        if (!newItemsByModule[newModuleId]) newItemsByModule[newModuleId] = [];
+        newItemsByModule[newModuleId].push(iRes.rows[0]);
+      }
+      // Se há quiz definido e nenhum item "quiz" foi fornecido, cria um automaticamente no final
+      if (quizId && !insertedQuizItem) {
+        const order = (itemsDef?.length || 0) + 1;
+        const iRes = await client.query(
+          `insert into module_items(id, module_id, type, "order", payload_ref)
+           values (gen_random_uuid(), $1, 'quiz', $2, $3::jsonb)
+           returning id, type, "order"`,
+          [newModuleId, order, JSON.stringify({ quiz_id: quizId })]
+        );
+        if (!newItemsByModule[newModuleId]) newItemsByModule[newModuleId] = [];
+        newItemsByModule[newModuleId].push(iRes.rows[0]);
       }
     }
 
