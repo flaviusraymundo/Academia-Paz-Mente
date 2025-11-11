@@ -491,6 +491,216 @@ document.getElementById("addQuestion")?.addEventListener("click", async () => {
   show(out, r.status, await r.text());
 });
 
+// ===== Editor de questões (estruturado) =====
+(function mountQuestionEditor() {
+  const $quiz = document.getElementById("qe-quiz");
+  const $load = document.getElementById("qe-load");
+  const $list = document.getElementById("qe-list");
+  const $editor = document.getElementById("qe-editor");
+  const $id = document.getElementById("qe-id");
+  const $kind = document.getElementById("qe-kind");
+  const $prompt = document.getElementById("qe-prompt");
+  const $choicesList = document.getElementById("qe-choices-list");
+  const $choicesBlock = document.getElementById("qe-choices");
+  const $addChoice = document.getElementById("qe-add-choice");
+  const $save = document.getElementById("qe-save");
+  const $cancel = document.getElementById("qe-cancel");
+  if (!$quiz || !$load || !$list || !$editor || !$id || !$kind || !$prompt || !$choicesList || !$choicesBlock || !$addChoice || !$save || !$cancel) {
+    return;
+  }
+
+  let cachedQuestions = [];
+
+  function getQuizId() {
+    return ($quiz.value || "").trim();
+  }
+
+  function renderList(questions) {
+    if (!questions?.length) {
+      $list.innerHTML = '<em data-testid="qe-empty">Sem questões</em>';
+      return;
+    }
+
+    const rows = questions
+      .map((q, idx) => {
+        const promptText = q.body?.prompt || "(sem prompt)";
+        return `
+          <div class="qe-item" data-testid="qe-item" style="display:flex;justify-content:space-between;align-items:center;border:1px solid #eee;padding:6px 8px;border-radius:6px;margin-bottom:6px;">
+            <div>
+              <div style="font-weight:600">${idx + 1}. [${q.kind}] ${promptText}</div>
+              <div style="font-size:12px;color:#555">id: ${q.id}</div>
+            </div>
+            <div style="display:flex;gap:6px;">
+              <button data-edit="${q.id}" data-testid="qe-edit">Editar</button>
+              <button data-del="${q.id}" data-testid="qe-delete">Excluir</button>
+            </div>
+          </div>
+        `;
+      })
+      .join("");
+    $list.innerHTML = rows;
+
+    $list.querySelectorAll("button[data-edit]").forEach((btn) => {
+      btn.addEventListener("click", () => startEdit(btn.getAttribute("data-edit")));
+    });
+    $list.querySelectorAll("button[data-del]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const qid = btn.getAttribute("data-del");
+        if (!qid) return;
+        if (!window.confirm("Excluir questão?")) return;
+        const { status, body } = await api(`/api/admin/questions/${encodeURIComponent(qid)}`, {
+          method: "DELETE",
+        });
+        setOut("listOut", { status, body });
+        await loadQuestions();
+      });
+    });
+  }
+
+  function addChoiceRow(idVal = "", textVal = "", correct = false) {
+    const row = document.createElement("div");
+    row.style.display = "flex";
+    row.style.gap = "6px";
+    row.style.alignItems = "center";
+    row.style.marginBottom = "4px";
+    row.innerHTML = `
+      <input class="qe-choice-id" placeholder="ID" value="${idVal}" data-testid="qe-choice-id" />
+      <input class="qe-choice-text" placeholder="Texto" value="${textVal}" size="40" data-testid="qe-choice-text" />
+      <label><input type="checkbox" class="qe-choice-correct" data-testid="qe-choice-correct" ${correct ? "checked" : ""}/> correta</label>
+      <button type="button" class="qe-choice-del" data-testid="qe-choice-remove">x</button>
+    `;
+    row.querySelector(".qe-choice-del")?.addEventListener("click", () => row.remove());
+    $choicesList.appendChild(row);
+  }
+
+  function syncChoiceUI() {
+    const kind = $kind.value;
+    if ($choicesBlock) {
+      const show = kind === "truefalse" || kind === "single" || kind === "multiple";
+      $choicesBlock.style.display = show ? "block" : "none";
+    }
+  }
+
+  function startEdit(id) {
+    const q = cachedQuestions.find((item) => item.id === id);
+    if (!q) return;
+
+    $id.value = q.id;
+    $kind.value = q.kind;
+    $prompt.value = q.body?.prompt || "";
+
+    while ($choicesList.firstChild) $choicesList.removeChild($choicesList.firstChild);
+    const choices = Array.isArray(q.choices) ? q.choices : [];
+    const rawAnswer = q.answerKey ?? q.answer_key;
+    for (const choice of choices) {
+      let correct = false;
+      if (Array.isArray(rawAnswer)) {
+        correct = rawAnswer.includes(choice.id);
+      } else if (typeof rawAnswer === "boolean" && q.kind === "truefalse") {
+        if (choice.id === "T") correct = rawAnswer === true;
+        if (choice.id === "F") correct = rawAnswer === false;
+      }
+      addChoiceRow(choice.id, choice.text, correct);
+    }
+
+    $editor.style.display = "block";
+    syncChoiceUI();
+  }
+
+  function collectQuestion() {
+    const id = $id.value;
+    const kind = $kind.value;
+    const prompt = $prompt.value;
+    const rows = Array.from($choicesList.querySelectorAll(":scope > div"));
+    const choices = rows
+      .map((row) => {
+        const cid = String(row.querySelector(".qe-choice-id")?.value || "").trim();
+        const text = String(row.querySelector(".qe-choice-text")?.value || "").trim();
+        const correct = Boolean(row.querySelector(".qe-choice-correct")?.checked);
+        return cid && text ? { id: cid, text, correct } : null;
+      })
+      .filter(Boolean);
+
+    let answerKey;
+    if (kind === "truefalse") {
+      const hasTf = choices.some((c) => c.id === "T" || c.id === "F");
+      const firstCorrect = choices.find((c) => c.correct);
+      const val = hasTf ? firstCorrect?.id === "T" : true;
+      answerKey = Boolean(val);
+    } else if (kind === "single") {
+      const corr = choices.find((c) => c.correct)?.id;
+      answerKey = corr ? [corr] : [];
+    } else {
+      const corr = choices.filter((c) => c.correct).map((c) => c.id);
+      answerKey = corr;
+    }
+
+    return {
+      id,
+      payload: {
+        kind,
+        body: { prompt },
+        choices: choices.map(({ id: choiceId, text }) => ({ id: choiceId, text })),
+        answerKey,
+      },
+    };
+  }
+
+  async function loadQuestions() {
+    const quizId = getQuizId();
+    if (!quizId) {
+      cachedQuestions = [];
+      renderList(cachedQuestions);
+      return;
+    }
+    const { status, body } = await api(
+      `/api/admin/quizzes/${encodeURIComponent(quizId)}/questions`
+    );
+    setOut("listOut", { status, body });
+    if (status === 200 && Array.isArray(body?.questions)) {
+      cachedQuestions = body.questions.map((q) => ({ ...q, answerKey: q.answer_key ?? q.answerKey }));
+    } else {
+      cachedQuestions = [];
+    }
+    renderList(cachedQuestions);
+  }
+
+  $load.addEventListener("click", () => {
+    loadQuestions().catch((err) => {
+      setOut("listOut", { error: String(err?.message || err) });
+    });
+  });
+
+  $addChoice.addEventListener("click", () => addChoiceRow());
+  $kind.addEventListener("change", syncChoiceUI);
+
+  $save.addEventListener("click", async () => {
+    const quizId = getQuizId();
+    if (!quizId) return;
+    const q = collectQuestion();
+    if (!q.id) {
+      setOut("listOut", { error: "Selecione uma questão para editar" });
+      return;
+    }
+    const { status, body } = await api(
+      `/api/admin/questions/${encodeURIComponent(q.id)}`,
+      {
+        method: "PUT",
+        body: JSON.stringify(q.payload),
+      }
+    );
+    setOut("listOut", { status, body });
+    await loadQuestions();
+    $editor.style.display = "none";
+  });
+
+  $cancel.addEventListener("click", () => {
+    $editor.style.display = "none";
+  });
+
+  syncChoiceUI();
+})();
+
 // ===== Templates de questão =====
 function setQuestionTemplate(kind) {
   const kindSel = document.getElementById("qq-kind");
