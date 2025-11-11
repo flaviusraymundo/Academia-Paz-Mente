@@ -1596,3 +1596,212 @@ if ($btnVideoBeat) {
   $("im-delete-module")?.addEventListener("click", deleteModule);
   $("im-save-order")?.addEventListener("click", saveOrder);
 })();
+
+// ===== Módulos: criar / renomear / reordenar =====
+(function(){
+  const $ = (id) => document.getElementById(id);
+  if (!$("md-create")) return;
+
+  async function call(path, init={}) {
+    if (typeof api === "function") return api(path, init);
+    const headers = { "Content-Type":"application/json", ...(init.headers||{}) };
+    const res = await fetch(path, { ...init, headers });
+    let body = null; try { body = await res.json(); } catch { body = await res.text(); }
+    return { status: res.status, body };
+  }
+  function out(obj) { const el = $("md-out"); if (el) el.textContent = JSON.stringify(obj, null, 2); }
+
+  let current = { courseId: "", modules: [], dirty: false };
+
+  function render() {
+    const wrap = $("md-list");
+    if (!wrap) return;
+    if (!current.modules.length) {
+      wrap.innerHTML = "<em>Nenhum módulo</em>";
+      $("md-save-order").disabled = true;
+      return;
+    }
+    wrap.innerHTML = current.modules.map((m, idx) => `
+      <div style="border:1px solid #eee;padding:6px;border-radius:6px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <div>${idx+1}. <input data-title="${m.id}" value="${m.title.replace(/"/g,'&quot;')}" /></div>
+          <small>id: ${m.id}</small>
+        </div>
+        <div style="display:flex;gap:6px;">
+          <button data-up="${m.id}" ${idx===0?"disabled":""}>↑</button>
+          <button data-down="${m.id}" ${idx===current.modules.length-1?"disabled":""}>↓</button>
+          <button data-rename="${m.id}">Renomear</button>
+        </div>
+      </div>
+    `).join("");
+
+    // wire
+    wrap.querySelectorAll("button[data-up]").forEach(b => b.addEventListener("click", () => move(b.dataset.up, -1)));
+    wrap.querySelectorAll("button[data-down]").forEach(b => b.addEventListener("click", () => move(b.dataset.down, +1)));
+    wrap.querySelectorAll("button[data-rename]").forEach(b => b.addEventListener("click", () => rename(b.dataset.rename)));
+  }
+
+  function move(id, delta) {
+    const arr = current.modules.slice();
+    const i = arr.findIndex(x => x.id === id);
+    if (i < 0) return;
+    const j = i + delta;
+    if (j < 0 || j >= arr.length) return;
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+    current.modules = arr;
+    current.dirty = true;
+    $("md-save-order").disabled = false;
+    render();
+  }
+
+  async function rename(id) {
+    const inp = document.querySelector(`[data-title="${id}"]`);
+    const title = String(inp?.value || "").trim();
+    if (!title) { out({ error:"title_required" }); return; }
+    const r = await call(`/api/admin/modules/${encodeURIComponent(id)}`, {
+      method:"PUT",
+      body: JSON.stringify({ title })
+    });
+    out({ rename: r });
+  }
+
+  $("md-create").addEventListener("click", async () => {
+    const courseId = $("md-courseId").value.trim();
+    const title = $("md-new-title").value.trim();
+    if (!courseId || !title) { out({ error:"courseId_and_title_required" }); return; }
+    const r = await call("/api/admin/modules", {
+      method:"POST",
+      body: JSON.stringify({ courseId, title })
+    });
+    out({ create: r });
+  });
+
+  $("md-load").addEventListener("click", async () => {
+    const courseId = $("md-courseId").value.trim();
+    if (!courseId) return out({ error:"courseId_required" });
+    const r = await call(`/api/admin/courses/${encodeURIComponent(courseId)}/modules`);
+    current.courseId = courseId;
+    current.modules = Array.isArray(r.body?.modules) ? r.body.modules : [];
+    current.dirty = false;
+    $("md-save-order").disabled = true;
+    out({ list: r });
+    render();
+  });
+
+  $("md-save-order").addEventListener("click", async () => {
+    if (!current.courseId || !current.modules.length) return;
+    const moduleIds = current.modules.map(m => m.id);
+    const r = await call(`/api/admin/courses/${encodeURIComponent(current.courseId)}/modules/reorder`, {
+      method:"PATCH",
+      body: JSON.stringify({ moduleIds })
+    });
+    out({ reorder: r });
+    if (r.status === 200) {
+      current.dirty = false;
+      $("md-save-order").disabled = true;
+    }
+  });
+})();
+
+// ===== Adicionar item ao módulo =====
+(function(){
+  const $ = (id) => document.getElementById(id);
+  if (!$("ai-add")) return;
+  async function call(path, init={}) {
+    if (typeof api === "function") return api(path, init);
+    const headers = { "Content-Type":"application/json", ...(init.headers||{}) };
+    const res = await fetch(path, { ...init, headers });
+    let body = null; try { body = await res.json(); } catch { body = await res.text(); }
+    return { status: res.status, body };
+  }
+  function out(obj) { const el = $("ai-out"); if (el) el.textContent = JSON.stringify(obj, null, 2); }
+
+  $("ai-add").addEventListener("click", async () => {
+    const moduleId = $("ai-moduleId").value.trim();
+    const type = $("ai-type").value;
+    const orderStr = $("ai-order").value.trim();
+    const payloadStr = $("ai-payload").value.trim();
+    if (!moduleId || !type) return out({ error:"moduleId_and_type_required" });
+
+    let order = 0;
+    if (orderStr) {
+      const n = Number(orderStr);
+      if (Number.isInteger(n) && n >= 0) order = n;
+    }
+    let payloadRef = {};
+    if (payloadStr) {
+      try { payloadRef = JSON.parse(payloadStr); }
+      catch { return out({ error:"payloadRef inválido (JSON)" }); }
+    }
+    const r = await call("/api/admin/items", {
+      method:"POST",
+      body: JSON.stringify({ moduleId, type, order, payloadRef })
+    });
+    out({ addItem: r });
+  });
+})();
+
+// ===== Quiz: passScore + criar questão =====
+(function(){
+  const $ = (id) => document.getElementById(id);
+  if (!$("qz-save-pass")) return;
+
+  async function call(path, init={}) {
+    if (typeof api === "function") return api(path, init);
+    const headers = { "Content-Type":"application/json", ...(init.headers||{}) };
+    const res = await fetch(path, { ...init, headers });
+    let body = null; try { body = await res.json(); } catch { body = await res.text(); }
+    return { status: res.status, body };
+  }
+  function out(obj) { const el = $("qz-out"); if (el) el.textContent = JSON.stringify(obj, null, 2); }
+
+  $("qz-save-pass").addEventListener("click", async () => {
+    const quizId = $("qz-quizId").value.trim();
+    const pass = Number($("qz-pass").value.trim());
+    if (!quizId || !Number.isFinite(pass)) return out({ error:"quizId_and_passScore_required" });
+    const r = await call(`/api/admin/quizzes/${encodeURIComponent(quizId)}`, {
+      method:"PATCH",
+      body: JSON.stringify({ passScore: pass })
+    });
+    out({ savePassScore: r });
+  });
+
+  $("qz-add-question").addEventListener("click", async () => {
+    const quizId = $("qz-quizId").value.trim();
+    const kind = $("qz-kind").value;
+    const prompt = $("qz-prompt").value.trim();
+    const choicesStr = $("qz-choices").value.trim();
+    const answerStr = $("qz-answer").value.trim();
+    if (!quizId || !kind || !prompt) return out({ error:"quizId_kind_prompt_required" });
+
+    let choices = [];
+    if (choicesStr) {
+      try { choices = JSON.parse(choicesStr); }
+      catch { return out({ error:"choices inválido (JSON)" }); }
+    }
+    let answerKey = null;
+    try {
+      // permite true/false, "true"/"false", ["A"], etc.
+      answerKey = choicesStr ? JSON.parse(answerStr || "null") : JSON.parse(answerStr || "null");
+    } catch {
+      // fallback: para single/multiple, aceita CSV "A,B"
+      if (kind === "single" || kind === "multiple") {
+        answerKey = answerStr ? answerStr.split(",").map(s => s.trim()).filter(Boolean) : [];
+      } else if (kind === "truefalse") {
+        answerKey = answerStr === "true";
+      }
+    }
+
+    const body = {
+      kind,
+      body: { prompt },
+      choices,
+      answerKey
+    };
+    const r = await call(`/api/admin/quizzes/${encodeURIComponent(quizId)}/questions`, {
+      method:"POST",
+      body: JSON.stringify(body)
+    });
+    out({ addQuestion: r });
+  });
+})();

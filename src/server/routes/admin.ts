@@ -2107,3 +2107,74 @@ export default router;
 router.use("/courses/:id", paramUuid("id"));
 router.use("/tracks/:id",  paramUuid("id"));
 router.use("/users/:id",   paramUuid("id"));
+
+// ====== ADDITIONS (append-only) ======
+// Observação: estas rotas podem ser adicionadas ao final do arquivo, mesmo após `export default router`.
+// O objeto `router` é o mesmo em memória e continuará recebendo handlers.
+
+// PATCH /api/admin/courses/:courseId/modules/reorder
+// Body: { moduleIds: uuid[] } — reordena os módulos do curso para 1..N na ordem fornecida
+router.patch("/courses/:courseId/modules/reorder", async (req, res) => {
+  const courseId = String(req.params.courseId || "");
+  if (!isUuid(courseId)) return res.status(400).json({ error: "invalid_courseId" });
+  const moduleIds = Array.isArray(req.body?.moduleIds) ? req.body.moduleIds : [];
+  if (!moduleIds.length) return res.status(400).json({ error: "moduleIds_required" });
+
+  // validar todos UUIDs
+  for (const id of moduleIds)
+    if (!isUuid(String(id))) {
+      return res.status(400).json({ error: "invalid_module_id_in_list", id });
+    }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    // checar se todos pertencem ao courseId
+    const q = await client.query(
+      `select id from modules where course_id = $1 and id = any($2::uuid[])`,
+      [courseId, moduleIds]
+    );
+    if (q.rowCount !== moduleIds.length) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "modules_not_in_course" });
+    }
+
+    // aplica ordem 1..N
+    for (let i = 0; i < moduleIds.length; i++) {
+      await client.query(`update modules set "order" = $1 where id = $2`, [i + 1, moduleIds[i]]);
+    }
+    await client.query("COMMIT");
+
+    const out = await pool.query(
+      `select id, title, "order" from modules where course_id = $1 order by "order", id`,
+      [courseId]
+    );
+    return res.json({ ok: true, modules: out.rows });
+  } catch (e: any) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {}
+    return res
+      .status(500)
+      .json({ error: "reorder_modules_failed", detail: String(e?.message || e) });
+  } finally {
+    client.release();
+  }
+});
+
+// PATCH /api/admin/quizzes/:quizId  → atualizar passScore
+router.patch("/quizzes/:quizId", async (req, res) => {
+  const quizId = String(req.params.quizId || "");
+  if (!isUuid(quizId)) return res.status(400).json({ error: "invalid_quizId" });
+  const passScoreRaw = req.body?.passScore;
+  const passScore = Number(passScoreRaw);
+  if (!Number.isFinite(passScore) || passScore < 0 || passScore > 100) {
+    return res.status(400).json({ error: "invalid_passScore" });
+  }
+  const r = await pool.query(
+    `update quizzes set pass_score = $1 where id = $2 returning id, module_id, pass_score`,
+    [passScore, quizId]
+  );
+  if (!r.rowCount) return res.status(404).json({ error: "quiz_not_found" });
+  return res.json({ quiz: r.rows[0] });
+});
