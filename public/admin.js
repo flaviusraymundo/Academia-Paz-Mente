@@ -307,6 +307,9 @@ document.getElementById("btnCloneCourse")?.addEventListener("click", async () =>
   if (status === 200 && body?.course?.id) {
     // Atualiza painel de estado rápido
     updateCreationState({ lastCourseId: body.course.id });
+    // Preenche o campo do draft para publicar/excluir rapidamente
+    const pub = document.getElementById("pub-course");
+    if (pub) pub.value = body.course.id;
   }
 });
 
@@ -333,6 +336,30 @@ document.getElementById("btnDeleteCourse")?.addEventListener("click", async () =
     method: "DELETE"
   });
   setOut("cl-out", { status, body });
+});
+
+// Copiar ID do campo "pub-course"
+document.getElementById("btnCopyDraftId")?.addEventListener("click", async () => {
+  const el = document.getElementById("pub-course");
+  const value = (el?.value || "").trim();
+  if (!value) { setOut("cl-out", { error: "Nenhum ID no campo" }); return; }
+  try {
+    await navigator.clipboard.writeText(value);
+    setOut("cl-out", { info: "ID copiado para a área de transferência", id: value });
+  } catch {
+    setOut("cl-out", { error: "Falha ao copiar ID" });
+  }
+});
+
+// Listar drafts
+document.getElementById("btnListDrafts")?.addEventListener("click", async () => {
+  const { status, body } = await api(`/api/admin/courses/_drafts`);
+  const out = document.getElementById("draftsOut");
+  if (out) {
+    out.textContent = JSON.stringify(body, null, 2);
+  } else {
+    setOut("cl-out", { status, body });
+  }
 });
 
 // Módulo
@@ -376,7 +403,39 @@ document.getElementById("createQuiz")?.addEventListener("click", async () => {
     headers: { "Content-Type": "application/json", ...authHeader() },
     body: JSON.stringify({ passScore })
   });
-  show(out, r.status, await r.text());
+  const txt = await r.text();
+  show(out, r.status, txt);
+
+  // Se checkbox 'criar questão placeholder' estiver marcado, tenta criar automaticamente
+  try {
+    if (r.ok && document.getElementById("q-autoplaceholder")?.checked) {
+      let parsed;
+      try { parsed = JSON.parse(txt); } catch {}
+      const quizId = parsed?.body?.quiz?.id || parsed?.body?.row?.id || parsed?.body?.id || parsed?.quiz?.id;
+      if (quizId) {
+        const payload = {
+          kind: "single",
+          body: { prompt: "Pergunta exemplo (edite depois)" },
+          choices: [
+            { id: "A", text: "Opção A" },
+            { id: "B", text: "Opção B" },
+            { id: "C", text: "Opção C" },
+            { id: "D", text: "Opção D" }
+          ],
+          answerKey: ["A"]
+        };
+        const rq = await fetch(`/api/admin/quizzes/${encodeURIComponent(quizId)}/questions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...authHeader() },
+          body: JSON.stringify(payload)
+        });
+        const respTxt = await rq.text();
+        show(out, rq.status, respTxt);
+        const qqField = document.getElementById("qq-quiz");
+        if (qqField) qqField.value = quizId;
+      }
+    }
+  } catch {}
 });
 
 // Questão
@@ -398,6 +457,83 @@ document.getElementById("addQuestion")?.addEventListener("click", async () => {
   });
   show(out, r.status, await r.text());
 });
+
+// ===== Templates de questão =====
+function setQuestionTemplate(kind) {
+  const kindSel = document.getElementById("qq-kind");
+  const bodyInp = document.getElementById("qq-body");
+  const choicesInp = document.getElementById("qq-choices");
+  const answerInp = document.getElementById("qq-answer");
+  if (!kindSel || !bodyInp || !choicesInp || !answerInp) return;
+
+  let tpl = null;
+  switch (kind) {
+    case "single":
+      tpl = {
+        kind: "single",
+        body: { prompt: "Pergunta (single): Qual das opções é correta?" },
+        choices: [
+          { id: "A", text: "Opção A" },
+          { id: "B", text: "Opção B" },
+          { id: "C", text: "Opção C" },
+          { id: "D", text: "Opção D" }
+        ],
+        answer: ["A"]
+      };
+      break;
+    case "multiple":
+      tpl = {
+        kind: "multiple",
+        body: { prompt: "Pergunta (multiple): Quais opções são corretas?" },
+        choices: [
+          { id: "A", text: "Opção A" },
+          { id: "B", text: "Opção B" },
+          { id: "C", text: "Opção C" },
+          { id: "D", text: "Opção D" }
+        ],
+        answer: ["A", "C"]
+      };
+      break;
+    case "truefalse":
+      tpl = {
+        kind: "truefalse",
+        body: { prompt: "A afirmação a seguir é verdadeira?" },
+        choices: [
+          { id: "T", text: "Verdadeiro" },
+          { id: "F", text: "Falso" }
+        ],
+        answer: true
+      };
+      break;
+    case "likert5":
+      tpl = {
+        kind: "multiple",
+        body: { prompt: "Avalie sua concordância (Likert 1-5)" },
+        choices: [
+          { id: "1", text: "Discordo totalmente" },
+          { id: "2", text: "Discordo" },
+          { id: "3", text: "Neutro" },
+          { id: "4", text: "Concordo" },
+          { id: "5", text: "Concordo totalmente" }
+        ],
+        answer: [] // sem correta; use como pesquisa/escala
+      };
+      break;
+  }
+  if (!tpl) return;
+  kindSel.value = tpl.kind;
+  bodyInp.value = JSON.stringify(tpl.body);
+  choicesInp.value = JSON.stringify(tpl.choices);
+  answerInp.value =
+    typeof tpl.answer === "boolean" || typeof tpl.answer === "number"
+      ? String(tpl.answer)
+      : JSON.stringify(tpl.answer);
+}
+
+document.getElementById("qq-tpl-single")?.addEventListener("click", () => setQuestionTemplate("single"));
+document.getElementById("qq-tpl-multiple")?.addEventListener("click", () => setQuestionTemplate("multiple"));
+document.getElementById("qq-tpl-truefalse")?.addEventListener("click", () => setQuestionTemplate("truefalse"));
+document.getElementById("qq-tpl-likert5")?.addEventListener("click", () => setQuestionTemplate("likert5"));
 
 // Trilhas
 document.getElementById("createTrack")?.addEventListener("click", async () => {

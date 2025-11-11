@@ -228,6 +228,7 @@ ends_at: 2025-03-01T12:00:00Z
       <div style="border-top:1px solid #ddd;padding-top:8px;margin-top:8px">
         <label>courseId draft (publicar / excluir)</label><br/>
         <input id="pub-course" placeholder="UUID do curso draft" />
+        <button id="btnCopyDraftId" type="button">Copiar ID</button>
         <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">
           <button id="btnPublishCourse">Publicar (draft → ativo)</button>
           <button id="btnDeleteCourse">Excluir draft (soft delete)</button>
@@ -235,6 +236,14 @@ ends_at: 2025-03-01T12:00:00Z
       </div>
       <pre id="cl-out" style="white-space:pre-wrap;border:1px solid #ddd;padding:8px;"></pre>
     </div>
+  </section>
+
+  <section>
+    <h2>Drafts (apenas rascunhos)</h2>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px;">
+      <button id="btnListDrafts" type="button">Listar drafts</button>
+    </div>
+    <pre id="draftsOut" style="white-space:pre-wrap;border:1px solid #ddd;padding:8px;"></pre>
   </section>
 
   <section>
@@ -264,6 +273,9 @@ ends_at: 2025-03-01T12:00:00Z
       <strong>Criar/atualizar quiz do módulo</strong><br/>
       <input id="q-module" placeholder="moduleId" />
       <input id="q-pass" type="number" value="70" />
+      <label style="font-size:12px;margin-left:8px;">
+        <input type="checkbox" id="q-autoplaceholder" /> criar questão placeholder
+      </label>
       <button id="createQuiz">Criar/Atualizar quiz</button>
     </div>
     <div style="margin-top:8px;">
@@ -278,6 +290,14 @@ ends_at: 2025-03-01T12:00:00Z
       <input id="qq-choices" placeholder='choices JSON ex: [{"id":"A","text":"Opção A"}]' size="60" />
       <input id="qq-answer" placeholder='answerKey JSON ex: ["A"] ou true/false' size="40" />
       <button id="addQuestion">Adicionar questão</button>
+      <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px;font-size:12px;">
+        <span style="font-weight:600;">Templates:</span>
+        <button type="button" id="qq-tpl-single">Single</button>
+        <button type="button" id="qq-tpl-multiple">Multiple (4)</button>
+        <button type="button" id="qq-tpl-truefalse">True/False</button>
+        <button type="button" id="qq-tpl-likert5">Likert(5)</button>
+        <span class="muted" style="margin-left:4px;">(Likert é opcional; serve como escala 1..5 sem resposta “correta”)</span>
+      </div>
     </div>
   </section>
 
