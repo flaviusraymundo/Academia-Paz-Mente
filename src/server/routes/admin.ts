@@ -351,6 +351,235 @@ router.get("/courses", async (_req, res) => {
 });
 
 /**
+ * POST /api/admin/courses/import
+ * Importa um curso completo a partir de JSON.
+ * Body:
+ * {
+ *   simulate?: boolean,
+ *   blankMedia?: boolean,
+ *   course: { slug, title, summary?, level?, active? },
+ *   modules: [
+ *     {
+ *       title,
+ *       items?: [{ type, payloadRef? }],
+ *       quiz?: { passScore?, questions?: [{ kind, body, choices, answerKey }] }
+ *     }, ...
+ *   ]
+ * }
+ */
+router.post("/courses/import", async (req: Request, res: Response) => {
+  const body = req.body || {};
+  const simulate = Boolean(body.simulate) || String(req.query.simulate || "") === "1";
+  const blankMedia = Boolean(body.blankMedia);
+  const course = body.course || {};
+  const modules = Array.isArray(body.modules) ? body.modules : [];
+
+  // Validar campos mínimos
+  if (!course.slug || !course.title) {
+    return res.status(400).json({ error: "missing_course_fields" });
+  }
+  if (!/^[-a-z0-9]+$/.test(course.slug)) {
+    return res.status(400).json({ error: "invalid_slug_format" });
+  }
+  if (!modules.length) {
+    return res.status(400).json({ error: "no_modules" });
+  }
+
+  // Validar módulos / itens / quiz
+  for (const [idx, m] of modules.entries()) {
+    if (!m || typeof m.title !== "string" || !m.title.trim()) {
+      return res.status(400).json({ error: "module_title_required", moduleIndex: idx });
+    }
+    if (m.items && !Array.isArray(m.items)) {
+      return res.status(400).json({ error: "module_items_must_be_array", moduleIndex: idx });
+    }
+    if (m.items) {
+      for (const [iIdx, it] of m.items.entries()) {
+        if (!it || !["video", "text", "quiz"].includes(it.type)) {
+          return res.status(400).json({ error: "invalid_item_type", moduleIndex: idx, itemIndex: iIdx });
+        }
+      }
+    }
+    if (m.quiz) {
+      const q = m.quiz;
+      const passScore = q.passScore == null ? 70 : Number(q.passScore);
+      if (!Number.isFinite(passScore) || passScore < 0 || passScore > 100) {
+        return res.status(400).json({ error: "invalid_pass_score", moduleIndex: idx });
+      }
+      if (q.questions && !Array.isArray(q.questions)) {
+        return res.status(400).json({ error: "quiz_questions_must_be_array", moduleIndex: idx });
+      }
+      if (Array.isArray(q.questions)) {
+        for (const [qi, qq] of q.questions.entries()) {
+          if (!qq || !["single", "multiple", "truefalse"].includes(String(qq.kind))) {
+            return res.status(400).json({ error: "invalid_question_kind", moduleIndex: idx, questionIndex: qi });
+          }
+        }
+      }
+    }
+  }
+
+  const client = await pool.connect();
+  try {
+    // Checar slug duplicado
+    const dupe = await client.query(
+      `select 1 from courses where slug = $1 and deleted_at is null limit 1`,
+      [course.slug]
+    );
+    if (dupe.rowCount) {
+      return res.status(409).json({ error: "duplicate_slug" });
+    }
+
+    // Simulação: não cria nada, só projeta
+    if (simulate) {
+      const projectedModules = modules.map((m, i) => ({
+        tempId: `mod-${i + 1}`,
+        title: m.title,
+        order: i + 1,
+        itemCount: (m.items || []).length,
+        quiz: m.quiz
+          ? {
+              passScore: m.quiz.passScore == null ? 70 : Number(m.quiz.passScore),
+              questionCount: Array.isArray(m.quiz.questions) ? m.quiz.questions.length : 0,
+            }
+          : undefined,
+      }));
+      const projectedItems: Record<string, any[]> = {};
+      projectedModules.forEach((pm, idx) => {
+        const modDef = modules[idx] || {};
+        const its = (modDef.items || []).map((it: any, itIdx: number) => ({
+          type: it.type,
+          order: itIdx + 1,
+          payloadPreview: blankMedia ? "cleared" : "kept",
+        }));
+        projectedItems[pm.tempId] = its;
+      });
+      const quizQuestionsTotal = modules.reduce((sum, m) => {
+        const qs = m.quiz?.questions;
+        return sum + (Array.isArray(qs) ? qs.length : 0);
+      }, 0);
+
+      return res.json({
+        simulate: true,
+        blankMedia: !!blankMedia,
+        course: { slug: course.slug, title: course.title, draft: true },
+        modules: projectedModules,
+        items: projectedItems,
+        quizQuestionsTotal,
+      });
+    }
+
+    await client.query("BEGIN");
+
+    // Inserir curso (draft=true, active conforme body.course.active ou false por padrão)
+    const active = Boolean(course.active);
+    const level = course.level || "beginner";
+    const summary = course.summary || "";
+    const newCourseRes = await client.query(
+      `insert into courses(id, slug, title, summary, level, active, draft)
+       values (gen_random_uuid(), $1, $2, $3, $4, $5, true)
+       returning id, slug, title, draft, active`,
+      [course.slug, course.title, summary, level, active]
+    );
+    const newCourse = newCourseRes.rows[0];
+    const newCourseId = newCourse.id;
+
+    // Sanitizar payload_ref se blankMedia
+    function sanitize(ref: any) {
+      if (!blankMedia) return ref || {};
+      if (!ref || typeof ref !== "object") return {};
+      const clone = { ...ref };
+      for (const k of ["mux_playback_id", "mux_asset_id", "doc_id", "html", "url"]) {
+        if (k in clone) delete (clone as any)[k];
+      }
+      return clone;
+    }
+
+    // Inserir módulos + itens + quiz + perguntas
+    const newModules: any[] = [];
+    const newItemsByModule: Record<string, any[]> = {};
+    const newQuizIds: Record<string, string> = {};
+    let questionsCreated = 0;
+
+    for (let i = 0; i < modules.length; i++) {
+      const m = modules[i];
+      const mRes = await client.query(
+        `insert into modules(id, course_id, title, "order")
+         values (gen_random_uuid(), $1, $2, $3)
+         returning id, title, "order"`,
+        [newCourseId, m.title, i + 1]
+      );
+      const newModuleId = mRes.rows[0].id;
+      newModules.push(mRes.rows[0]);
+
+      // Itens
+      const itemsDef = m.items || [];
+      for (let itIdx = 0; itIdx < itemsDef.length; itIdx++) {
+        const it = itemsDef[itIdx];
+        const payloadRef = sanitize(it.payloadRef);
+        const iRes = await client.query(
+          `insert into module_items(id, module_id, type, "order", payload_ref)
+           values (gen_random_uuid(), $1, $2, $3, $4::jsonb)
+           returning id, type, "order"`,
+          [newModuleId, it.type, itIdx + 1, JSON.stringify(payloadRef)]
+        );
+        if (!newItemsByModule[newModuleId]) newItemsByModule[newModuleId] = [];
+        newItemsByModule[newModuleId].push(iRes.rows[0]);
+      }
+
+      // Quiz opcional
+      if (m.quiz) {
+        const passScore = m.quiz.passScore == null ? 70 : Number(m.quiz.passScore);
+        const qRes = await client.query(
+          `insert into quizzes(id, module_id, pass_score)
+           values (gen_random_uuid(), $1, $2)
+           returning id`,
+          [newModuleId, passScore]
+        );
+        const quizId = qRes.rows[0].id;
+        newQuizIds[newModuleId] = quizId;
+
+        const questionsDef = Array.isArray(m.quiz.questions) ? m.quiz.questions : [];
+        for (const qq of questionsDef) {
+          await client.query(
+            `insert into questions(id, quiz_id, kind, body, choices, answer_key)
+             values (gen_random_uuid(), $1, $2, $3::jsonb, $4::jsonb, $5::jsonb)`,
+            [
+              quizId,
+              qq.kind,
+              JSON.stringify(qq.body || {}),
+              JSON.stringify(qq.choices || []),
+              JSON.stringify(qq.answerKey || {}),
+            ]
+          );
+          questionsCreated++;
+        }
+      }
+    }
+
+    await client.query("COMMIT");
+    return res.json({
+      simulate: false,
+      course: newCourse,
+      modules: newModules,
+      items: newItemsByModule,
+      quiz: newQuizIds,
+      questionsCreated,
+      blankMedia: !!blankMedia,
+    });
+  } catch (e: any) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {}
+    const msg = String(e?.message || e);
+    if (msg === "duplicate_slug") return res.status(409).json({ error: "duplicate_slug" });
+    return res.status(500).json({ error: "import_failed", detail: msg });
+  } finally {
+    client.release();
+  }
+});
+
+/**
  * POST /api/admin/courses/:courseId/clone
  * Clona estrutura de um curso (módulos, itens, quiz e perguntas).
  * Body: { newSlug, newTitle, mode="clone"|"template", blankMedia?:boolean, includeQuestions?:boolean }
