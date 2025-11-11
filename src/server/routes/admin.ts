@@ -109,6 +109,20 @@ router.get("/courses/_summary", async (_req: Request, res: Response) => {
   res.json({ courses: q.rows });
 });
 
+// Cursos somente em rascunho (auxílio administrativo)
+router.get("/courses/_drafts", async (_req: Request, res: Response) => {
+  const { rows } = await pool.query(
+    `
+    select id, slug, title, summary, level, active, draft, created_at
+      from courses
+     where draft = true
+       and deleted_at is null
+     order by created_at desc
+    `
+  );
+  res.json({ courses: rows });
+});
+
 // Trilhas (tracks) resumo (mantém UMA única definição; removidas duplicatas)
 router.get("/tracks/_summary", async (_req: Request, res: Response) => {
   const q = await pool.query(`
