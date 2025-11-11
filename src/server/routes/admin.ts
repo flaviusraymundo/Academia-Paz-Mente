@@ -198,6 +198,7 @@ router.post("/courses/:courseId/duplicate", async (req, res) => {
     active = false,
     simulate = false
   } = req.body || {};
+  const mode = resolveMode({ blankMedia, sanitize });
 
   // Carrega curso original
   const client = await pool.connect();
@@ -257,19 +258,6 @@ router.post("/courses/:courseId/duplicate", async (req, res) => {
         )
       : { rows: [] };
 
-    // Função de limpeza de mídia
-    function cleanPayload(ref: any) {
-      if (!ref || typeof ref !== "object") return {};
-      if (!blankMedia && !sanitize) return ref;
-      const clone = { ...ref };
-      for (const k of ["mux_playback_id", "mux_asset_id", "doc_id", "html", "url"]) {
-        if (blankMedia || sanitize) {
-          if (k in clone) delete (clone as any)[k];
-        }
-      }
-      return clone;
-    }
-
     // Gerar slug
     function slugify(s: string) {
       return s
@@ -308,7 +296,7 @@ router.post("/courses/:courseId/duplicate", async (req, res) => {
         .filter(it => it.module_id === m.id)
         .sort((a, b) => Number(a.order) - Number(b.order))
         .map(it => {
-          const payloadRef = cleanPayload(it.payload_ref || {});
+          const payloadRef = sanitizePayloadRef(it.payload_ref || {}, mode);
           return {
             type: it.type,
             order: Number(it.order),
@@ -404,7 +392,7 @@ router.post("/courses/:courseId/duplicate", async (req, res) => {
     // Clonar itens
     for (const it of itemsQ.rows) {
       const newModId = moduleIdMap.get(it.module_id)!;
-      let payloadRef = cleanPayload(it.payload_ref || {});
+      let payloadRef = sanitizePayloadRef(it.payload_ref || {}, mode);
       if (it.type === "quiz") {
         // Atualiza quiz_id para o novo quiz do módulo (se existir)
         const oldQuizId = payloadRef?.quiz_id;
@@ -662,6 +650,7 @@ router.get("/courses/:courseId/export", async (req, res) => {
   const sanitize = String(req.query.sanitize || "") === "1";
   const blankMedia = String(req.query.blankMedia || "") === "1";
   const dropIds = String(req.query.dropIds || "") === "1";
+  const mode = resolveMode({ blankMedia, sanitize });
 
   const client = await pool.connect();
   try {
@@ -727,23 +716,11 @@ router.get("/courses/:courseId/export", async (req, res) => {
       questionsByQuiz.set(qs.quiz_id, arr);
     }
 
-    const mediaKeys = ["mux_playback_id", "mux_asset_id", "doc_id", "html", "url"];
-    const cleanPayload = (ref: any) => {
-      if (!ref || typeof ref !== "object") return {};
-      const clone: Record<string, any> = { ...ref };
-      if (blankMedia || sanitize) {
-        for (const k of mediaKeys) {
-          if (k in clone) delete clone[k];
-        }
-      }
-      return clone;
-    };
-
     const modules = modulesQ.rows.map((m: any) => {
       const its = itemsQ.rows
         .filter((it: any) => it.module_id === m.id)
         .map((it: any) => {
-          const payloadRef = blankMedia || sanitize ? cleanPayload(it.payload_ref) : it.payload_ref || {};
+          const payloadRef = sanitizePayloadRef(it.payload_ref || {}, mode);
           const base: Record<string, any> = {
             type: it.type,
             order: Number(it.order),
@@ -1115,6 +1092,8 @@ router.post("/courses/import", async (req: Request, res: Response) => {
   const body = req.body || {};
   const simulate = Boolean(body.simulate) || String(req.query.simulate || "") === "1";
   const blankMedia = Boolean(body.blankMedia);
+  const sanitize = Boolean(body.sanitize);
+  const mode = resolveMode({ blankMedia, sanitize });
   const course = body.course || {};
   const modules = Array.isArray(body.modules) ? body.modules : [];
 
@@ -1241,17 +1220,6 @@ router.post("/courses/import", async (req: Request, res: Response) => {
     const newCourse = newCourseRes.rows[0];
     const newCourseId = newCourse.id;
 
-    // Sanitizar payload_ref se blankMedia
-    function sanitize(ref: any) {
-      if (!blankMedia) return ref || {};
-      if (!ref || typeof ref !== "object") return {};
-      const clone = { ...ref };
-      for (const k of ["mux_playback_id", "mux_asset_id", "doc_id", "html", "url"]) {
-        if (k in clone) delete (clone as any)[k];
-      }
-      return clone;
-    }
-
     // Inserir módulos + itens + quiz + perguntas
     const newModules: any[] = [];
     const newItemsByModule: Record<string, any[]> = {};
@@ -1304,7 +1272,8 @@ router.post("/courses/import", async (req: Request, res: Response) => {
       let insertedQuizItem = false;
       for (let itIdx = 0; itIdx < itemsDef.length; itIdx++) {
         const it = itemsDef[itIdx];
-        let payloadRef = sanitize(it.payloadRef);
+        const rawRef = it.payloadRef ?? it.payload_ref ?? {};
+        let payloadRef = sanitizePayloadRef(rawRef, mode);
         if (it.type === "quiz") {
           // força o vínculo com o quiz recém-criado
           if (!quizId) {
@@ -1326,11 +1295,12 @@ router.post("/courses/import", async (req: Request, res: Response) => {
       // Se há quiz definido e nenhum item "quiz" foi fornecido, cria um automaticamente no final
       if (quizId && !insertedQuizItem) {
         const order = (itemsDef?.length || 0) + 1;
+        const payloadRef = sanitizePayloadRef({ quiz_id: quizId }, mode);
         const iRes = await client.query(
           `insert into module_items(id, module_id, type, "order", payload_ref)
            values (gen_random_uuid(), $1, 'quiz', $2, $3::jsonb)
            returning id, type, "order"`,
-          [newModuleId, order, JSON.stringify({ quiz_id: quizId })]
+          [newModuleId, order, JSON.stringify(payloadRef)]
         );
         if (!newItemsByModule[newModuleId]) newItemsByModule[newModuleId] = [];
         newItemsByModule[newModuleId].push(iRes.rows[0]);
@@ -1905,16 +1875,7 @@ router.post("/modules/:moduleId/duplicate", async (req, res) => {
   const titleArg = String(req.body?.title || "");
   const orderArg = req.body?.order;
   const blankMedia = !!req.body?.blankMedia;
-
-  function cleanPayload(ref: any) {
-    if (!blankMedia) return ref || {};
-    if (!ref || typeof ref !== "object") return {};
-    const clone = { ...ref };
-    for (const k of ["mux_playback_id", "mux_asset_id", "doc_id", "html", "url"]) {
-      if (k in clone) delete (clone as any)[k];
-    }
-    return clone;
-  }
+  const mode = resolveMode({ blankMedia });
 
   const client = await pool.connect();
   try {
@@ -2005,12 +1966,12 @@ router.post("/modules/:moduleId/duplicate", async (req, res) => {
 
     for (let i = 0; i < itQ.rowCount; i++) {
       const srcIt = itQ.rows[i];
-      let payloadRef = cleanPayload(srcIt.payload_ref);
+      let payloadRef = sanitizePayloadRef(srcIt.payload_ref, mode);
       if (srcIt.type === "quiz") {
         if (newQuizId) {
-          payloadRef = { ...(payloadRef || {}), quiz_id: newQuizId };
+          payloadRef = { ...(payloadRef as any), quiz_id: newQuizId };
         } else {
-          const base = { ...(payloadRef || {}) } as Record<string, unknown>;
+          const base = { ...(payloadRef as any) } as Record<string, unknown>;
           if ("quiz_id" in base) delete base.quiz_id;
           payloadRef = base;
         }
@@ -2162,16 +2123,7 @@ router.post("/items/:itemId/duplicate", async (req, res) => {
   const targetModuleId = String(req.body?.targetModuleId || "");
   const orderArg = req.body?.order;
   const blankMedia = !!req.body?.blankMedia;
-
-  function cleanPayload(ref: any) {
-    if (!blankMedia) return ref || {};
-    if (!ref || typeof ref !== "object") return {};
-    const clone = { ...ref };
-    for (const k of ["mux_playback_id", "mux_asset_id", "doc_id", "html", "url"]) {
-      if (k in clone) delete (clone as any)[k];
-    }
-    return clone;
-  }
+  const mode = resolveMode({ blankMedia });
 
   const client = await pool.connect();
   try {
@@ -2211,7 +2163,7 @@ router.post("/items/:itemId/duplicate", async (req, res) => {
     }
 
     if (src.type !== "quiz") {
-      const payloadRef = cleanPayload(src.payload_ref);
+      const payloadRef = sanitizePayloadRef(src.payload_ref, mode);
       const ins = await client.query(
         `insert into module_items(id, module_id, type, "order", payload_ref)
          values (gen_random_uuid(), $1, $2, $3, $4::jsonb)
@@ -2276,7 +2228,7 @@ router.post("/items/:itemId/duplicate", async (req, res) => {
       return res.status(500).json({ error: "quiz_duplication_failed" });
     }
 
-    const mergedPayload = cleanPayload({ ...(src.payload_ref || {}), quiz_id: destQuizId });
+    const mergedPayload = sanitizePayloadRef({ ...(src.payload_ref || {}), quiz_id: destQuizId }, mode);
     const ins = await client.query(
       `insert into module_items(id, module_id, type, "order", payload_ref)
        values (gen_random_uuid(), $1, 'quiz', $2, $3::jsonb)

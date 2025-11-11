@@ -1,363 +1,393 @@
-# api/openapi.yaml
 openapi: 3.0.3
 info:
-  title: LMS API
-  version: 1.0.0
+  title: Academia Paz Mente Admin API
+  version: "1.0.0"
 servers:
-  - url: https://api.seudominio.com
+- url: /api
 paths:
-  /auth/magic-link:
-    post:
-      summary: Solicita magic link
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/MagicLinkRequest' }
-      responses:
-        '204': { description: Enviado }
-  /catalog:
+  /admin/courses/{courseId}/full:
     get:
-      summary: Lista cursos e trilhas
+      summary: Get full course tree (course + modules + items + quizzes + questions)
+      parameters:
+      - in: path
+        name: courseId
+        required: true
+        schema: { type: string, format: uuid }
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Catalog' }
-  /checkout/session:
-    post:
-      summary: Cria sessão de checkout Stripe
-      requestBody:
+              schema:
+                $ref: "#/components/schemas/CourseFull"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /admin/courses/{courseId}/export:
+    get:
+      summary: Export course as round-trip JSON
+      parameters:
+      - in: path
+        name: courseId
         required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/CheckoutRequest' }
+        schema: { type: string, format: uuid }
+      - in: query
+        name: dropIds
+        schema: { type: string, enum: ["1"] }
+      - in: query
+        name: blankMedia
+        schema: { type: string, enum: ["1"] }
+      - in: query
+        name: sanitize
+        schema: { type: string, enum: ["1"] }
       responses:
-        '200':
-          description: URL de checkout
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/CheckoutResponse' }
-  /webhooks/stripe:
-    post:
-      summary: Webhook Stripe
-      responses:
-        '200': { description: OK }
-  /entitlements/refresh:
-    post:
-      summary: Recalcula entitlements do usuário autenticado
-      security: [{ bearerAuth: [] }]
-      responses:
-        '204': { description: Atualizado }
-  /courses/{courseId}/modules:
-    get:
-      summary: Lista módulos liberados no curso
-      security: [{ bearerAuth: [] }]
-      parameters:
-        - name: courseId
-          in: path
-          required: true
-          schema: { type: string }
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Modules' }
-  /api/me/items:
-    get:
-      summary: Listar itens dos módulos de um curso para o usuário atual
-      description: Requer o ID do curso. Retorna módulos com `unlocked`, `progress` e `items`.
-      security: [{ bearerAuth: [] }]
-      parameters:
-        - in: query
-          name: courseId
-          required: true
-          description: UUID do curso
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  items:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        id: { type: string, format: uuid }
-                        title: { type: string }
-                        order: { type: integer }
-                        unlocked: { type: boolean }
-                        itemCount: { type: integer }
-                        progress:
-                          type: object
-                          properties:
-                            status: { type: string, enum: [not_started, started, passed, failed] }
-                            score:  { type: number }
-                            timeSpentSecs: { type: integer }
-                        items:
-                          type: array
-                          items:
-                            type: object
-                            properties:
-                              item_id:   { type: string, format: uuid }
-                              module_id: { type: string, format: uuid }
-                              type:      { type: string, enum: [video, text, quiz] }
-                              order:     { type: integer }
-                              payload_ref:
-                                type: object
-        '400': { description: Missing `courseId` }
-        '401': { description: Unauthorized }
+                  export:
+                    $ref: "#/components/schemas/CourseImportPayload"
+                  dropIds: { type: boolean }
+                  blankMedia: { type: boolean }
+                  sanitize: { type: boolean }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
-  /api/me/modules:
-    get:
-      summary: Alias de /api/me/items
-      security: [{ bearerAuth: [] }]
-      parameters:
-        - in: query
-          name: courseId
-          required: true
-          description: UUID do curso
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '200': { description: OK (mesmo payload de /api/me/items) }
-        '400': { description: Missing `courseId` }
-        '401': { description: Unauthorized }
-  /quizzes/{quizId}/submit:
+  /admin/courses/{courseId}/duplicate:
     post:
-      summary: Submete respostas do quiz do módulo
-      security: [{ bearerAuth: [] }]
+      summary: Duplicate an existing course (server-side export+import)
       parameters:
-        - name: quizId
-          in: path
-          required: true
-          schema: { type: string }
-      requestBody:
+      - in: path
+        name: courseId
         required: true
+        schema: { type: string, format: uuid }
+      requestBody:
+        required: false
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/QuizSubmission' }
+            schema:
+              type: object
+              properties:
+                slug: { type: string }
+                title: { type: string }
+                blankMedia: { type: boolean }
+                sanitize: { type: boolean }
+                includeQuestions: { type: boolean, default: true }
+                active: { type: boolean, default: false }
+                simulate: { type: boolean, default: false }
       responses:
-        '200':
-          description: Resultado
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/QuizResult' }
-  /video/{itemId}/playback-token:
-    post:
-      summary: Emite token assinado para playback Mux
-      security: [{ bearerAuth: [] }]
-      parameters:
-        - name: itemId
-          in: path
-          required: true
-          schema: { type: string }
-      responses:
-        '200':
-          description: Token
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/PlaybackToken' }
-  /me/progress:
-    get:
-      summary: Obtém progresso
-      security: [{ bearerAuth: [] }]
-      responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Progress' }
-    patch:
-      summary: Heartbeat/atualização de tempo
-      security: [{ bearerAuth: [] }]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/ProgressPatch' }
-      responses:
-        '204': { description: Atualizado }
-  /api/admin/modules/{id}:
-    put:
-      summary: Atualiza título/ordem do módulo
-      security: [{ bearerAuth: [] }]
-      tags: [admin]
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema: { type: string, format: uuid }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                title: { type: string }
-                order: { type: integer }
-      responses:
-        '200': { description: OK }
-        '400': { description: Erro de validação }
-        '404': { description: Módulo não encontrado }
-  /api/admin/modules/{id}/reorder:
-    patch:
-      summary: Reordena os itens do módulo
-      security: [{ bearerAuth: [] }]
-      tags: [admin]
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema: { type: string, format: uuid }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [itemIds]
-              properties:
-                itemIds:
-                  type: array
-                  items: { type: string, format: uuid }
-      responses:
-        '200': { description: OK }
-        '400': { description: Erro de validação ou item fora do módulo }
-  /certificates/{courseId}/issue:
+              schema:
+                oneOf:
+                - type: object
+                  properties:
+                    simulate: { type: boolean }
+                    course: { $ref: "#/components/schemas/CourseSummary" }
+                    modules:
+                      type: array
+                      items: { $ref: "#/components/schemas/ModulePreview" }
+                - type: object
+                  properties:
+                    ok: { type: boolean }
+                    course: { $ref: "#/components/schemas/CourseSummary" }
+                    modules:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          title: { type: string }
+                          order: { type: integer }
+                          itemCount: { type: integer }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "500": { $ref: "#/components/responses/ServerError" }
+
+  /admin/items/{itemId}/move:
     post:
-      summary: Emite certificado para curso concluído
-      security: [{ bearerAuth: [] }]
+      summary: Move item to target module or reorder within the same module
       parameters:
-        - name: courseId
-          in: path
-          required: true
-          schema: { type: string }
+      - in: path
+        name: itemId
+        required: true
+        schema: { type: string, format: uuid }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                targetModuleId: { type: string, format: uuid }
+                newOrder: { type: integer, minimum: 1 }
       responses:
-        '200':
-          description: Certificado
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Certificate' }
+        "200":
+          description: OK
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "500": { $ref: "#/components/responses/ServerError" }
+
+  /admin/modules/{moduleId}/quiz-wizard:
+    post:
+      summary: Create a quiz for module and insert a quiz item
+      parameters:
+      - in: path
+        name: moduleId
+        required: true
+        schema: { type: string, format: uuid }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                passScore: { type: integer, minimum: 0, maximum: 100, default: 70 }
+                order: { type: integer, minimum: 1 }
+      responses:
+        "200": { description: OK }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/ServerError" }
+
+  /admin/items/{itemId}/duplicate:
+    post:
+      summary: Duplicate an item (if quiz, reuse or create quiz in target module)
+      parameters:
+      - in: path
+        name: itemId
+        required: true
+        schema: { type: string, format: uuid }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                targetModuleId: { type: string, format: uuid }
+                order: { type: integer, minimum: 1 }
+                blankMedia: { type: boolean }
+      responses:
+        "200": { description: OK }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "500": { $ref: "#/components/responses/ServerError" }
+
+  /admin/modules/{moduleId}/duplicate:
+    post:
+      summary: Duplicate a module with its items and (optionally) quiz
+      parameters:
+      - in: path
+        name: moduleId
+        required: true
+        schema: { type: string, format: uuid }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                targetCourseId: { type: string, format: uuid }
+                title: { type: string }
+                order: { type: integer, minimum: 1 }
+                blankMedia: { type: boolean }
+      responses:
+        "200": { description: OK }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/ServerError" }
+
+  /admin/courses/import:
+    post:
+      summary: Import a course from JSON structure
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CourseImportPayloadWithFlags"
+      responses:
+        "200": { description: OK }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "500": { $ref: "#/components/responses/ServerError" }
+
 components:
-  securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
+  responses:
+    BadRequest:
+      description: Bad Request
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    NotFound:
+      description: Not Found
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    Conflict:
+      description: Conflict
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    ServerError:
+      description: Server Error
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+
   schemas:
-    MagicLinkRequest:
-      type: object
-      required: [email]
-      properties:
-        email: { type: string, format: email }
-    Catalog:
+    ErrorResponse:
       type: object
       properties:
-        courses:
-          type: array
-          items:
-            type: object
-            properties:
-              id: { type: string }
-              slug: { type: string }
-              title: { type: string }
-              summary: { type: string }
-              level: { type: string }
-        tracks:
-          type: array
-          items:
-            type: object
-            properties:
-              id: { type: string }
-              slug: { type: string }
-              title: { type: string }
-    CheckoutRequest:
+        error: { type: string }
+        detail: { type: string }
+
+    PayloadRef:
       type: object
-      required: [mode, priceId]
-      properties:
-        mode: { type: string, enum: [payment, subscription] }
-        priceId: { type: string }
-        courseId: { type: string, nullable: true }
-    CheckoutResponse:
+      additionalProperties: true
+      description: Arbitrary object with optional media-related keys stripped when sanitize/blankMedia are enabled.
+
+    CourseSummary:
       type: object
       properties:
-        url: { type: string }
-    Modules:
+        id: { type: string, format: uuid }
+        slug: { type: string }
+        title: { type: string }
+        summary: { type: string, nullable: true }
+        level: { type: string, nullable: true }
+        active: { type: boolean }
+        draft: { type: boolean }
+
+    ModulePreview:
       type: object
       properties:
+        title: { type: string }
+        order: { type: integer }
         items:
           type: array
           items:
             type: object
             properties:
-              id: { type: string }
-              title: { type: string }
+              type: { type: string, enum: ["video","text","quiz"] }
               order: { type: integer }
-              unlocked: { type: boolean }
-              itemCount: { type: integer }
-    QuizSubmission:
-      type: object
-      required: [answers]
-      properties:
-        answers:
-          type: array
-          items:
-            type: object
-            properties:
-              questionId: { type: string }
-              choiceIds:
-                type: array
-                items: { type: string }
-    QuizResult:
-      type: object
-      properties:
-        passed: { type: boolean }
-        score: { type: number }
-    PlaybackToken:
-      type: object
-      properties:
-        token: { type: string }
-    Progress:
+              payloadRef: { $ref: "#/components/schemas/PayloadRef" }
+        quiz:
+          type: object
+          nullable: true
+          properties:
+            passScore: { type: integer }
+            questions:
+              type: array
+              items:
+                type: object
+                properties:
+                  kind: { type: string }
+                  body: { type: object, additionalProperties: true }
+                  choices:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        text: { type: string }
+                  answerKey: {}
+
+    CourseFull:
       type: object
       properties:
+        course: { $ref: "#/components/schemas/CourseSummary" }
         modules:
           type: array
           items:
             type: object
             properties:
-              moduleId: { type: string }
-              status: { type: string }
-              score: { type: number }
-              timeSpentSecs: { type: integer }
-    ProgressPatch:
+              id: { type: string, format: uuid }
+              title: { type: string }
+              order: { type: integer }
+              items:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string, format: uuid }
+                    type: { type: string, enum: ["video","text","quiz"] }
+                    order: { type: integer }
+                    payloadRef: { $ref: "#/components/schemas/PayloadRef" }
+              quiz:
+                type: object
+                nullable: true
+                properties:
+                  id: { type: string, format: uuid }
+                  passScore: { type: integer }
+                  questions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string, format: uuid }
+                        kind: { type: string }
+                        body: { type: object, additionalProperties: true }
+                        choices:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              id: { type: string }
+                              text: { type: string }
+                        answerKey: {}
+    CourseImportPayload:
       type: object
-      required: [events]
       properties:
-        events:
+        course:
+          type: object
+          properties:
+            slug: { type: string }
+            title: { type: string }
+            summary: { type: string, nullable: true }
+            level: { type: string, nullable: true }
+            active: { type: boolean }
+        modules:
           type: array
           items:
             type: object
             properties:
-              type: { type: string, enum: [started, paused, seeked, completed, heartbeat] }
-              itemId: { type: string }
-              dt: { type: string, format: date-time }
-              deltaSecs: { type: integer }
-    Certificate:
-      type: object
-      properties:
-        id: { type: string }
-        courseId: { type: string }
-        issuedAt: { type: string, format: date-time }
-        pdfUrl: { type: string }
-        hash: { type: string }
+              title: { type: string }
+              items:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    type: { type: string, enum: ["video","text","quiz"] }
+                    payloadRef: { $ref: "#/components/schemas/PayloadRef" }
+              quiz:
+                type: object
+                nullable: true
+                properties:
+                  passScore: { type: integer }
+                  questions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        kind: { type: string }
+                        body: { type: object, additionalProperties: true }
+                        choices:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              id: { type: string }
+                              text: { type: string }
+                        answerKey: {}
+    CourseImportPayloadWithFlags:
+      allOf:
+      - $ref: "#/components/schemas/CourseImportPayload"
+      - type: object
+        properties:
+          simulate: { type: boolean }
+          blankMedia: { type: boolean }
+          sanitize: { type: boolean }
