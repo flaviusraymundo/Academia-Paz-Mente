@@ -1972,43 +1972,55 @@ router.post("/items/:itemId/duplicate", async (req, res) => {
       return res.status(409).json({ error: "invalid_quiz_item_payload" });
     }
 
-    const qQ = await client.query(
-      `select id, module_id, pass_score from quizzes where id = $1`,
-      [srcQuizId]
+    let destQuizId: string | null = null;
+    const dstQuizQ = await client.query(
+      `select id, pass_score from quizzes where module_id = $1`,
+      [dstModuleId]
     );
-    if (!qQ.rowCount) {
-      await client.query("ROLLBACK");
-      return res.status(404).json({ error: "quiz_not_found" });
-    }
-    const srcQuiz = qQ.rows[0];
-
-    const newQ = await client.query(
-      `insert into quizzes(id, module_id, pass_score)
-       values (gen_random_uuid(), $1, $2)
-       returning id, module_id, pass_score`,
-      [dstModuleId, srcQuiz.pass_score]
-    );
-    const newQuizId = newQ.rows[0].id;
-
-    const qsQ = await client.query(
-      `select kind, body, choices, answer_key from questions where quiz_id = $1`,
-      [srcQuizId]
-    );
-    for (const row of qsQ.rows) {
-      await client.query(
-        `insert into questions(id, quiz_id, kind, body, choices, answer_key)
-         values (gen_random_uuid(), $1, $2, $3::jsonb, $4::jsonb, $5::jsonb)`,
-        [
-          newQuizId,
-          row.kind,
-          JSON.stringify(row.body || {}),
-          JSON.stringify(row.choices || []),
-          JSON.stringify(row.answer_key || null),
-        ]
+    if (dstQuizQ.rowCount) {
+      destQuizId = dstQuizQ.rows[0].id;
+    } else {
+      const srcQuizQ = await client.query(
+        `select id, pass_score from quizzes where id = $1`,
+        [srcQuizId]
       );
+      if (!srcQuizQ.rowCount) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ error: "quiz_not_found" });
+      }
+      const srcQuiz = srcQuizQ.rows[0];
+      const newQ = await client.query(
+        `insert into quizzes(id, module_id, pass_score)
+         values (gen_random_uuid(), $1, $2)
+         returning id`,
+        [dstModuleId, srcQuiz.pass_score]
+      );
+      destQuizId = newQ.rows[0].id;
+      const qsQ = await client.query(
+        `select kind, body, choices, answer_key from questions where quiz_id = $1`,
+        [srcQuizId]
+      );
+      for (const row of qsQ.rows) {
+        await client.query(
+          `insert into questions(id, quiz_id, kind, body, choices, answer_key)
+           values (gen_random_uuid(), $1, $2, $3::jsonb, $4::jsonb, $5::jsonb)`,
+          [
+            destQuizId,
+            row.kind,
+            JSON.stringify(row.body || {}),
+            JSON.stringify(row.choices || []),
+            JSON.stringify(row.answer_key || null),
+          ]
+        );
+      }
     }
 
-    const mergedPayload = cleanPayload({ ...(src.payload_ref || {}), quiz_id: newQuizId });
+    if (!destQuizId) {
+      await client.query("ROLLBACK");
+      return res.status(500).json({ error: "quiz_duplication_failed" });
+    }
+
+    const mergedPayload = cleanPayload({ ...(src.payload_ref || {}), quiz_id: destQuizId });
     const ins = await client.query(
       `insert into module_items(id, module_id, type, "order", payload_ref)
        values (gen_random_uuid(), $1, 'quiz', $2, $3::jsonb)
@@ -2017,7 +2029,7 @@ router.post("/items/:itemId/duplicate", async (req, res) => {
     );
 
     await client.query("COMMIT");
-    return res.json({ ok: true, item: ins.rows[0], quizId: newQuizId });
+    return res.json({ ok: true, item: ins.rows[0], quizId: destQuizId });
   } catch (e: any) {
     try {
       await client.query("ROLLBACK");
