@@ -361,6 +361,42 @@ ends_at: 2025-03-01T12:00:00Z
     </div>
   </section>
 
+  <section>
+    <h2>Editor de questões (estruturado)</h2>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <input id="qe-quiz" placeholder="quizId" />
+      <button id="qe-load" type="button">Carregar questões</button>
+    </div>
+    <div id="qe-list" style="margin-top:8px;"></div>
+    <hr/>
+    <div id="qe-editor" style="display:none;border:1px solid #ddd;padding:8px;border-radius:6px;">
+      <input id="qe-id" type="hidden" />
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <label>Tipo:
+          <select id="qe-kind">
+            <option value="single">single</option>
+            <option value="multiple">multiple</option>
+            <option value="truefalse">true/false</option>
+          </select>
+        </label>
+        <label>Prompt:
+          <input id="qe-prompt" placeholder="Enunciado da questão" size="50"/>
+        </label>
+      </div>
+      <div id="qe-choices" style="margin-top:8px;">
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:4px;">
+          <strong>Opções</strong>
+          <button id="qe-add-choice" type="button">+ opção</button>
+        </div>
+        <div id="qe-choices-list"></div>
+      </div>
+      <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
+        <button id="qe-save" type="button">Salvar</button>
+        <button id="qe-cancel" type="button">Cancelar</button>
+      </div>
+    </div>
+  </section>
+
   <hr />
 
   <section>

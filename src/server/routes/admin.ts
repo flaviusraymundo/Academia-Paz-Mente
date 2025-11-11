@@ -206,10 +206,8 @@ router.get("/users/_search", async (req, res) => {
   res.json({ users: rows });
 });
 
-// ========= Guards com :id — manter DEPOIS dos "underscore routes" =========
-router.use("/courses/:id", paramUuid("id"));
-router.use("/tracks/:id",  paramUuid("id"));
-router.use("/users/:id",   paramUuid("id"));
+// (removido daqui) Guards com :id serão registrados mais abaixo,
+// DEPOIS das rotas literais como /courses/import, /courses/_summary e /courses/_drafts
 
 
 router.post("/users", async (req, res) => {
@@ -1245,6 +1243,71 @@ router.post("/quizzes/:quizId/questions", async (req, res) => {
   }
 });
 
+// GET /api/admin/quizzes/:quizId/questions → lista questões
+router.get("/quizzes/:quizId/questions", async (req, res) => {
+  const quizId = String(req.params.quizId || "");
+  if (!isUuid(quizId)) return res.status(400).json({ error: "invalid_quizId" });
+  const q = await pool.query(
+    `select id, quiz_id, kind, body, choices, answer_key from questions where quiz_id = $1 order by id`,
+    [quizId]
+  );
+  return res.json({ questions: q.rows });
+});
+
+// PUT /api/admin/questions/:id → atualizar questão
+const QuestionUpdateBody = z.object({
+  kind: z.enum(["single", "multiple", "truefalse"]).optional(),
+  body: z.record(z.any()).optional(),
+  choices: z.array(z.object({ id: z.string(), text: z.string() })).optional(),
+  answerKey: z.union([z.array(z.string()), z.boolean()]).optional(),
+});
+
+router.put("/questions/:id", async (req, res) => {
+  const id = String(req.params.id || "");
+  if (!isUuid(id)) return res.status(400).json({ error: "invalid_question_id" });
+
+  const parsed = QuestionUpdateBody.safeParse(req.body || {});
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+  const fields: string[] = [];
+  const values: any[] = [];
+  const v = parsed.data;
+
+  if (v.kind !== undefined) {
+    fields.push(`kind = $${fields.length + 1}`);
+    values.push(v.kind);
+  }
+  if (v.body !== undefined) {
+    fields.push(`body = $${fields.length + 1}::jsonb`);
+    values.push(JSON.stringify(v.body));
+  }
+  if (v.choices !== undefined) {
+    fields.push(`choices = $${fields.length + 1}::jsonb`);
+    values.push(JSON.stringify(v.choices));
+  }
+  if (v.answerKey !== undefined) {
+    fields.push(`answer_key = $${fields.length + 1}::jsonb`);
+    values.push(JSON.stringify(v.answerKey));
+  }
+
+  if (fields.length === 0) return res.status(400).json({ error: "no_fields" });
+
+  values.push(id);
+  const sql = `update questions set ${fields.join(", ")} where id = $${values.length} returning id, quiz_id, kind, body, choices, answer_key`;
+  const r = await pool.query(sql, values);
+  if (r.rowCount === 0) return res.status(404).json({ error: "not_found" });
+  return res.json({ question: r.rows[0] });
+});
+
+// DELETE /api/admin/questions/:id → remover questão
+router.delete("/questions/:id", async (req, res) => {
+  const id = String(req.params.id || "");
+  if (!isUuid(id)) return res.status(400).json({ error: "invalid_question_id" });
+  const r = await pool.query(`delete from questions where id = $1 returning id`, [id]);
+  if (r.rowCount === 0) return res.status(404).json({ error: "not_found" });
+  return res.json({ ok: true, id });
+});
+
 // ===== Trilhas =====
 router.post("/tracks", async (req, res) => {
   const parsed = TrackBody.safeParse(req.body);
@@ -1460,3 +1523,12 @@ router.get("/track-graph", async (req: Request, res: Response) => {
 });
 
 export default router;
+
+// ========= Guards com :id — manter DEPOIS de rotas literais (/courses/import, /courses/_*) =========
+// Observação importante:
+// - router.use("/courses/:id", ...) faz match por prefixo; se for registrado antes,
+//   ele também intercepta /courses/import e retorna 400 (invalid_id) para "import".
+// - Portanto, mantenha estes guards SEMPRE após todas as rotas literais /courses/xxx.
+router.use("/courses/:id", paramUuid("id"));
+router.use("/tracks/:id",  paramUuid("id"));
+router.use("/users/:id",   paramUuid("id"));
