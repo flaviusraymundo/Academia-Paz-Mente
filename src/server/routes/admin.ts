@@ -282,6 +282,16 @@ const CourseBody = z.object({
   active: z.boolean().optional().default(true),
 });
 
+const CourseUpdateBody = z
+  .object({
+    title: z.string().min(3).optional(),
+    summary: z.string().optional(),
+    level: z.string().min(2).optional(),
+    active: z.boolean().optional(),
+    slug: z.string().regex(/^[-a-z0-9]+$/).min(3).optional(),
+  })
+  .refine((v) => Object.keys(v).length > 0, { message: "no_fields" });
+
 const ModuleBody = z.object({
   courseId: z.string().uuid(),
   title: z.string().min(1),
@@ -355,6 +365,201 @@ router.get("/courses", async (_req, res) => {
     `select id, slug, title, summary, level, active, created_at from courses order by created_at desc`
   );
   res.json(rows);
+});
+
+router.patch("/courses/:courseId", async (req, res) => {
+  const courseId = String(req.params.courseId || "");
+  if (!isUuid(courseId)) return res.status(400).json({ error: "invalid_courseId" });
+
+  const parsed = CourseUpdateBody.safeParse(req.body || {});
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const data = parsed.data;
+
+  const fields: string[] = [];
+  const values: any[] = [];
+
+  if (data.slug !== undefined) {
+    const dupe = await pool.query(
+      `select 1 from courses where slug = $1 and id <> $2 and deleted_at is null limit 1`,
+      [data.slug, courseId]
+    );
+    if (dupe.rowCount) {
+      return res.status(409).json({ error: "duplicate_slug" });
+    }
+    fields.push(`slug = $${fields.length + 1}`);
+    values.push(data.slug);
+  }
+  if (data.title !== undefined) {
+    fields.push(`title = $${fields.length + 1}`);
+    values.push(data.title);
+  }
+  if (data.summary !== undefined) {
+    fields.push(`summary = $${fields.length + 1}`);
+    values.push(data.summary);
+  }
+  if (data.level !== undefined) {
+    fields.push(`level = $${fields.length + 1}`);
+    values.push(data.level);
+  }
+  if (data.active !== undefined) {
+    fields.push(`active = $${fields.length + 1}`);
+    values.push(data.active);
+  }
+
+  if (fields.length === 0) return res.status(400).json({ error: "no_fields" });
+
+  values.push(courseId);
+  const sql = `
+    update courses
+       set ${fields.join(", ")},
+           updated_at = now()
+     where id = $${values.length}
+       and deleted_at is null
+     returning id, slug, title, summary, level, active, draft, deleted_at
+  `;
+
+  try {
+    const r = await pool.query(sql, values);
+    if (!r.rowCount) return res.status(404).json({ error: "not_found_or_deleted" });
+    return res.json({ course: r.rows[0] });
+  } catch (e: any) {
+    return res.status(500).json({ error: "update_failed", detail: String(e?.message || e) });
+  }
+});
+
+router.get("/courses/:courseId/full", async (req, res) => {
+  const courseId = String(req.params.courseId || "");
+  if (!isUuid(courseId)) return res.status(400).json({ error: "invalid_courseId" });
+
+  const client = await pool.connect();
+  try {
+    const courseQ = await client.query(
+      `select id, slug, title, summary, level, active, draft, deleted_at, created_at
+         from courses
+        where id = $1
+        limit 1`,
+      [courseId]
+    );
+    if (!courseQ.rowCount) return res.status(404).json({ error: "course_not_found" });
+    const course = courseQ.rows[0];
+
+    const modulesQ = await client.query(
+      `select id, title, "order"
+         from modules
+        where course_id = $1
+        order by "order", id`,
+      [courseId]
+    );
+    const moduleIds = modulesQ.rows.map((m) => m.id);
+
+    const itemsQ = moduleIds.length
+      ? await client.query(
+          `select id, module_id, type, "order", payload_ref
+             from module_items
+            where module_id = any($1::uuid[])
+            order by module_id, "order", id`,
+          [moduleIds]
+        )
+      : { rows: [] };
+
+    const quizzesQ = moduleIds.length
+      ? await client.query(
+          `select id, module_id, pass_score
+             from quizzes
+            where module_id = any($1::uuid[])`,
+          [moduleIds]
+        )
+      : { rows: [] };
+
+    const quizIds = quizzesQ.rows.map((q) => q.id);
+    const questionsQ = quizIds.length
+      ? await client.query(
+          `select id, quiz_id, kind, body, choices, answer_key
+             from questions
+            where quiz_id = any($1::uuid[])
+            order by id`,
+          [quizIds]
+        )
+      : { rows: [] };
+
+    const itemsByModule = new Map<string, any[]>();
+    for (const it of itemsQ.rows) {
+      const bucket = itemsByModule.get(it.module_id) || [];
+      bucket.push({
+        id: it.id,
+        type: it.type,
+        order: Number(it.order),
+        payloadRef: it.payload_ref || {},
+      });
+      itemsByModule.set(it.module_id, bucket);
+    }
+
+    const quizById = new Map<string, any>();
+    for (const quiz of quizzesQ.rows) {
+      quizById.set(quiz.id, {
+        id: quiz.id,
+        moduleId: quiz.module_id,
+        passScore: Number(quiz.pass_score),
+        questions: [],
+      });
+    }
+    for (const qs of questionsQ.rows) {
+      const target = quizById.get(qs.quiz_id);
+      if (!target) continue;
+      target.questions.push({
+        id: qs.id,
+        kind: qs.kind,
+        body: qs.body || {},
+        choices: qs.choices || [],
+        answerKey: qs.answer_key ?? null,
+      });
+    }
+
+    const quizByModule = new Map<string, any>();
+    for (const quiz of quizById.values()) {
+      const { moduleId, ...rest } = quiz;
+      quizByModule.set(moduleId, rest);
+    }
+
+    const modules = modulesQ.rows.map((m) => {
+      const items = itemsByModule.get(m.id) || [];
+      return {
+        id: m.id,
+        title: m.title,
+        order: Number(m.order),
+        itemCount: items.length,
+        items,
+        quiz: quizByModule.get(m.id) ?? null,
+      };
+    });
+
+    return res.json({ course, modules });
+  } catch (e: any) {
+    return res.status(500).json({ error: "full_fetch_failed", detail: String(e?.message || e) });
+  } finally {
+    client.release();
+  }
+});
+
+router.post("/courses/:courseId/restore", async (req, res) => {
+  const courseId = String(req.params.courseId || "");
+  if (!isUuid(courseId)) return res.status(400).json({ error: "invalid_courseId" });
+  try {
+    const r = await pool.query(
+      `update courses
+          set deleted_at = null,
+              updated_at = now()
+        where id = $1
+          and deleted_at is not null
+          and draft = true
+        returning id, slug, title, draft, deleted_at`,
+      [courseId]
+    );
+    if (!r.rowCount) return res.status(409).json({ error: "cannot_restore" });
+    return res.json({ ok: true, course: r.rows[0] });
+  } catch (e: any) {
+    return res.status(500).json({ error: "restore_failed", detail: String(e?.message || e) });
+  }
 });
 
 /**

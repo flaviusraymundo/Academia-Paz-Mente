@@ -63,6 +63,69 @@ function buildUuidPayloadFromInputs() {
   return payload;
 }
 
+// ===== Curso: Editar / Full / Restore =====
+(function () {
+  const setCourseOut = (value) => setOut("ce-out", value);
+  const readValue = (id) => (document.getElementById(id)?.value || "").trim();
+  const setValue = (id, value) => {
+    const el = document.getElementById(id);
+    if (el) el.value = value ?? "";
+  };
+  const setChecked = (id, checked) => {
+    const el = document.getElementById(id);
+    if (el) el.checked = Boolean(checked);
+  };
+
+  document.getElementById("ce-load-full")?.addEventListener("click", async () => {
+    const courseId = readValue("ce-courseId");
+    if (!courseId) return setCourseOut({ error: "courseId_required" });
+
+    const { status, body } = await api(`/api/admin/courses/${encodeURIComponent(courseId)}/full`);
+    setCourseOut({ status, body });
+
+    if (status === 200 && body?.course) {
+      setValue("ce-title", body.course.title || "");
+      setValue("ce-summary", body.course.summary || "");
+      setValue("ce-level", body.course.level || "");
+      setChecked("ce-active", body.course.active);
+      setValue("ce-slug", body.course.slug || "");
+    }
+  });
+
+  document.getElementById("ce-save")?.addEventListener("click", async () => {
+    const courseId = readValue("ce-courseId");
+    if (!courseId) return setCourseOut({ error: "courseId_required" });
+
+    const payload = {};
+    const title = readValue("ce-title");
+    if (title) payload.title = title;
+    const summaryEl = document.getElementById("ce-summary");
+    if (summaryEl && summaryEl.value !== "") payload.summary = summaryEl.value;
+    const level = readValue("ce-level");
+    if (level) payload.level = level;
+    payload.active = Boolean(document.getElementById("ce-active")?.checked);
+    const slug = readValue("ce-slug");
+    if (slug) payload.slug = slug;
+
+    const { status, body } = await api(`/api/admin/courses/${encodeURIComponent(courseId)}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+    setCourseOut({ status, body });
+  });
+
+  document.getElementById("ce-restore")?.addEventListener("click", async () => {
+    const courseId = readValue("ce-courseId");
+    if (!courseId) return setCourseOut({ error: "courseId_required" });
+
+    const { status, body } = await api(
+      `/api/admin/courses/${encodeURIComponent(courseId)}/restore`,
+      { method: "POST" }
+    );
+    setCourseOut({ status, body });
+  });
+})();
+
 // =========================
 // Entitlements (grant/revoke)
 // =========================
