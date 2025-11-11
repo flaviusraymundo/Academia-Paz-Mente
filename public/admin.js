@@ -406,6 +406,52 @@ async function runBatchImport(simulate) {
 document.getElementById("btnBatchSimulate")?.addEventListener("click", () => runBatchImport(true));
 document.getElementById("btnBatchImport")?.addEventListener("click", () => runBatchImport(false));
 
+// ===== Exportar curso =====
+(() => {
+  const btn = document.getElementById("ex-run");
+  if (!btn) return;
+  btn.addEventListener("click", async () => {
+    const courseId = (document.getElementById("ex-courseId")?.value || "").trim();
+    if (!courseId) {
+      setOut("ex-out", { error: "courseId requerido" });
+      return;
+    }
+    const params = new URLSearchParams();
+    if (document.getElementById("ex-dropIds")?.checked) params.set("dropIds", "1");
+    if (document.getElementById("ex-blankMedia")?.checked) params.set("blankMedia", "1");
+    if (document.getElementById("ex-sanitize")?.checked) params.set("sanitize", "1");
+    const qs = params.toString();
+    const url = `/api/admin/courses/${encodeURIComponent(courseId)}/export${qs ? `?${qs}` : ""}`;
+    const { status, body } = await api(url);
+    setOut("ex-out", { status, body });
+  });
+})();
+
+// ===== Mover item =====
+(() => {
+  const btn = document.getElementById("mv-run");
+  if (!btn) return;
+  btn.addEventListener("click", async () => {
+    const itemId = (document.getElementById("mv-itemId")?.value || "").trim();
+    const targetModuleId = (document.getElementById("mv-targetModuleId")?.value || "").trim();
+    const newOrderStr = (document.getElementById("mv-newOrder")?.value || "").trim();
+    if (!itemId || !targetModuleId) {
+      setOut("mv-out", { error: "itemId e targetModuleId requeridos" });
+      return;
+    }
+    const payload = { targetModuleId };
+    if (newOrderStr) {
+      const parsed = Number(newOrderStr);
+      if (Number.isInteger(parsed) && parsed > 0) payload.newOrder = parsed;
+    }
+    const { status, body } = await api(`/api/admin/items/${encodeURIComponent(itemId)}/move`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+    setOut("mv-out", { status, body });
+  });
+})();
+
 // === Clone / Publish / Delete Draft ===
 document.getElementById("btnCloneCourse")?.addEventListener("click", async () => {
   const source = (document.getElementById("cl-source")?.value || "").trim();

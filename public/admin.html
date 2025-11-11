@@ -223,6 +223,32 @@ ends_at: 2025-03-01T12:00:00Z
     <button id="createCourse">Criar/Atualizar curso</button>
   </section>
 
+  <!-- === Exportar curso em JSON (round-trip) === -->
+  <section>
+    <h2>Exportar curso</h2>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+      <input id="ex-courseId" placeholder="courseId" size="40" />
+      <label><input type="checkbox" id="ex-dropIds" /> drop IDs</label>
+      <label><input type="checkbox" id="ex-blankMedia" /> blank media</label>
+      <label><input type="checkbox" id="ex-sanitize" /> sanitize (limpar mídia)</label>
+      <button id="ex-run" type="button">Exportar</button>
+    </div>
+    <pre id="ex-out" style="white-space:pre-wrap;border:1px solid #ddd;padding:8px;margin-top:8px;"></pre>
+  </section>
+
+  <!-- === Mover item entre módulos === -->
+  <section>
+    <h2>Mover item</h2>
+    <div style="display:grid;gap:6px;max-width:600px">
+      <input id="mv-itemId" placeholder="itemId" />
+      <input id="mv-targetModuleId" placeholder="targetModuleId" />
+      <input id="mv-newOrder" type="number" min="1" placeholder="newOrder (opcional)" />
+      <button id="mv-run" type="button">Mover item</button>
+      <pre id="mv-out" style="white-space:pre-wrap;border:1px solid #ddd;padding:8px;"></pre>
+      <small style="color:#555">Observação: itens type="quiz" não podem ser movidos para outro módulo (apenas reorder dentro do mesmo).</small>
+    </div>
+  </section>
+
   <section>
     <h2>Importação em lote (JSON)</h2>
     <p style="font-size:12px;color:#555">Cole abaixo o JSON com curso + módulos + itens + quiz/questions. Use "simulate": true para pré-visualizar.</p>

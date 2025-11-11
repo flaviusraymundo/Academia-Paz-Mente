@@ -273,6 +273,282 @@ router.get("/modules/:id/items", async (req, res) => {
   return res.json({ items: items.rows });
 });
 
+// POST /api/admin/items/:itemId/move
+// Body: { targetModuleId: uuid, newOrder?: number }
+router.post("/items/:itemId/move", async (req, res) => {
+  const itemId = String(req.params.itemId || "").trim();
+  if (!isUuid(itemId)) return res.status(400).json({ error: "invalid_item_id" });
+  const targetModuleId = String(req.body?.targetModuleId || "").trim();
+  const newOrderRaw = req.body?.newOrder;
+  const newOrderParsed = Number(newOrderRaw);
+  const newOrder =
+    Number.isInteger(newOrderParsed) && newOrderParsed > 0 ? newOrderParsed : null;
+  if (!isUuid(targetModuleId)) {
+    return res.status(400).json({ error: "invalid_target_module" });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const itemQ = await client.query(
+      `select id, module_id, type from module_items where id = $1 limit 1`,
+      [itemId]
+    );
+    if (!itemQ.rowCount) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "item_not_found" });
+    }
+    const item = itemQ.rows[0];
+
+    const originModuleQ = await client.query(
+      `select id, course_id from modules where id = $1`,
+      [item.module_id]
+    );
+    const targetModuleQ = await client.query(
+      `select id, course_id from modules where id = $1`,
+      [targetModuleId]
+    );
+    if (!originModuleQ.rowCount) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "origin_module_not_found" });
+    }
+    if (!targetModuleQ.rowCount) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "target_module_not_found" });
+    }
+    const originCourseId = originModuleQ.rows[0].course_id;
+    const targetCourseId = targetModuleQ.rows[0].course_id;
+    if (originCourseId !== targetCourseId) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "cross_course" });
+    }
+
+    if (item.type === "quiz" && item.module_id !== targetModuleId) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "cannot_move_quiz" });
+    }
+
+    const sameModule = item.module_id === targetModuleId;
+
+    if (sameModule) {
+      if (newOrder === null) {
+        await client.query("ROLLBACK");
+        return res.json({ ok: true, action: "noop_same_module" });
+      }
+
+      const itsQ = await client.query(
+        `select id, "order" from module_items where module_id = $1 order by "order" asc, id asc`,
+        [targetModuleId]
+      );
+      const ids = itsQ.rows.map((r: any) => r.id);
+      if (!ids.includes(itemId)) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ error: "item_not_in_module" });
+      }
+
+      const filtered = ids.filter((id: string) => id !== itemId);
+      const pos = Math.max(0, Math.min(newOrder - 1, filtered.length));
+      filtered.splice(pos, 0, itemId);
+
+      await client.query(
+        `update module_items set "order" = "order" + 1000 where module_id = $1`,
+        [targetModuleId]
+      );
+      for (let i = 0; i < filtered.length; i += 1) {
+        await client.query(`update module_items set "order" = $1 where id = $2`, [i + 1, filtered[i]]);
+      }
+      await client.query("COMMIT");
+      return res.json({ ok: true, action: "reordered", moduleId: targetModuleId });
+    }
+
+    const targetItemsQ = await client.query(
+      `select id from module_items where module_id = $1 order by "order" asc, id asc`,
+      [targetModuleId]
+    );
+    const count = targetItemsQ.rowCount;
+    const finalOrder =
+      newOrder !== null ? Math.min(Math.max(newOrder, 1), count + 1) : count + 1;
+
+    await client.query(
+      `update module_items
+          set "order" = "order" + 1
+        where module_id = $1
+          and "order" >= $2`,
+      [targetModuleId, finalOrder]
+    );
+
+    const upd = await client.query(
+      `update module_items
+          set module_id = $1,
+              "order" = $2
+        where id = $3
+        returning id, module_id, type, "order"`,
+      [targetModuleId, finalOrder, itemId]
+    );
+
+    await client.query("COMMIT");
+    return res.json({ ok: true, action: "moved", item: upd.rows[0] });
+  } catch (e: any) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {}
+    return res.status(500).json({ error: "move_failed", detail: String(e?.message || e) });
+  } finally {
+    client.release();
+  }
+});
+
+// GET /api/admin/courses/:courseId/export
+router.get("/courses/:courseId/export", async (req, res) => {
+  const courseId = String(req.params.courseId || "");
+  if (!isUuid(courseId)) return res.status(400).json({ error: "invalid_courseId" });
+  const sanitize = String(req.query.sanitize || "") === "1";
+  const blankMedia = String(req.query.blankMedia || "") === "1";
+  const dropIds = String(req.query.dropIds || "") === "1";
+
+  const client = await pool.connect();
+  try {
+    const courseQ = await client.query(
+      `select id, slug, title, summary, level, active, draft, deleted_at
+         from courses
+        where id = $1
+        limit 1`,
+      [courseId]
+    );
+    if (!courseQ.rowCount) return res.status(404).json({ error: "course_not_found" });
+    const course = courseQ.rows[0];
+
+    const modulesQ = await client.query(
+      `select id, title, "order"
+         from modules
+        where course_id = $1
+        order by "order" asc, id asc`,
+      [courseId]
+    );
+    const moduleIds = modulesQ.rows.map((m: any) => m.id);
+
+    const itemsQ = moduleIds.length
+      ? await client.query(
+          `select id, module_id, type, "order", payload_ref
+             from module_items
+            where module_id = any($1::uuid[])
+            order by module_id, "order", id`,
+          [moduleIds]
+        )
+      : { rows: [] };
+
+    const quizzesQ = moduleIds.length
+      ? await client.query(
+          `select id, module_id, pass_score
+             from quizzes
+            where module_id = any($1::uuid[])`,
+          [moduleIds]
+        )
+      : { rows: [] };
+
+    const quizIds = quizzesQ.rows.map((q: any) => q.id);
+    const questionsQ = quizIds.length
+      ? await client.query(
+          `select id, quiz_id, kind, body, choices, answer_key
+             from questions
+            where quiz_id = any($1::uuid[])
+            order by id`,
+          [quizIds]
+        )
+      : { rows: [] };
+
+    const questionsByQuiz = new Map<string, any[]>();
+    for (const qs of questionsQ.rows) {
+      const arr = questionsByQuiz.get(qs.quiz_id) || [];
+      arr.push({
+        id: qs.id,
+        kind: qs.kind,
+        body: qs.body || {},
+        choices: qs.choices || [],
+        answerKey: qs.answer_key || null,
+      });
+      questionsByQuiz.set(qs.quiz_id, arr);
+    }
+
+    const mediaKeys = ["mux_playback_id", "mux_asset_id", "doc_id", "html", "url"];
+    const cleanPayload = (ref: any) => {
+      if (!ref || typeof ref !== "object") return {};
+      const clone: Record<string, any> = { ...ref };
+      if (blankMedia || sanitize) {
+        for (const k of mediaKeys) {
+          if (k in clone) delete clone[k];
+        }
+      }
+      return clone;
+    };
+
+    const modules = modulesQ.rows.map((m: any) => {
+      const its = itemsQ.rows
+        .filter((it: any) => it.module_id === m.id)
+        .map((it: any) => {
+          const payloadRef = blankMedia || sanitize ? cleanPayload(it.payload_ref) : it.payload_ref || {};
+          const base: Record<string, any> = {
+            type: it.type,
+            order: Number(it.order),
+            payloadRef,
+          };
+          if (!dropIds) base.id = it.id;
+          return base;
+        });
+
+      const quiz = quizzesQ.rows.find((q: any) => q.module_id === m.id);
+      let quizObj;
+      if (quiz) {
+        quizObj = {
+          passScore: Number(quiz.pass_score),
+          questions: (questionsByQuiz.get(quiz.id) || []).map((q: any) => {
+            const qBase: Record<string, any> = {
+              kind: q.kind,
+              body: q.body,
+              choices: q.choices,
+              answerKey: q.answerKey,
+            };
+            if (!dropIds) qBase.id = q.id;
+            return qBase;
+          }),
+        };
+        if (!dropIds) (quizObj as any).id = quiz.id;
+      }
+
+      const modBase: Record<string, any> = {
+        title: m.title,
+        order: Number(m.order),
+        items: its,
+      };
+      if (!dropIds) modBase.id = m.id;
+      if (quizObj) modBase.quiz = quizObj;
+      return modBase;
+    });
+
+    const out = {
+      course: {
+        slug: course.slug,
+        title: course.title,
+        summary: course.summary,
+        level: course.level,
+        active: course.active,
+        draft: course.draft,
+      },
+      modules,
+    };
+    if (!dropIds) {
+      (out.course as any).id = course.id;
+    }
+
+    return res.json({ export: out, dropIds, blankMedia, sanitize });
+  } catch (e: any) {
+    return res.status(500).json({ error: "export_failed", detail: String(e?.message || e) });
+  } finally {
+    client.release();
+  }
+});
+
 // ===== Schemas =====
 const CourseBody = z.object({
   slug: z.string().min(3),
