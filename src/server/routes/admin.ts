@@ -1640,6 +1640,139 @@ router.delete("/modules/:id", async (req, res) => {
   }
 });
 
+// POST /api/admin/modules/:moduleId/duplicate
+// Body: { targetCourseId?: uuid, title?: string, order?: number, blankMedia?: boolean }
+router.post("/modules/:moduleId/duplicate", async (req, res) => {
+  const moduleId = String(req.params.moduleId || "");
+  if (!isUuid(moduleId)) return res.status(400).json({ error: "invalid_module_id" });
+  const targetCourseId = String(req.body?.targetCourseId || "");
+  const titleArg = String(req.body?.title || "");
+  const orderArg = req.body?.order;
+  const blankMedia = !!req.body?.blankMedia;
+
+  function cleanPayload(ref: any) {
+    if (!blankMedia) return ref || {};
+    if (!ref || typeof ref !== "object") return {};
+    const clone = { ...ref };
+    for (const k of ["mux_playback_id", "mux_asset_id", "doc_id", "html", "url"]) {
+      if (k in clone) delete (clone as any)[k];
+    }
+    return clone;
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const srcM = await client.query(
+      `select id, course_id, title from modules where id = $1`,
+      [moduleId]
+    );
+    if (!srcM.rowCount) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "module_not_found" });
+    }
+    const srcModule = srcM.rows[0];
+    const dstCourseId = isUuid(targetCourseId) ? targetCourseId : srcModule.course_id;
+
+    const cQ = await client.query(
+      `select id from courses where id = $1 and deleted_at is null`,
+      [dstCourseId]
+    );
+    if (!cQ.rowCount) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "target_course_not_found" });
+    }
+
+    const mCountQ = await client.query(
+      `select id from modules where course_id = $1 order by "order" asc, id asc`,
+      [dstCourseId]
+    );
+    const count = mCountQ.rowCount;
+    let finalOrder: number;
+    if (Number.isInteger(orderArg) && orderArg > 0) {
+      finalOrder = Math.min(Math.max(Number(orderArg), 1), count + 1);
+      await client.query(
+        `update modules set "order" = "order" + 1 where course_id = $1 and "order" >= $2`,
+        [dstCourseId, finalOrder]
+      );
+    } else {
+      finalOrder = count + 1;
+    }
+
+    const newTitle = titleArg ? titleArg : `${srcModule.title} (cópia)`;
+    const insM = await client.query(
+      `insert into modules(id, course_id, title, "order")
+       values (gen_random_uuid(), $1, $2, $3)
+       returning id, course_id, title, "order"`,
+      [dstCourseId, newTitle, finalOrder]
+    );
+    const newModuleId = insM.rows[0].id;
+
+    const itQ = await client.query(
+      `select id, type, "order", payload_ref from module_items where module_id = $1 order by "order" asc, id asc`,
+      [moduleId]
+    );
+
+    const quizQ = await client.query(
+      `select id, pass_score from quizzes where module_id = $1`,
+      [moduleId]
+    );
+    let newQuizId: string | null = null;
+    if (quizQ.rowCount) {
+      const srcQuiz = quizQ.rows[0];
+      const qIns = await client.query(
+        `insert into quizzes(id, module_id, pass_score)
+         values (gen_random_uuid(), $1, $2)
+         returning id`,
+        [newModuleId, srcQuiz.pass_score]
+      );
+      newQuizId = qIns.rows[0].id;
+      const qsQ = await client.query(
+        `select kind, body, choices, answer_key from questions where quiz_id = $1`,
+        [srcQuiz.id]
+      );
+      for (const row of qsQ.rows) {
+        await client.query(
+          `insert into questions(id, quiz_id, kind, body, choices, answer_key)
+           values (gen_random_uuid(), $1, $2, $3::jsonb, $4::jsonb, $5::jsonb)`,
+          [
+            newQuizId,
+            row.kind,
+            JSON.stringify(row.body || {}),
+            JSON.stringify(row.choices || []),
+            JSON.stringify(row.answer_key || null),
+          ]
+        );
+      }
+    }
+
+    for (let i = 0; i < itQ.rowCount; i++) {
+      const srcIt = itQ.rows[i];
+      let payloadRef = cleanPayload(srcIt.payload_ref);
+      if (srcIt.type === "quiz") {
+        if (newQuizId) payloadRef = { quiz_id: newQuizId };
+        else payloadRef = {};
+      }
+      await client.query(
+        `insert into module_items(id, module_id, type, "order", payload_ref)
+         values (gen_random_uuid(), $1, $2, $3, $4::jsonb)`,
+        [newModuleId, srcIt.type, i + 1, JSON.stringify(payloadRef)]
+      );
+    }
+
+    await client.query("COMMIT");
+    return res.json({ ok: true, module: insM.rows[0], quizId: newQuizId });
+  } catch (e: any) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {}
+    return res.status(500).json({ error: "duplicate_module_failed", detail: String(e?.message || e) });
+  } finally {
+    client.release();
+  }
+});
+
 // ===== Itens =====
 router.post("/items", async (req, res) => {
   const parsed = ItemBody.safeParse(req.body);
@@ -1651,6 +1784,73 @@ router.post("/items", async (req, res) => {
     [it.moduleId, it.type, it.order, it.payloadRef]
   );
   res.json(rows[0]);
+});
+
+// POST /api/admin/modules/:moduleId/quiz-wizard
+// Body: { passScore?: number, order?: number }
+router.post("/modules/:moduleId/quiz-wizard", async (req, res) => {
+  const moduleId = String(req.params.moduleId || "");
+  if (!isUuid(moduleId)) return res.status(400).json({ error: "invalid_module_id" });
+  const passScore = req.body?.passScore == null ? 70 : Number(req.body.passScore);
+  const orderArg = req.body?.order;
+  if (!Number.isFinite(passScore) || passScore < 0 || passScore > 100) {
+    return res.status(400).json({ error: "invalid_pass_score" });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const mQ = await client.query(`select id from modules where id = $1`, [moduleId]);
+    if (!mQ.rowCount) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "module_not_found" });
+    }
+
+    const qRes = await client.query(
+      `insert into quizzes(id, module_id, pass_score)
+       values (gen_random_uuid(), $1, $2)
+       returning id, module_id, pass_score`,
+      [moduleId, passScore]
+    );
+    const quizId = qRes.rows[0].id;
+
+    const itsQ = await client.query(
+      `select id, "order" from module_items where module_id = $1 order by "order" asc, id asc`,
+      [moduleId]
+    );
+    const count = itsQ.rowCount;
+    let finalOrder: number;
+    if (Number.isInteger(orderArg) && orderArg > 0) {
+      finalOrder = Math.min(Math.max(Number(orderArg), 1), count + 1);
+      await client.query(
+        `update module_items set "order" = "order" + 1 where module_id = $1 and "order" >= $2`,
+        [moduleId, finalOrder]
+      );
+    } else {
+      finalOrder = count + 1;
+    }
+
+    const itemRes = await client.query(
+      `insert into module_items(id, module_id, type, "order", payload_ref)
+       values (gen_random_uuid(), $1, 'quiz', $2, $3::jsonb)
+       returning id, module_id, type, "order", payload_ref`,
+      [moduleId, finalOrder, JSON.stringify({ quiz_id: quizId })]
+    );
+
+    await client.query("COMMIT");
+    return res.json({
+      ok: true,
+      quiz: qRes.rows[0],
+      item: itemRes.rows[0],
+    });
+  } catch (e: any) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {}
+    return res.status(500).json({ error: "quiz_wizard_failed", detail: String(e?.message || e) });
+  } finally {
+    client.release();
+  }
 });
 
 // PUT /api/admin/items/:itemId  -> atualiza type/payloadRef do item
@@ -1691,6 +1891,135 @@ router.delete("/items/:itemId", async (req, res) => {
   if (r.rowCount === 0) return res.status(404).json({ error: "not_found" });
 
   return res.json({ ok: true, id: r.rows[0].id });
+});
+
+// POST /api/admin/items/:itemId/duplicate
+// Body: { targetModuleId?: uuid, order?: number, blankMedia?: boolean }
+router.post("/items/:itemId/duplicate", async (req, res) => {
+  const itemId = String(req.params.itemId || "");
+  if (!isUuid(itemId)) return res.status(400).json({ error: "invalid_item_id" });
+  const targetModuleId = String(req.body?.targetModuleId || "");
+  const orderArg = req.body?.order;
+  const blankMedia = !!req.body?.blankMedia;
+
+  function cleanPayload(ref: any) {
+    if (!blankMedia) return ref || {};
+    if (!ref || typeof ref !== "object") return {};
+    const clone = { ...ref };
+    for (const k of ["mux_playback_id", "mux_asset_id", "doc_id", "html", "url"]) {
+      if (k in clone) delete (clone as any)[k];
+    }
+    return clone;
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const srcQ = await client.query(
+      `select id, module_id, type, "order", payload_ref from module_items where id = $1`,
+      [itemId]
+    );
+    if (!srcQ.rowCount) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "item_not_found" });
+    }
+    const src = srcQ.rows[0];
+
+    const dstModuleId = isUuid(targetModuleId) ? targetModuleId : src.module_id;
+    const dstMQ = await client.query(`select id from modules where id = $1`, [dstModuleId]);
+    if (!dstMQ.rowCount) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "target_module_not_found" });
+    }
+
+    const itsQ = await client.query(
+      `select id from module_items where module_id = $1 order by "order" asc, id asc`,
+      [dstModuleId]
+    );
+    const count = itsQ.rowCount;
+    let finalOrder: number;
+    if (Number.isInteger(orderArg) && orderArg > 0) {
+      finalOrder = Math.min(Math.max(Number(orderArg), 1), count + 1);
+      await client.query(
+        `update module_items set "order" = "order" + 1 where module_id = $1 and "order" >= $2`,
+        [dstModuleId, finalOrder]
+      );
+    } else {
+      finalOrder = count + 1;
+    }
+
+    if (src.type !== "quiz") {
+      const payloadRef = cleanPayload(src.payload_ref);
+      const ins = await client.query(
+        `insert into module_items(id, module_id, type, "order", payload_ref)
+         values (gen_random_uuid(), $1, $2, $3, $4::jsonb)
+         returning id, module_id, type, "order"`,
+        [dstModuleId, src.type, finalOrder, JSON.stringify(payloadRef)]
+      );
+      await client.query("COMMIT");
+      return res.json({ ok: true, item: ins.rows[0] });
+    }
+
+    const srcQuizId = src.payload_ref?.quiz_id;
+    if (!isUuid(String(srcQuizId))) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "invalid_quiz_item_payload" });
+    }
+
+    const qQ = await client.query(
+      `select id, module_id, pass_score from quizzes where id = $1`,
+      [srcQuizId]
+    );
+    if (!qQ.rowCount) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "quiz_not_found" });
+    }
+    const srcQuiz = qQ.rows[0];
+
+    const newQ = await client.query(
+      `insert into quizzes(id, module_id, pass_score)
+       values (gen_random_uuid(), $1, $2)
+       returning id, module_id, pass_score`,
+      [dstModuleId, srcQuiz.pass_score]
+    );
+    const newQuizId = newQ.rows[0].id;
+
+    const qsQ = await client.query(
+      `select kind, body, choices, answer_key from questions where quiz_id = $1`,
+      [srcQuizId]
+    );
+    for (const row of qsQ.rows) {
+      await client.query(
+        `insert into questions(id, quiz_id, kind, body, choices, answer_key)
+         values (gen_random_uuid(), $1, $2, $3::jsonb, $4::jsonb, $5::jsonb)`,
+        [
+          newQuizId,
+          row.kind,
+          JSON.stringify(row.body || {}),
+          JSON.stringify(row.choices || []),
+          JSON.stringify(row.answer_key || null),
+        ]
+      );
+    }
+
+    const ins = await client.query(
+      `insert into module_items(id, module_id, type, "order", payload_ref)
+       values (gen_random_uuid(), $1, 'quiz', $2, $3::jsonb)
+       returning id, module_id, type, "order"`,
+      [dstModuleId, finalOrder, JSON.stringify({ quiz_id: newQuizId })]
+    );
+
+    await client.query("COMMIT");
+    return res.json({ ok: true, item: ins.rows[0], quizId: newQuizId });
+  } catch (e: any) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {}
+    return res.status(500).json({ error: "duplicate_item_failed", detail: String(e?.message || e) });
+  } finally {
+    client.release();
+  }
 });
 
 // ===== Quizzes =====

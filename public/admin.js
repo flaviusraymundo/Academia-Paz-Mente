@@ -1741,6 +1741,113 @@ if ($btnVideoBeat) {
   });
 })();
 
+// ===== Wizard: criar quiz no módulo =====
+(function(){
+  const $ = (id) => document.getElementById(id);
+  if (!$("wq-run")) return;
+
+  $("wq-run").addEventListener("click", async () => {
+    const moduleId = $("wq-moduleId").value.trim();
+    const passStr = $("wq-pass").value.trim();
+    const orderStr = $("wq-order").value.trim();
+    if (!moduleId) {
+      $("wq-out").textContent = "moduleId requerido";
+      return;
+    }
+    const body = {};
+    if (passStr) {
+      const v = Number(passStr);
+      if (!Number.isFinite(v) || v < 0 || v > 100) {
+        $("wq-out").textContent = "passScore inválido";
+        return;
+      }
+      body.passScore = v;
+    }
+    if (orderStr) {
+      const o = Number(orderStr);
+      if (Number.isInteger(o) && o > 0) body.order = o;
+    }
+    const { status, body: resp } = await api(`/api/admin/modules/${encodeURIComponent(moduleId)}/quiz-wizard`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    $("wq-out").textContent = JSON.stringify({ status, resp }, null, 2);
+
+    const quizId = resp?.quiz?.id;
+    if (quizId) {
+      const qz = document.getElementById("qz-quizId");
+      if (qz instanceof HTMLInputElement) qz.value = quizId;
+      const qe = document.getElementById("qe-quiz");
+      if (qe instanceof HTMLInputElement) qe.value = quizId;
+      const qeLoad = document.getElementById("qe-load");
+      if (qeLoad instanceof HTMLButtonElement) qeLoad.click();
+      const editorSection =
+        document.getElementById("qe-list") ||
+        document.getElementById("qe-editor") ||
+        document.getElementById("qz-quizId");
+      if (editorSection) editorSection.scrollIntoView({ behavior: "smooth" });
+    }
+  });
+})();
+
+// ===== Duplicar item =====
+(function(){
+  const $ = (id) => document.getElementById(id);
+  if (!$("di-run")) return;
+
+  $("di-run").addEventListener("click", async () => {
+    const itemId = $("di-itemId").value.trim();
+    const targetModuleId = $("di-targetModuleId").value.trim();
+    const orderStr = $("di-order").value.trim();
+    const blankMedia = Boolean($("di-blank").checked);
+    if (!itemId) {
+      $("di-out").textContent = "itemId requerido";
+      return;
+    }
+    const body = { blankMedia };
+    if (targetModuleId) body.targetModuleId = targetModuleId;
+    if (orderStr) {
+      const o = Number(orderStr);
+      if (Number.isInteger(o) && o > 0) body.order = o;
+    }
+    const { status, body: resp } = await api(`/api/admin/items/${encodeURIComponent(itemId)}/duplicate`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    $("di-out").textContent = JSON.stringify({ status, resp }, null, 2);
+  });
+})();
+
+// ===== Duplicar módulo =====
+(function(){
+  const $ = (id) => document.getElementById(id);
+  if (!$("dm-run")) return;
+
+  $("dm-run").addEventListener("click", async () => {
+    const moduleId = $("dm-moduleId").value.trim();
+    const targetCourseId = $("dm-targetCourseId").value.trim();
+    const title = $("dm-title").value.trim();
+    const orderStr = $("dm-order").value.trim();
+    const blankMedia = Boolean($("dm-blank").checked);
+    if (!moduleId) {
+      $("dm-out").textContent = "moduleId requerido";
+      return;
+    }
+    const body = { blankMedia };
+    if (targetCourseId) body.targetCourseId = targetCourseId;
+    if (title) body.title = title;
+    if (orderStr) {
+      const o = Number(orderStr);
+      if (Number.isInteger(o) && o > 0) body.order = o;
+    }
+    const { status, body: resp } = await api(`/api/admin/modules/${encodeURIComponent(moduleId)}/duplicate`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    $("dm-out").textContent = JSON.stringify({ status, resp }, null, 2);
+  });
+})();
+
 // ===== Quiz: passScore + criar questão =====
 (function(){
   const $ = (id) => document.getElementById(id);

@@ -589,6 +589,48 @@ ends_at: 2025-03-01T12:00:00Z
     <pre id="ai-out" style="white-space:pre-wrap;border:1px solid #ddd;padding:8px;margin-top:8px;"></pre>
   </section>
 
+  <!-- === Wizard: criar quiz no módulo === -->
+  <section>
+    <h2>Criar item “quiz” (wizard)</h2>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <input id="wq-moduleId" placeholder="moduleId" size="36" />
+      <input id="wq-pass" type="number" min="0" max="100" placeholder="passScore (default 70)" />
+      <input id="wq-order" type="number" min="1" placeholder="order (opcional)" />
+      <button id="wq-run" type="button">Criar quiz + item</button>
+    </div>
+    <small style="color:#555">Após criar, o editor de questões será preenchido com o novo quizId.</small>
+    <pre id="wq-out" style="white-space:pre-wrap;border:1px solid #ddd;padding:8px;margin-top:8px;"></pre>
+  </section>
+
+  <!-- === Duplicar item === -->
+  <section>
+    <h2>Duplicar item</h2>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <input id="di-itemId" placeholder="itemId (origem)" size="34" />
+      <input id="di-targetModuleId" placeholder="targetModuleId (opcional → mesmo módulo)" size="34" />
+      <input id="di-order" type="number" min="1" placeholder="order (opcional)" />
+      <label><input id="di-blank" type="checkbox" /> blank media</label>
+      <button id="di-run" type="button">Duplicar item</button>
+    </div>
+    <small style="color:#555">Se for quiz, um novo quiz será criado no módulo destino e o item apontará para ele.</small>
+    <pre id="di-out" style="white-space:pre-wrap;border:1px solid #ddd;padding:8px;margin-top:8px;"></pre>
+  </section>
+
+  <!-- === Duplicar módulo === -->
+  <section>
+    <h2>Duplicar módulo</h2>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <input id="dm-moduleId" placeholder="moduleId (origem)" size="34" />
+      <input id="dm-targetCourseId" placeholder="targetCourseId (opcional → mesmo curso)" size="34" />
+      <input id="dm-title" placeholder="novo título (opcional)" size="28" />
+      <input id="dm-order" type="number" min="1" placeholder="order (opcional)" />
+      <label><input id="dm-blank" type="checkbox" /> blank media</label>
+      <button id="dm-run" type="button">Duplicar módulo</button>
+    </div>
+    <small style="color:#555">Se o módulo original tiver quiz, ele será copiado (com perguntas) para o novo módulo.</small>
+    <pre id="dm-out" style="white-space:pre-wrap;border:1px solid #ddd;padding:8px;margin-top:8px;"></pre>
+  </section>
+
   <!-- === Quiz: passScore + criar questão === -->
   <section>
     <h2>Quiz (passScore / criar questão)</h2>
