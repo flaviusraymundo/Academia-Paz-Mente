@@ -1912,3 +1912,105 @@ if ($btnVideoBeat) {
     out({ addQuestion: r });
   });
 })();
+
+// ===== Duplicar curso (export+import, one-click) =====
+(function(){
+  const $ = (id) => document.getElementById(id);
+  if (!$("#dpl-run")) return;
+
+  // Uses global window.api if present (so Authorization is injected)
+  async function call(path, init={}) {
+    if (typeof window.api === "function") return window.api(path, init);
+    const headers = { "Content-Type":"application/json", ...(init.headers||{}) };
+    const res = await fetch(path, { ...init, headers });
+    let body=null; try{ body=await res.json(); } catch{ body=await res.text(); }
+    return { status: res.status, body };
+  }
+
+  function slugify(s) {
+    return String(s||"")
+      .toLowerCase()
+      .normalize("NFKD").replace(/[\u0300-\u036f]/g,"")
+      .replace(/[^a-z0-9]+/g,"-")
+      .replace(/^-+|-+$/g,"")
+      .replace(/--+/g,"-")
+      .slice(0, 64) || ("copy-" + Date.now().toString(36));
+  }
+
+  async function exportCourse(courseId, opts) {
+    const qs = new URLSearchParams();
+    qs.set("dropIds","1");
+    if (opts.blankMedia) qs.set("blankMedia","1");
+    else if (opts.sanitize) qs.set("sanitize","1");
+    return call(`/api/admin/courses/${encodeURIComponent(courseId)}/export?`+qs.toString());
+  }
+
+  async function importCourse(payload) {
+    return call("/api/admin/courses/import", {
+      method:"POST",
+      body: JSON.stringify(payload)
+    });
+  }
+
+  async function duplicate() {
+    const courseId = $("#dpl-courseId").value.trim();
+    const slugInput = $("#dpl-slug").value.trim();
+    const newTitle = $("#dpl-title").value.trim();
+    const blankMedia = !!$("#dpl-blank").checked;
+    const sanitize = !!$("#dpl-sanitize").checked;
+    if (!courseId) {
+      $("#dpl-out").textContent = "courseId requerido";
+      return;
+    }
+
+    const ex = await exportCourse(courseId, { blankMedia, sanitize });
+    if (ex.status !== 200 || !ex.body?.export) {
+      $("#dpl-out").textContent = JSON.stringify({ step:"export", status:ex.status, body:ex.body }, null, 2);
+      return;
+    }
+
+    const data = ex.body.export;
+    const src = data.course || {};
+    // Prepare new slug/title
+    const baseSlug = slugInput || `${src.slug || "curso"}-copy-${Date.now().toString(36)}`;
+    let slug = slugify(baseSlug);
+    const title = newTitle || `${src.title || "Curso"} (cópia)`;
+
+    // Compose payload for import (round-trip)
+    const importPayload = {
+      blankMedia: !!blankMedia,
+      course: {
+        ...data.course,
+        id: undefined, // ensure no id
+        slug,
+        title,
+        active: false // avoid accidental publish
+      },
+      modules: data.modules || []
+    };
+
+    // First attempt
+    let imp = await importCourse(importPayload);
+    if (imp.status === 409 && (imp.body?.error === "duplicate_slug")) {
+      // Retry once with a different suffix
+      slug = slugify(`${baseSlug}-${Math.floor(Math.random()*1e6).toString(36)}`);
+      importPayload.course.slug = slug;
+      imp = await importCourse(importPayload);
+    }
+
+    $("#dpl-out").textContent = JSON.stringify({ status:imp.status, body:imp.body, slugAttempted: slug }, null, 2);
+
+    // If success, prefill Course Editor with new id
+    const newId = imp.body?.course?.id;
+    if (newId) {
+      const ce = document.getElementById("ce-courseId");
+      if (ce) ce.value = newId;
+      // Optionally scroll to Course Editor area
+      const anchor = document.querySelector('h2:contains("Curso (editar / full / restore)")') || document.getElementById("ce-courseId");
+      if (anchor && anchor.scrollIntoView) anchor.scrollIntoView({ behavior:"smooth" });
+    }
+  }
+
+  $("#dpl-run").addEventListener("click", duplicate);
+})();
+
