@@ -1751,8 +1751,13 @@ router.post("/modules/:moduleId/duplicate", async (req, res) => {
       const srcIt = itQ.rows[i];
       let payloadRef = cleanPayload(srcIt.payload_ref);
       if (srcIt.type === "quiz") {
-        if (newQuizId) payloadRef = { quiz_id: newQuizId };
-        else payloadRef = {};
+        if (newQuizId) {
+          payloadRef = { ...(payloadRef || {}), quiz_id: newQuizId };
+        } else {
+          const base = { ...(payloadRef || {}) } as Record<string, unknown>;
+          if ("quiz_id" in base) delete base.quiz_id;
+          payloadRef = base;
+        }
       }
       await client.query(
         `insert into module_items(id, module_id, type, "order", payload_ref)
@@ -2003,11 +2008,12 @@ router.post("/items/:itemId/duplicate", async (req, res) => {
       );
     }
 
+    const mergedPayload = cleanPayload({ ...(src.payload_ref || {}), quiz_id: newQuizId });
     const ins = await client.query(
       `insert into module_items(id, module_id, type, "order", payload_ref)
        values (gen_random_uuid(), $1, 'quiz', $2, $3::jsonb)
        returning id, module_id, type, "order"`,
-      [dstModuleId, finalOrder, JSON.stringify({ quiz_id: newQuizId })]
+      [dstModuleId, finalOrder, JSON.stringify(mergedPayload)]
     );
 
     await client.query("COMMIT");
