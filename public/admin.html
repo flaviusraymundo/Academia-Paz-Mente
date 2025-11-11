@@ -671,6 +671,27 @@ ends_at: 2025-03-01T12:00:00Z
     <pre id="qz-out" style="white-space:pre-wrap;border:1px solid #ddd;padding:8px;margin-top:8px;"></pre>
   </section>
 
+  <!-- Toasts container -->
+  <div id="toast-container" style="position:fixed;top:12px;right:12px;display:flex;flex-direction:column;gap:8px;z-index:999;"></div>
+
+  <!-- === Duplicar curso (server-side) === -->
+  <section>
+    <h2>Duplicar curso (server-side)</h2>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+      <input id="dcs-courseId" placeholder="courseId origem" size="40" />
+      <input id="dcs-slug" placeholder="novo slug (opcional)" size="28" />
+      <input id="dcs-title" placeholder="novo título (opcional)" size="28" />
+      <label><input type="checkbox" id="dcs-blank" /> blank media</label>
+      <label><input type="checkbox" id="dcs-sanitize" /> sanitize</label>
+      <label><input type="checkbox" id="dcs-questions" checked /> copiar perguntas</label>
+      <label><input type="checkbox" id="dcs-active" /> active</label>
+      <label><input type="checkbox" id="dcs-simulate" /> simulate</label>
+      <button id="dcs-run" type="button">Duplicar curso (POST /duplicate)</button>
+    </div>
+    <small style="color:#555">Se simulate estiver marcado, nada é criado; recebe apenas a prévia. Geração automática de slug se vazio.</small>
+    <pre id="dcs-out" style="white-space:pre-wrap;border:1px solid #ddd;padding:8px;margin-top:8px;"></pre>
+  </section>
+
   <script src="/admin.js"></script>
   <script>
     (function(){

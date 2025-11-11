@@ -1913,40 +1913,143 @@ if ($btnVideoBeat) {
   });
 })();
 
-// ===== Duplicar curso (export+import, one-click) =====
+/***** Toast System (único) *****/
 (function(){
-  const $ = (sel) => document.querySelector(sel);
-  if (!$("#dpl-run")) return;
-
-  // Uses global window.api if present (so Authorization is injected)
-  async function call(path, init={}) {
-    if (typeof window.api === "function") return window.api(path, init);
-    const headers = { "Content-Type":"application/json", ...(init.headers||{}) };
-    const res = await fetch(path, { ...init, headers });
-    let body=null; try{ body=await res.json(); } catch{ body=await res.text(); }
-    return { status: res.status, body };
+  if (window.showToast) return;
+  function showToast(msg, variant="info", ttl=4000) {
+    const container = document.getElementById("toast-container");
+    if (!container) return;
+    const el = document.createElement("div");
+    el.textContent = msg;
+    el.style.cssText = `
+      font:13px/1.4 system-ui,sans-serif;
+      padding:10px 14px;
+      border-radius:8px;
+      box-shadow:0 4px 12px rgba(0,0,0,.15);
+      background:${variant==="error"?"#ffe5e5":variant==="success"?"#e7f9ed":variant==="warn"?"#fff7d6":"#f0f4ff"};
+      color:#222;
+      border:1px solid ${variant==="error"?"#ffb4b4":variant==="success"?"#b8e7c7":variant==="warn"?"#ffe08a":"#c6dafd"};
+      opacity:0;
+      transform:translateY(-6px);
+      transition:opacity .25s, transform .25s;
+      max-width:320px;
+      word-break:break-word;
+    `;
+    container.appendChild(el);
+    requestAnimationFrame(()=>{
+      el.style.opacity="1";
+      el.style.transform="translateY(0)";
+    });
+    setTimeout(()=>{
+      el.style.opacity="0";
+      el.style.transform="translateY(-4px)";
+      setTimeout(()=>{ el.remove(); }, 280);
+    }, ttl);
   }
+  window.showToast = showToast;
+})();
 
-  function slugify(s) {
+/***** Utilidades compartilhadas *****/
+(function(){
+  if (window._dupCourseUtilsReady) return;
+  window._dupCourseUtilsReady = true;
+
+  window.slugify = function slugify(s) {
     return String(s||"")
       .toLowerCase()
       .normalize("NFKD").replace(/[\u0300-\u036f]/g,"")
       .replace(/[^a-z0-9]+/g,"-")
       .replace(/^-+|-+$/g,"")
       .replace(/--+/g,"-")
-      .slice(0, 64) || ("copy-" + Date.now().toString(36));
-  }
+      .slice(0,64) || ("copy-" + Date.now().toString(36));
+  };
+
+  window.apiCall = async function apiCall(path, init={}) {
+    // Se já existir window.api (definida em outra parte), usar para headers/auth padronizado
+    if (typeof window.api === "function" && !init._forceRaw) {
+      return window.api(path, init);
+    }
+    const headers = { "Content-Type":"application/json", ...(init.headers||{}) };
+    const res = await fetch(path, { ...init, headers });
+    let body = null;
+    try { body = await res.json(); } catch { body = await res.text(); }
+    return { status: res.status, body };
+  };
+})();
+
+/***** Duplicar curso (server-side) *****/
+(function(){
+  const $ = (sel) => document.querySelector(sel);
+  const runBtn = $("#dcs-run");
+  if (!runBtn) return; // Seção não existe no HTML
+
+  runBtn.addEventListener("click", async () => {
+    const courseId = ($("#dcs-courseId")?.value || "").trim();
+    let slug = ($("#dcs-slug")?.value || "").trim();
+    const title = ($("#dcs-title")?.value || "").trim();
+    const blankMedia = !!$("#dcs-blank")?.checked;
+    const sanitize = !!$("#dcs-sanitize")?.checked;
+    const includeQuestions = !!$("#dcs-questions")?.checked;
+    const active = !!$("#dcs-active")?.checked;
+    const simulate = !!$("#dcs-simulate")?.checked;
+
+    if (!courseId) {
+      $("#dcs-out").textContent = "courseId requerido";
+      showToast("Informe o courseId origem", "warn");
+      return;
+    }
+    if (slug) slug = slugify(slug);
+
+    const payload = {
+      slug: slug || undefined,
+      title: title || undefined,
+      blankMedia,
+      sanitize,
+      includeQuestions,
+      active,
+      simulate
+    };
+
+    const { status, body } = await apiCall(`/api/admin/courses/${encodeURIComponent(courseId)}/duplicate`, {
+      method:"POST",
+      body: JSON.stringify(payload)
+    });
+
+    $("#dcs-out").textContent = JSON.stringify({ status, body }, null, 2);
+
+    if (status === 200) {
+      showToast(simulate ? "Prévia gerada com sucesso" : "Curso duplicado", simulate ? "info" : "success");
+      if (!simulate) {
+        const newId = body?.course?.id;
+        if (newId) {
+          const ce = document.getElementById("ce-courseId");
+          if (ce) ce.value = newId;
+        }
+      }
+    } else if (status === 409 && body?.error === "duplicate_slug") {
+      showToast("Slug duplicado, tente outro.", "error");
+    } else {
+      showToast(`Falha ao duplicar (${status})`, "error");
+    }
+  });
+})();
+
+/***** Duplicar curso (export+import, client-side) *****/
+(function(){
+  const $ = (sel) => document.querySelector(sel);
+  const runBtn = $("#dpl-run");
+  if (!runBtn) return; // Seção não existe
 
   async function exportCourse(courseId, opts) {
     const qs = new URLSearchParams();
     qs.set("dropIds","1");
     if (opts.blankMedia) qs.set("blankMedia","1");
     else if (opts.sanitize) qs.set("sanitize","1");
-    return call(`/api/admin/courses/${encodeURIComponent(courseId)}/export?`+qs.toString());
+    return apiCall(`/api/admin/courses/${encodeURIComponent(courseId)}/export?${qs.toString()}`);
   }
 
   async function importCourse(payload) {
-    return call("/api/admin/courses/import", {
+    return apiCall("/api/admin/courses/import", {
       method:"POST",
       body: JSON.stringify(payload)
     });
@@ -1968,6 +2071,7 @@ if ($btnVideoBeat) {
     if (!courseId) {
       const out = $("#dpl-out");
       if (out) out.textContent = "courseId requerido";
+      showToast("courseId requerido", "warn");
       return;
     }
 
@@ -1975,6 +2079,7 @@ if ($btnVideoBeat) {
     if (ex.status !== 200 || !ex.body?.export) {
       const out = $("#dpl-out");
       if (out) out.textContent = JSON.stringify({ step:"export", status:ex.status, body:ex.body }, null, 2);
+      showToast("Falha no export", "error");
       return;
     }
 
@@ -1998,21 +2103,28 @@ if ($btnVideoBeat) {
 
     let imp = await importCourse(importPayload);
     if (imp.status === 409 && (imp.body?.error === "duplicate_slug")) {
+      // Retry uma vez com sufixo randômico
       slug = slugify(`${baseSlug}-${Math.floor(Math.random()*1e6).toString(36)}`);
       importPayload.course.slug = slug;
       imp = await importCourse(importPayload);
     }
 
     const out = $("#dpl-out");
-    if (out) out.textContent = JSON.stringify({ status:imp.status, body:imp.body, slugAttempted: slug }, null, 2);
+    if (out) out.textContent = JSON.stringify({ status: imp.status, body: imp.body, slugAttempted: slug }, null, 2);
 
-    const newId = imp.body?.course?.id;
-    if (newId) {
-      const ce = document.getElementById("ce-courseId");
-      if (ce) ce.value = newId;
+    if (imp.status === 200) {
+      showToast("Curso duplicado (client)", "success");
+      const newId = imp.body?.course?.id;
+      if (newId) {
+        const ce = document.getElementById("ce-courseId");
+        if (ce) ce.value = newId;
+      }
+    } else if (imp.status === 409 && imp.body?.error === "duplicate_slug") {
+      showToast("Slug duplicado (client)", "error");
+    } else {
+      showToast(`Falha duplicar (client) ${imp.status}`, "error");
     }
   }
 
-  $("#dpl-run")?.addEventListener("click", duplicate);
+  runBtn.addEventListener("click", duplicate);
 })();
-

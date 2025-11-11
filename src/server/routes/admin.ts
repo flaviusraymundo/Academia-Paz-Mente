@@ -183,6 +183,261 @@ router.post("/entitlements", async (req, res) => {
   }
 });
 
+// ====== ADDITION: Duplicate Course (append-only) ======
+router.post("/courses/:courseId/duplicate", async (req, res) => {
+  const sourceCourseId = String(req.params.courseId || "");
+  if (!isUuid(sourceCourseId)) return res.status(400).json({ error: "invalid_course_id" });
+
+  const {
+    slug: slugRaw,
+    title: titleRaw,
+    blankMedia = false,
+    sanitize = false,
+    includeQuestions = true,
+    active = false,
+    simulate = false
+  } = req.body || {};
+
+  // Carrega curso original
+  const client = await pool.connect();
+  try {
+    const courseQ = await client.query(
+      `select id, slug, title, summary, level, active, draft, deleted_at
+         from courses
+        where id = $1
+        limit 1`,
+      [sourceCourseId]
+    );
+    if (!courseQ.rowCount) {
+      client.release();
+      return res.status(404).json({ error: "course_not_found" });
+    }
+    const source = courseQ.rows[0];
+
+    // Carrega módulos
+    const modulesQ = await client.query(
+      `select id, title, "order"
+         from modules
+        where course_id = $1
+        order by "order" asc, id asc`,
+      [sourceCourseId]
+    );
+    const moduleIds = modulesQ.rows.map(m => m.id);
+
+    // Carrega itens
+    const itemsQ = moduleIds.length
+      ? await client.query(
+          `select id, module_id, type, "order", payload_ref
+             from module_items
+            where module_id = any($1::uuid[])
+            order by module_id, "order", id`,
+          [moduleIds]
+        )
+      : { rows: [] };
+
+    // Carrega quizzes e perguntas
+    const quizzesQ = moduleIds.length
+      ? await client.query(
+          `select id, module_id, pass_score
+             from quizzes
+            where module_id = any($1::uuid[])`,
+          [moduleIds]
+        )
+      : { rows: [] };
+
+    const quizIds = quizzesQ.rows.map(q => q.id);
+    const questionsQ = (quizIds.length && includeQuestions)
+      ? await client.query(
+          `select id, quiz_id, kind, body, choices, answer_key
+             from questions
+            where quiz_id = any($1::uuid[])
+            order by id`,
+          [quizIds]
+        )
+      : { rows: [] };
+
+    // Função de limpeza de mídia
+    function cleanPayload(ref: any) {
+      if (!ref || typeof ref !== "object") return {};
+      if (!blankMedia && !sanitize) return ref;
+      const clone = { ...ref };
+      for (const k of ["mux_playback_id", "mux_asset_id", "doc_id", "html", "url"]) {
+        if (blankMedia || sanitize) {
+          if (k in clone) delete (clone as any)[k];
+        }
+      }
+      return clone;
+    }
+
+    // Gerar slug
+    function slugify(s: string) {
+      return s
+        .toLowerCase()
+        .normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .replace(/--+/g, "-")
+        .slice(0, 64);
+    }
+    const baseSlug = slugRaw && String(slugRaw).trim()
+      ? slugify(String(slugRaw).trim())
+      : slugify(`${source.slug}-copy-${Date.now().toString(36)}`);
+
+    // Valida slug duplicado em criação real
+    if (!simulate) {
+      const dupe = await client.query(
+        `select 1 from courses where slug = $1 and deleted_at is null limit 1`,
+        [baseSlug]
+      );
+      if (dupe.rowCount) {
+        client.release();
+        return res.status(409).json({ error: "duplicate_slug" });
+      }
+    }
+
+    const newTitle = titleRaw && String(titleRaw).trim()
+      ? String(titleRaw).trim()
+      : `${source.title} (cópia)`;
+
+    // Mapeamentos para preview
+    const previewModules = modulesQ.rows.map(m => ({
+      title: m.title,
+      order: Number(m.order),
+      items: itemsQ.rows
+        .filter(it => it.module_id === m.id)
+        .sort((a, b) => Number(a.order) - Number(b.order))
+        .map(it => {
+          const payloadRef = cleanPayload(it.payload_ref || {});
+          return {
+            type: it.type,
+            order: Number(it.order),
+            payloadRef
+          };
+        }),
+      quiz: (() => {
+        const q = quizzesQ.rows.find(qz => qz.module_id === m.id);
+        if (!q) return null;
+        const qs = includeQuestions
+          ? questionsQ.rows.filter(x => x.quiz_id === q.id).map(x => ({
+              kind: x.kind,
+              body: x.body || {},
+              choices: x.choices || [],
+              answerKey: x.answer_key || null
+            }))
+          : [];
+        return {
+          passScore: Number(q.pass_score),
+            questions: qs
+        };
+      })()
+    }));
+
+    if (simulate) {
+      client.release();
+      return res.json({
+        simulate: true,
+        blankMedia: !!blankMedia,
+        course: {
+          slug: baseSlug,
+          title: newTitle,
+          summary: source.summary,
+          level: source.level,
+          active: !!active,
+          draft: true
+        },
+        modules: previewModules
+      });
+    }
+
+    // Criação real
+    await client.query("BEGIN");
+    const newCourseId = (await client.query(
+      `insert into courses(id, slug, title, summary, level, active, draft, created_at, updated_at)
+       values (gen_random_uuid(), $1, $2, $3, $4, $5, $6, now(), now())
+       returning id, slug, title, summary, level, active, draft`,
+      [baseSlug, newTitle, source.summary, source.level, !!active, true]
+    )).rows[0].id;
+
+    // Clonar módulos
+    const moduleIdMap = new Map<string, string>(); // old -> new
+    for (const m of modulesQ.rows) {
+      const newModId = (await client.query(
+        `insert into modules(id, course_id, title, "order")
+         values (gen_random_uuid(), $1, $2, $3)
+         returning id`,
+        [newCourseId, m.title, m.order]
+      )).rows[0].id;
+      moduleIdMap.set(m.id, newModId);
+    }
+
+    // Clonar quizzes
+    const quizIdMap = new Map<string, string>(); // old -> new
+    for (const q of quizzesQ.rows) {
+      const newModId = moduleIdMap.get(q.module_id)!;
+      const newQuizId = (await client.query(
+        `insert into quizzes(id, module_id, pass_score)
+         values (gen_random_uuid(), $1, $2)
+         returning id`,
+        [newModId, q.pass_score]
+      )).rows[0].id;
+      quizIdMap.set(q.id, newQuizId);
+
+      if (includeQuestions) {
+        const qs = questionsQ.rows.filter(v => v.quiz_id === q.id);
+        for (const row of qs) {
+          await client.query(
+            `insert into questions(id, quiz_id, kind, body, choices, answer_key)
+             values (gen_random_uuid(), $1, $2, $3::jsonb, $4::jsonb, $5::jsonb)`,
+            [
+              newQuizId,
+              row.kind,
+              JSON.stringify(row.body || {}),
+              JSON.stringify(row.choices || []),
+              JSON.stringify(row.answer_key || null)
+            ]
+          );
+        }
+      }
+    }
+
+    // Clonar itens
+    for (const it of itemsQ.rows) {
+      const newModId = moduleIdMap.get(it.module_id)!;
+      let payloadRef = cleanPayload(it.payload_ref || {});
+      if (it.type === "quiz") {
+        // Atualiza quiz_id para o novo quiz do módulo (se existir)
+        const oldQuizId = payloadRef?.quiz_id;
+        if (oldQuizId && quizIdMap.has(oldQuizId)) {
+          payloadRef = { ...(payloadRef || {}), quiz_id: quizIdMap.get(oldQuizId) };
+        } else {
+          // Caso não tenha mapeamento, remove quiz_id
+          const base = { ...(payloadRef || {}) };
+          if ("quiz_id" in base) delete (base as any).quiz_id;
+          payloadRef = base;
+        }
+      }
+      await client.query(
+        `insert into module_items(id, module_id, type, "order", payload_ref)
+         values (gen_random_uuid(), $1, $2, $3, $4::jsonb)`,
+        [newModId, it.type, it.order, JSON.stringify(payloadRef)]
+      );
+    }
+
+    await client.query("COMMIT");
+    client.release();
+
+    return res.json({
+      ok: true,
+      course: { id: newCourseId, slug: baseSlug, title: newTitle, active: !!active, draft: true },
+      modules: previewModules.map(m => ({ title: m.title, order: m.order, itemCount: m.items.length }))
+    });
+  } catch (e: any) {
+    try { await client.query("ROLLBACK"); } catch {}
+    client.release();
+    return res.status(500).json({ error: "duplicate_course_failed", detail: String(e?.message || e) });
+  }
+});
+
 // --- Underscore extras sem :id ---
 router.get("/users/_search", async (req, res) => {
   const maybeEmail = Array.isArray(req.query.email) ? req.query.email[0] : req.query.email;
