@@ -2128,3 +2128,52 @@ if ($btnVideoBeat) {
 
   runBtn.addEventListener("click", duplicate);
 })();
+
+// ===== Auditoria (lista) =====
+(function(){
+  const $ = (sel) => document.querySelector(sel);
+  if (!$("#au-run")) return;
+
+  async function call(path, init={}) {
+    if (typeof window.api === "function") return window.api(path, init);
+    const headers = { "Content-Type": "application/json", ...(init.headers||{}) };
+    const res = await fetch(path, { ...init, headers });
+    let body=null; try{ body=await res.json(); } catch{ body=await res.text(); }
+    return { status: res.status, body };
+  }
+
+  $("#au-run").addEventListener("click", async ()=>{
+    const params = new URLSearchParams();
+    const act = ($("#au-action")?.value||"").trim();
+    const ent = ($("#au-entityType")?.value||"").trim();
+    const actor = ($("#au-actor")?.value||"").trim();
+    const limit = Number(($("#au-limit")?.value||"50"));
+    if (act) params.set("action", act);
+    if (ent) params.set("entityType", ent);
+    if (actor) params.set("actor", actor);
+    if (limit) params.set("limit", String(limit));
+    const { status, body } = await call(`/api/admin/audit?${params.toString()}`);
+    $("#au-out").textContent = JSON.stringify({ status, body }, null, 2);
+    if (window.showToast) showToast(status===200 ? "Eventos carregados" : "Falha ao carregar eventos", status===200 ? "info" : "error");
+  });
+})();
+
+// ===== Diagnóstico básico =====
+(function(){
+  const $ = (sel) => document.querySelector(sel);
+  if (!$("#dg-run")) return;
+
+  async function call(path, init={}) {
+    if (typeof window.api === "function") return window.api(path, init);
+    const headers = { "Content-Type": "application/json", ...(init.headers||{}) };
+    const res = await fetch(path, { ...init, headers });
+    let body=null; try{ body=await res.json(); } catch{ body=await res.text(); }
+    return { status: res.status, body };
+  }
+
+  $("#dg-run").addEventListener("click", async ()=>{
+    const { status, body } = await call(`/api/admin/diagnostics/basic`);
+    $("#dg-out").textContent = JSON.stringify({ status, body }, null, 2);
+    if (window.showToast) showToast(status===200 ? "Diagnóstico concluído" : "Falha no diagnóstico", status===200 ? "success" : "error");
+  });
+})();
