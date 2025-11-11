@@ -18,10 +18,22 @@ async function ensureTable(client: PoolClient) {
   ensured = true;
 }
 
+/**
+ * Garante a existência da tabela audit_events usando apenas o Pool.
+ */
+export async function ensureAuditTable(pool: Pool) {
+  const client = await pool.connect();
+  try {
+    await ensureTable(client);
+  } finally {
+    client.release();
+  }
+}
+
 export type AuditEvent = {
   actorEmail?: string | null;
-  action: string;         // ex.: courses.duplicate
-  entityType: string;     // ex.: course | module | item | quiz | import
+  action: string;
+  entityType: string;
   entityId?: string | null;
   payload?: any;
 };

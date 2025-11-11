@@ -2815,7 +2815,13 @@ router.get("/audit", async (req, res) => {
   } catch (e: any) {
     // Se falhar por algum motivo inesperado, ainda tentaremos seguir; log poderia ser adicionado aqui.
   }
-  const limit = Math.min(200, Math.max(1, Number(req.query.limit || 50)));
+  // Sanitiza 'limit' de forma robusta: se inválido → fallback para 50
+  const rawLimit = Array.isArray(req.query.limit) ? req.query.limit[0] : req.query.limit;
+  let parsed = Number(rawLimit);
+  if (!Number.isFinite(parsed)) parsed = 50;
+  if (parsed < 1) parsed = 1;
+  if (parsed > 200) parsed = 200;
+  const limit = parsed;
   const action = String(req.query.action || "").trim();
   const entityType = String(req.query.entityType || "").trim();
   const actor = String(req.query.actor || "").trim();
@@ -2835,8 +2841,8 @@ router.get("/audit", async (req, res) => {
          from audit_events
          ${whereSql}
         order by created_at desc
-        limit ${limit}`
-      , args
+        limit $${args.length + 1}`,
+      [...args, limit]
     );
     return res.json({ events: q.rows });
   } catch (e: any) {
