@@ -7,7 +7,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { requireAdmin } from "../middleware/admin.js";
 import { issueCertificate } from "../lib/certificates.js";
 import { sanitizePayloadRef, resolveMode } from "../lib/sanitize.js";
-import { logAudit } from "../lib/audit.js";
+import { logAudit, ensureAuditTable } from "../lib/audit.js";
 import { allowRate } from "../lib/rate-limit.js";
 
 const router = Router();
@@ -2809,6 +2809,12 @@ router.patch("/quizzes/:quizId", async (req, res) => {
 // GET /api/admin/audit  → lista eventos recentes
 // Query: limit? (default 50), action? (prefixo), entityType?, actor?
 router.get("/audit", async (req, res) => {
+  // Garante que a tabela exista antes da consulta inicial
+  try {
+    await ensureAuditTable(pool);
+  } catch (e: any) {
+    // Se falhar por algum motivo inesperado, ainda tentaremos seguir; log poderia ser adicionado aqui.
+  }
   const limit = Math.min(200, Math.max(1, Number(req.query.limit || 50)));
   const action = String(req.query.action || "").trim();
   const entityType = String(req.query.entityType || "").trim();
@@ -2823,15 +2829,23 @@ router.get("/audit", async (req, res) => {
   if (actor) { wheres.push(`actor_email ilike $${i++}`); args.push(actor.replace(/[*]/g, "%")); }
 
   const whereSql = wheres.length ? `where ${wheres.join(" and ")}` : "";
-  const q = await pool.query(
-    `select id, actor_email, action, entity_type, entity_id, payload_json, created_at
-       from audit_events
-       ${whereSql}
-      order by created_at desc
-      limit ${limit}`
-    , args
-  );
-  return res.json({ events: q.rows });
+  try {
+    const q = await pool.query(
+      `select id, actor_email, action, entity_type, entity_id, payload_json, created_at
+         from audit_events
+         ${whereSql}
+        order by created_at desc
+        limit ${limit}`
+      , args
+    );
+    return res.json({ events: q.rows });
+  } catch (e: any) {
+    // Se tabela não existir (42P01) retornamos lista vazia ao invés de 500
+    if (e?.code === "42P01") {
+      return res.json({ events: [] });
+    }
+    return res.status(500).json({ error: "audit_list_failed", detail: String(e?.message || e) });
+  }
 });
 
 // GET /api/admin/diagnostics/basic → checagens rápidas
