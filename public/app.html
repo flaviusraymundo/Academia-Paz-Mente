@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width,initial-scale=1"/>
+    <title>Academia Paz & Mente — App do Aluno</title>
+    <style>
+      body{margin:0;font:14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;background:#fafafa;color:#222}
+      header{padding:10px 14px;border-bottom:1px solid #eee;background:#fff;position:sticky;top:0;z-index:5}
+      .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+      .token{flex:1;min-width:260px}
+      .container{max-width:1040px;margin:0 auto;padding:16px}
+      nav a{margin-right:12px;color:#0366d6;text-decoration:none}
+      nav a:hover{text-decoration:underline}
+      .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+      .card{background:#fff;border:1px solid #eee;border-radius:10px;padding:12px}
+      .muted{color:#666}
+      .btn{padding:8px 12px;border:1px solid #ddd;border-radius:8px;background:#fff;cursor:pointer}
+      .btn:hover{background:#f5f5f5}
+      code,pre{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace}
+      .pill{display:inline-block;border:1px solid #eee;border-radius:999px;padding:2px 8px;font-size:12px;margin-right:6px}
+      .ok{background:#e8f9ee;border-color:#bfe8cd}
+      .warn{background:#fff7e0;border-color:#ffe28a}
+      .bad{background:#ffeaea;border-color:#ffc3c3}
+      .section{margin-top:16px}
+      .hidden{display:none}
+    </style>
+    <!-- Mux Player (para vídeo) -->
+    <script type="module" src="https://cdn.jsdelivr.net/npm/@mux/mux-player"></script>
+  </head>
+  <body>
+    <header>
+      <div class="row">
+        <strong>JWT:</strong>
+        <input id="jwt" class="token" placeholder="Cole seu token aqui e clique em Salvar"/>
+        <button id="btnSaveToken" class="btn">Salvar</button>
+        <nav>
+          <a href="#" data-section="catalog">Catálogo</a>
+          <a href="#" data-section="course">Curso</a>
+          <a href="#" data-section="certs">Certificados</a>
+          <a href="#" data-section="debug">Debug</a>
+        </nav>
+      </div>
+    </header>
+
+    <div class="container">
+      <div id="hint" class="card muted"></div>
+
+      <section id="sec-catalog" class="section">
+        <h2>Catálogo</h2>
+        <div id="catalog" class="grid"></div>
+      </section>
+
+      <section id="sec-course" class="section hidden">
+        <h2>Curso</h2>
+        <div class="row">
+          <input id="courseId" placeholder="courseId (UUID)" style="flex:1;min-width:260px"/>
+          <button id="btnLoadCourse" class="btn">Carregar módulos</button>
+        </div>
+        <div id="courseOut" class="section"></div>
+      </section>
+
+      <section id="sec-certs" class="section hidden">
+        <h2>Meus certificados</h2>
+        <div class="row muted" style="margin-bottom:8px">Lista atual (GET /api/certificates?unique=1)</div>
+        <div id="certsOut"></div>
+      </section>
+
+      <section id="sec-debug" class="section hidden">
+        <h2>Debug</h2>
+        <div class="row">
+          <button id="btnHealth" class="btn">GET /api/health</button>
+        </div>
+        <pre id="debugOut" class="card" style="margin-top:10px;white-space:pre-wrap"></pre>
+      </section>
+    </div>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
