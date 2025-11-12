@@ -1,3 +1,66 @@
+(function ensureJwtHelpers(){
+  // define/replace token() de forma tolerante
+  try {
+    // eslint-disable-next-line no-global-assign
+    token = function token(){ // sobrescreve a existente, se houver no escopo global
+      try {
+        return (
+          localStorage.getItem("lms_jwt") ||
+          localStorage.getItem("jwt") ||
+          localStorage.getItem("apm_jwt") ||
+          ""
+        );
+      } catch { return ""; }
+    };
+  } catch {
+    // se token não for atribuível (escopo fechado), cria um auxiliar global
+    window.apmReadToken = function apmReadToken(){
+      try {
+        return (
+          localStorage.getItem("lms_jwt") ||
+          localStorage.getItem("jwt") ||
+          localStorage.getItem("apm_jwt") ||
+          ""
+        );
+      } catch { return ""; }
+    };
+  }
+
+  // Banner opcional: aparece se não houver JWT; permite colar e salvar nas 3 chaves
+  try {
+    const read = (typeof token === "function" ? token : window.apmReadToken) || (() => "");
+    if (read()) return; // já tem token
+    const id = "apm-jwt-banner";
+    if (document.getElementById(id)) return;
+
+    const bar = document.createElement("div");
+    bar.id = id;
+    bar.style.cssText = "position:fixed;inset:auto 0 0 0;display:flex;gap:8px;align-items:center;padding:10px 12px;background:#fff7d6;border-top:1px solid #ffe08a;z-index:9999;font:13px system-ui,sans-serif";
+    bar.innerHTML = `
+      <strong style="color:#8a6d3b">JWT:</strong>
+      <input id="apm-jwt-input" placeholder="Cole seu JWT aqui" style="flex:1;padding:6px 8px;font-family:monospace;border:1px solid #ddd;border-radius:6px"/>
+      <button id="apm-jwt-save" style="padding:6px 10px;border:1px solid #ccc;border-radius:6px;background:#fff">Salvar</button>
+      <button id="apm-jwt-dismiss" style="padding:6px 10px;border:1px solid #ccc;border-radius:6px;background:#fff">Fechar</button>
+    `;
+    document.body.appendChild(bar);
+
+    const $ = (sel) => document.querySelector(sel);
+    $("#apm-jwt-save")?.addEventListener("click", ()=>{
+      const v = String($("#apm-jwt-input")?.value || "").trim();
+      if (!v) return;
+      try {
+        localStorage.setItem("lms_jwt", v);
+        localStorage.setItem("jwt", v);
+        localStorage.setItem("apm_jwt", v);
+        location.reload();
+      } catch {
+        alert("Falha ao salvar JWT no localStorage.");
+      }
+    });
+    $("#apm-jwt-dismiss")?.addEventListener("click", ()=> bar.remove());
+  } catch {}
+})();
+
 (function(){
   // Executa apenas na página específica (evita rodar por engano em outras telas)
   if (!window.location.pathname.endsWith('/admin-dnd.html')) return;
@@ -10,21 +73,25 @@
   const btnLoad = $('#load');
   const btnSave = $('#save');
 
-  function getJWT(){
-    let token = localStorage.getItem('lms_jwt') || ($('#jwt')?.value || '').trim();
+  function readJwt(){
+    const read = (typeof token === 'function' ? token : window.apmReadToken) || (()=> '');
+    let value = '';
     try {
-      const parsed = JSON.parse(token);
-      if (parsed && parsed.token) token = String(parsed.token);
+      value = String(read() || '').trim();
     } catch {}
-    return (token || '').trim();
+    if (!value) value = ($('#jwt')?.value || '').trim();
+    try {
+      const parsed = JSON.parse(value);
+      if (parsed && parsed.token) value = String(parsed.token);
+    } catch {}
+    return value.trim();
   }
 
-  const token = ()=> getJWT();
   const show = (obj)=> out.textContent = JSON.stringify(obj,null,2);
   const isUuid = (s)=> /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s||'');
 
   function ensureToken(){
-    if (!token()){
+    if (!readJwt()){
       show({status:401, body:{error:'no_token', hint:'Defina localStorage.lms_jwt (ou preencha o campo #jwt) e recarregue'}});
       btnLoad.disabled = true;
       btnSave.disabled = true;
@@ -35,7 +102,7 @@
   }
 
   async function api(path, init={}){
-    const jwt = token();
+    const jwt = readJwt();
     const headers = { ...(init.headers||{}) };
     if (jwt) headers.Authorization = `Bearer ${jwt}`;
     if (init.body && !('Content-Type' in headers)) headers['Content-Type'] = 'application/json';
@@ -141,7 +208,7 @@
 
   // bootstrap
   (function(){
-    const tok = token();
+    const tok = readJwt();
     if (!tok || tok.split('.').length !== 3) console.warn('JWT ausente ou inválido');
   })();
   ensureToken() && loadCourses().then(loadModules);
