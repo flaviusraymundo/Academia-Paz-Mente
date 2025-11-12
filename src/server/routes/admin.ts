@@ -7,8 +7,25 @@ import { requireAuth } from "../middleware/auth.js";
 import { requireAdmin } from "../middleware/admin.js";
 import { issueCertificate } from "../lib/certificates.js";
 import { sanitizePayloadRef, resolveMode } from "../lib/sanitize.js";
+import { logAudit, ensureAuditTable } from "../lib/audit.js";
+import { allowRate } from "../lib/rate-limit.js";
 
 const router = Router();
+
+// Auditoria "best effort": nunca deve alterar o resultado da rota
+function safeAudit(ev: {
+  actorEmail?: string | null;
+  action: string;
+  entityType: string;
+  entityId?: string | null;
+  payload?: any;
+}) {
+  try {
+    logAudit(pool, ev).catch(() => {});
+  } catch {
+    // Ignora totalmente (não loga console para evitar ruído em produção)
+  }
+}
 
 // POST /api/admin/certificates/:userId/:courseId/issue?force=1&reissue=1&keepIssuedAt=1&fullName=...
 router.post(
@@ -187,6 +204,14 @@ router.post("/entitlements", async (req, res) => {
 // ====== ADDITION: Duplicate Course (append-only) ======
 router.post("/courses/:courseId/duplicate", async (req, res) => {
   const sourceCourseId = String(req.params.courseId || "");
+  // Preferir e-mail do auth; fallback para IP apenas p/ rate limit
+  const actorEmail = (req as any).auth?.email || null;
+  const rateActor = actorEmail || req.ip || "unknown";
+  const gate = allowRate(`dup-course:${rateActor}:${sourceCourseId}`, 5, 60_000);
+  if (!gate.ok)
+    return res
+      .status(429)
+      .json({ error: "rate_limited", detail: `retry in ~${Math.ceil(gate.retryAfterMs / 1000)}s` });
   if (!isUuid(sourceCourseId)) return res.status(400).json({ error: "invalid_course_id" });
 
   const {
@@ -415,11 +440,20 @@ router.post("/courses/:courseId/duplicate", async (req, res) => {
     await client.query("COMMIT");
     client.release();
 
-    return res.json({
+    const respPayload = {
       ok: true,
       course: { id: newCourseId, slug: baseSlug, title: newTitle, active: !!active, draft: true },
-      modules: previewModules.map(m => ({ title: m.title, order: m.order, itemCount: m.items.length }))
+      modules: previewModules.map((m) => ({ title: m.title, order: m.order, itemCount: m.items.length }))
+    };
+    safeAudit({
+      actorEmail,
+      action: "courses.duplicate",
+      entityType: "course",
+      entityId: newCourseId,
+      payload: { sourceCourseId, includeQuestions, active },
     });
+
+    return res.json(respPayload);
   } catch (e: any) {
     try { await client.query("ROLLBACK"); } catch {}
     client.release();
@@ -521,6 +555,13 @@ router.get("/modules/:id/items", async (req, res) => {
 // Body: { targetModuleId: uuid, newOrder?: number }
 router.post("/items/:itemId/move", async (req, res) => {
   const itemId = String(req.params.itemId || "").trim();
+  const actorEmail = (req as any).auth?.email || null;
+  const rateActor = actorEmail || req.ip || "unknown";
+  const gate = allowRate(`move-item:${rateActor}`, 30, 60_000);
+  if (!gate.ok)
+    return res
+      .status(429)
+      .json({ error: "rate_limited", detail: `retry in ~${Math.ceil(gate.retryAfterMs / 1000)}s` });
   if (!isUuid(itemId)) return res.status(400).json({ error: "invalid_item_id" });
   const targetModuleId = String(req.body?.targetModuleId || "").trim();
   const newOrderRaw = req.body?.newOrder;
@@ -603,6 +644,13 @@ router.post("/items/:itemId/move", async (req, res) => {
         await client.query(`update module_items set "order" = $1 where id = $2`, [i + 1, filtered[i]]);
       }
       await client.query("COMMIT");
+      safeAudit({
+        actorEmail,
+        action: "items.reorder",
+        entityType: "module",
+        entityId: targetModuleId,
+        payload: { itemId, newOrder },
+      });
       return res.json({ ok: true, action: "reordered", moduleId: targetModuleId });
     }
 
@@ -632,6 +680,13 @@ router.post("/items/:itemId/move", async (req, res) => {
     );
 
     await client.query("COMMIT");
+    safeAudit({
+      actorEmail,
+      action: "items.move",
+      entityType: "item",
+      entityId: itemId,
+      payload: { toModuleId: targetModuleId, newOrder },
+    });
     return res.json({ ok: true, action: "moved", item: upd.rows[0] });
   } catch (e: any) {
     try {
@@ -1870,6 +1925,13 @@ router.delete("/modules/:id", async (req, res) => {
 // Body: { targetCourseId?: uuid, title?: string, order?: number, blankMedia?: boolean }
 router.post("/modules/:moduleId/duplicate", async (req, res) => {
   const moduleId = String(req.params.moduleId || "");
+  const actorEmail = (req as any).auth?.email || null;
+  const rateActor = actorEmail || req.ip || "unknown";
+  const gate = allowRate(`dup-module:${rateActor}`, 10, 60_000);
+  if (!gate.ok)
+    return res
+      .status(429)
+      .json({ error: "rate_limited", detail: `retry in ~${Math.ceil(gate.retryAfterMs / 1000)}s` });
   if (!isUuid(moduleId)) return res.status(400).json({ error: "invalid_module_id" });
   const targetCourseId = String(req.body?.targetCourseId || "");
   const titleArg = String(req.body?.title || "");
@@ -1984,7 +2046,15 @@ router.post("/modules/:moduleId/duplicate", async (req, res) => {
     }
 
     await client.query("COMMIT");
-    return res.json({ ok: true, module: insM.rows[0], quizId: newQuizId });
+    const resp = { ok: true, module: insM.rows[0], quizId: newQuizId };
+    safeAudit({
+      actorEmail,
+      action: "modules.duplicate",
+      entityType: "module",
+      entityId: insM.rows[0].id,
+      payload: { fromModuleId: moduleId, targetCourseId: dstCourseId },
+    });
+    return res.json(resp);
   } catch (e: any) {
     try {
       await client.query("ROLLBACK");
@@ -2119,6 +2189,13 @@ router.delete("/items/:itemId", async (req, res) => {
 // Body: { targetModuleId?: uuid, order?: number, blankMedia?: boolean }
 router.post("/items/:itemId/duplicate", async (req, res) => {
   const itemId = String(req.params.itemId || "");
+  const actorEmail = (req as any).auth?.email || null;
+  const rateActor = actorEmail || req.ip || "unknown";
+  const gate = allowRate(`dup-item:${rateActor}`, 15, 60_000);
+  if (!gate.ok)
+    return res
+      .status(429)
+      .json({ error: "rate_limited", detail: `retry in ~${Math.ceil(gate.retryAfterMs / 1000)}s` });
   if (!isUuid(itemId)) return res.status(400).json({ error: "invalid_item_id" });
   const targetModuleId = String(req.body?.targetModuleId || "");
   const orderArg = req.body?.order;
@@ -2171,7 +2248,15 @@ router.post("/items/:itemId/duplicate", async (req, res) => {
         [dstModuleId, src.type, finalOrder, JSON.stringify(payloadRef)]
       );
       await client.query("COMMIT");
-      return res.json({ ok: true, item: ins.rows[0] });
+      const resp = { ok: true, item: ins.rows[0] };
+      safeAudit({
+        actorEmail,
+        action: "items.duplicate",
+        entityType: "item",
+        entityId: ins.rows[0].id,
+        payload: { fromItemId: itemId, targetModuleId: dstModuleId },
+      });
+      return res.json(resp);
     }
 
     const srcQuizId = src.payload_ref?.quiz_id;
@@ -2237,7 +2322,15 @@ router.post("/items/:itemId/duplicate", async (req, res) => {
     );
 
     await client.query("COMMIT");
-    return res.json({ ok: true, item: ins.rows[0], quizId: destQuizId });
+    const resp2 = { ok: true, item: ins.rows[0], quizId: destQuizId };
+    safeAudit({
+      actorEmail,
+      action: "items.duplicate",
+      entityType: "item",
+      entityId: ins.rows[0].id,
+      payload: { fromItemId: itemId, targetModuleId: dstModuleId, quizId: destQuizId },
+    });
+    return res.json(resp2);
   } catch (e: any) {
     try {
       await client.query("ROLLBACK");
@@ -2732,4 +2825,106 @@ router.patch("/quizzes/:quizId", async (req, res) => {
   );
   if (!r.rowCount) return res.status(404).json({ error: "quiz_not_found" });
   return res.json({ quiz: r.rows[0] });
+});
+
+// ====== ADDITIONS (append-only): Auditoria e Diagnóstico ======
+
+// GET /api/admin/audit  → lista eventos recentes
+// Query: limit? (default 50), action? (prefixo), entityType?, actor?
+router.get("/audit", async (req, res) => {
+  try {
+    await ensureAuditTable(pool);
+  } catch {
+    // ignora falha de ensureTable — consulta adiante tratará erro de tabela ausente
+  }
+
+  const rawLimit = Array.isArray(req.query.limit) ? req.query.limit[0] : req.query.limit;
+  let parsed = Number(rawLimit);
+  if (!Number.isFinite(parsed)) parsed = 50;
+  if (parsed < 1) parsed = 1;
+  if (parsed > 200) parsed = 200;
+  const limit = parsed;
+  const action = String(req.query.action || "").trim();
+  const entityType = String(req.query.entityType || "").trim();
+  const actor = String(req.query.actor || "").trim();
+
+  const wheres: string[] = [];
+  const args: any[] = [];
+  let i = 1;
+
+  if (action) { wheres.push(`action ilike $${i++}`); args.push(action.replace(/[*]/g, "%")); }
+  if (entityType) { wheres.push(`entity_type = $${i++}`); args.push(entityType); }
+  if (actor) { wheres.push(`actor_email ilike $${i++}`); args.push(actor.replace(/[*]/g, "%")); }
+
+  const whereSql = wheres.length ? `where ${wheres.join(" and ")}` : "";
+  try {
+    const q = await pool.query(
+      `select id, actor_email, action, entity_type, entity_id, payload_json, created_at
+         from audit_events
+         ${whereSql}
+        order by created_at desc
+        limit $${args.length + 1}`,
+      [...args, limit]
+    );
+    return res.json({ events: q.rows });
+  } catch (e: any) {
+    if (e?.code === "42P01") {
+      return res.json({ events: [] });
+    }
+    return res.status(500).json({ error: "audit_list_failed", detail: String(e?.message || e) });
+  }
+});
+
+// GET /api/admin/diagnostics/basic → checagens rápidas
+router.get("/diagnostics/basic", async (_req, res) => {
+  try {
+    const modulesNoItems = await pool.query(`
+      select m.id, m.title, m.course_id
+        from modules m
+        left join module_items i on i.module_id = m.id
+       group by m.id
+      having count(i.id) = 0
+      order by m.title
+    `);
+
+    const quizItemsInvalidQuizId = await pool.query(`
+      select it.id as item_id, it.module_id, (it.payload_ref->>'quiz_id') as quiz_id_raw, it.payload_ref
+        from module_items it
+       where it.type = 'quiz'
+         and (it.payload_ref->>'quiz_id') is not null
+         and not ((it.payload_ref->>'quiz_id') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')
+    `);
+
+    const quizItemsMissingQuiz = await pool.query(`
+      select it.id as item_id, it.module_id, (it.payload_ref->>'quiz_id') as quiz_id_raw, it.payload_ref
+        from module_items it
+       where it.type = 'quiz'
+         and (it.payload_ref->>'quiz_id') is not null
+         and (it.payload_ref->>'quiz_id') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+         and not exists (
+           select 1 from quizzes q
+            where q.id = ((it.payload_ref->>'quiz_id')::uuid)
+         )
+    `);
+
+    const duplicateOrders = await pool.query(`
+      select module_id, "order", count(*) as cnt
+        from module_items
+       group by module_id, "order"
+      having count(*) > 1
+       order by module_id, "order"
+    `);
+
+    return res.json({
+      ok: true,
+      checks: {
+        modulesNoItems: modulesNoItems.rows,
+        quizItemsInvalidQuizId: quizItemsInvalidQuizId.rows,
+        quizItemsMissingQuiz: quizItemsMissingQuiz.rows,
+        duplicateOrders: duplicateOrders.rows,
+      }
+    });
+  } catch (e: any) {
+    return res.status(500).json({ error: "diagnostics_failed", detail: String(e?.message || e) });
+  }
 });
