@@ -1,37 +1,56 @@
-// Utilidades para chamada à API do backend.
+// Utilidades centralizadas para chamadas à API do backend.
 
 export function getApiBase(): string {
   return (process.env.NEXT_PUBLIC_API_BASE || "").replace(/\/+$/, "");
 }
 
-export async function apiGet<T>(path: string, jwt?: string): Promise<{ status: number; body: T | any }> {
+type ApiInit = (RequestInit & { jwt?: string }) | undefined;
+
+export async function api<T = any>(path: string, init?: ApiInit): Promise<{ status: number; body: T | any }> {
   const base = getApiBase();
   const url = base ? `${base}${path}` : path;
-  const headers: Record<string,string> = {};
-  if (jwt) headers.Authorization = `Bearer ${jwt}`;
+
+  // Headers (preserva os recebidos, adiciona Authorization se houver JWT)
+  const headers = new Headers(init?.headers);
+
+  // 1) prioridade: jwt explícito via init.jwt
+  if (init?.jwt) {
+    headers.set("Authorization", `Bearer ${init.jwt}`);
+  } else if (typeof window !== "undefined") {
+    // 2) fallback client-side: localStorage
+    try {
+      const t = localStorage.getItem("jwt");
+      if (t) headers.set("Authorization", `Bearer ${t}`);
+    } catch {}
+  }
+
+  // Define Content-Type quando body é string e header não veio
+  if (!headers.has("Content-Type") && typeof init?.body === "string") {
+    headers.set("Content-Type", "application/json");
+  }
+
   let res: Response;
   try {
-    res = await fetch(url, { headers, cache: "no-store" });
+    res = await fetch(url, { ...init, headers, cache: "no-store" });
   } catch (e: any) {
     return { status: 0, body: { error: "fetch_failed", detail: String(e) } };
   }
+
   const text = await res.text();
   let body: any = text;
   try { body = JSON.parse(text); } catch {}
+
   return { status: res.status, body };
 }
 
-// Interface simples para imitar uso axios-like nas páginas.
-export interface Api {
-  get<T>(path: string, jwt?: string): Promise<{ status: number; body: T | any }>;
-  base(): string;
+// Helpers opcionais, caso queira usar estilo "api.get" / "api.post"
+export async function apiGet<T = any>(path: string, jwt?: string) {
+  return api<T>(path, { method: "GET", jwt });
+}
+export async function apiPost<T = any>(path: string, data?: any, jwt?: string) {
+  return api<T>(path, { method: "POST", body: data ? JSON.stringify(data) : undefined, jwt });
 }
 
-// Named export esperado pelas páginas.
-export const api: Api = {
-  get: apiGet,
-  base: getApiBase,
-};
-
-// (Opcional) Exporte também como default se em algum lugar usarem import api from "../lib/api"
-export default api;
+// Default export (por conveniência)
+const apiDefault = Object.assign(api, { get: apiGet, post: apiPost, base: getApiBase });
+export default apiDefault;
