@@ -24,9 +24,7 @@ export function ClientAuthBar() {
   }
 
   function logout() {
-    try {
-      localStorage.removeItem("jwt");
-    } catch {}
+    try { localStorage.removeItem("jwt"); } catch {}
     setJwt("");
   }
 
@@ -58,7 +56,7 @@ export function ClientAuthBar() {
           <div style={modalCard}>
             <h3 style={{ marginTop: 0 }}>Entrar</h3>
             <p style={{ fontSize: 12, color: "#555", marginTop: 4 }}>
-              Por enquanto usamos o JWT diretamente. Cole o token. (Depois substituímos por login e senha.)
+              Temporário: cole o JWT (vamos evoluir para login com senha).
             </p>
             <textarea
               rows={4}
