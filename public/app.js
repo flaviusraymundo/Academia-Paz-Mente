@@ -1,41 +1,7 @@
-const API_BASE = "/api";
-const FN_BASE = "/.netlify/functions";
+// ===== Config =====
+const API_BASE = ""; // vazio → usa caminho relativo ao mesmo host (backend)
 
-async function call(url, method="GET", body) {
-  const token = document.getElementById("token").value.trim();
-  const res = await fetch(url, {
-    method,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    },
-    body: body ? JSON.stringify(body) : undefined
-  });
-  const text = await res.text();
-  document.getElementById("out").textContent = `HTTP ${res.status}\n` + text;
-  try { return JSON.parse(text); } catch { return text; }
-}
-document.getElementById("getJwt").addEventListener("click", async () => {
-  const email = document.getElementById("email").value.trim();
-  const r = await fetch(`${FN_BASE}/dev-jwt?email=${encodeURIComponent(email)}`);
-  const data = await r.json();
-  document.getElementById("token").value = data.token || "";
-});
-
-document.getElementById("catalog").onclick = async () => {
-  const data = await call(`${API_BASE}/catalog`);
-  if (data.courses && data.courses[0]) {
-    document.getElementById("courseId").value = data.courses[0].id;
-  }
-};
-
-document.getElementById("modules").onclick = async () => {
-  const c = document.getElementById("courseId").value.trim();
-  if (!c) return alert("Defina courseId");
-  await call(`${API_BASE}/catalog/courses/${c}/modules`);
-};
-
-// Utilidades
+// ===== Utilidades JWT / Fetch =====
 function readToken() {
   try {
     return localStorage.getItem("jwt") ||
@@ -52,22 +18,48 @@ function saveToken(v) {
     return true;
   } catch { return false; }
 }
-async function api(path, init={}) {
+async function api(path, init = {}) {
+  const base = API_BASE.replace(/\/+$/,"");
+  const url = base ? `${base}${path}` : path;
   const headers = { ...(init.headers||{}) };
   const tok = readToken();
   if (tok) headers.Authorization = `Bearer ${tok}`;
   if (init.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
-  const res = await fetch(path, { ...init, headers, cache:"no-store" });
-  const text = await res.text();
-  let body = text; try { body = JSON.parse(text); } catch {}
+  let res;
+  let text;
+  try {
+    res = await fetch(url, { ...init, headers, cache: "no-store" });
+    text = await res.text();
+  } catch (e) {
+    log(`FETCH ERROR ${url}\n${String(e)}`);
+    return { status: 0, body: { error: "fetch_failed", detail: String(e) } };
+  }
+  let body = text;
+  try { body = JSON.parse(text); } catch {}
+  log(`HTTP ${res.status} ${url}\n${text.slice(0,500)}`);
   return { status: res.status, body };
 }
+
+// ===== DOM Helpers =====
 const $ = (sel) => document.querySelector(sel);
-function setText(el, v){ if (typeof v === "string") el.textContent = v; else el.textContent = JSON.stringify(v,null,2); }
+function setText(el, v){
+  if (!el) return;
+  if (typeof v === "string") el.textContent = v;
+  else el.textContent = JSON.stringify(v, null, 2);
+}
 function show(el){ el.classList.remove("hidden"); }
 function hide(el){ el.classList.add("hidden"); }
+function spinnerHtml(label=""){ return `<span class="spinner"></span> ${label}`; }
 
-// Navegação simples entre seções
+// ===== Logger =====
+function log(msg) {
+  const el = $("#log");
+  if (!el) return;
+  const time = new Date().toISOString();
+  el.textContent = `[${time}] ${msg}\n` + el.textContent;
+}
+
+// ===== Navegação =====
 function goto(section) {
   const map = { catalog:"#sec-catalog", course:"#sec-course", certs:"#sec-certs", debug:"#sec-debug" };
   for (const [k, sel] of Object.entries(map)) {
@@ -75,11 +67,13 @@ function goto(section) {
     if (!el) continue;
     if (k === section) show(el); else hide(el);
   }
+  if (section === "debug") log("Entrou na seção Debug.");
 }
 
+// ===== Catálogo =====
 async function loadCatalog() {
   const wrap = $("#catalog");
-  wrap.innerHTML = "Carregando...";
+  wrap.innerHTML = spinnerHtml("Carregando catálogo...");
   const { status, body } = await api("/api/catalog");
   if (status !== 200) {
     wrap.innerHTML = `<pre class="card" style="grid-column:1/-1">${JSON.stringify({status,body},null,2)}</pre>`;
@@ -95,7 +89,7 @@ async function loadCatalog() {
     const div = document.createElement("div");
     div.className = "card";
     div.innerHTML = `
-      <h3 style="margin:0 0 6px 0">${c.title || c.slug || c.id}</h3>
+      <h3 style="margin:0 0 6px 0;font-size:15px">${c.title || c.slug || c.id}</h3>
       ${c.summary ? `<div class="muted" style="margin-bottom:8px">${c.summary}</div>` : ""}
       <div class="row">
         <button data-open-course="${c.id}" class="btn">Abrir curso</button>
@@ -113,10 +107,11 @@ async function loadCatalog() {
   });
 }
 
+// ===== Curso / Módulos =====
 async function loadCourse() {
   const cid = String($("#courseId").value||"").trim();
   if (!cid) { $("#courseOut").innerHTML = `<div class="card bad">Informe courseId</div>`; return; }
-  $("#courseOut").innerHTML = "Carregando...";
+  $("#courseOut").innerHTML = spinnerHtml("Carregando módulos...");
   const { status, body } = await api(`/api/me/items?courseId=${encodeURIComponent(cid)}`);
   if (status !== 200) { setText($("#courseOut"), { status, body }); return; }
   const items = Array.isArray(body.items) ? body.items : [];
@@ -165,7 +160,6 @@ async function loadCourse() {
   $("#courseOut").innerHTML = "";
   $("#courseOut").appendChild(host);
 
-  // bind
   $("#courseOut").querySelectorAll("[data-open-quiz]").forEach(b=>{
     b.addEventListener("click", ()=> openQuiz(b.getAttribute("data-open-quiz")));
   });
@@ -185,10 +179,11 @@ async function loadCourse() {
   });
 }
 
+// ===== Quiz =====
 async function openQuiz(quizId) {
   if (!quizId) { alert("quizId ausente"); return; }
   const wrap = $("#courseOut");
-  wrap.innerHTML = "Carregando quiz...";
+  wrap.innerHTML = spinnerHtml("Carregando quiz...");
   const { status, body } = await api(`/api/quizzes/${encodeURIComponent(quizId)}`);
   if (status !== 200) { setText(wrap, { status, body }); return; }
   const quiz = body.quiz || {};
@@ -237,9 +232,10 @@ async function openQuiz(quizId) {
   });
 }
 
+// ===== Vídeo =====
 async function openVideo(itemId, courseId, moduleId) {
   const wrap = $("#courseOut");
-  wrap.innerHTML = "Carregando vídeo...";
+  wrap.innerHTML = spinnerHtml("Carregando vídeo...");
   const { status, body } = await api(`/api/video/${encodeURIComponent(itemId)}/playback-token`, { method:"POST" });
   if (status !== 200) { setText(wrap, { status, body }); return; }
   const playbackId = body?.playbackId || "";
@@ -248,7 +244,7 @@ async function openVideo(itemId, courseId, moduleId) {
   const host = document.createElement("div");
   host.className = "card";
   host.innerHTML = `
-    <div class="muted">itemId: <code>${itemId}</code>, courseId: <code>${courseId}</code>, moduleId: <code>${moduleId}</code></div>
+    <div class="muted">itemId: <code>${itemId}</code>, moduleId: <code>${moduleId}</code></div>
     <div class="muted">policy: ${policy}</div>
     <mux-player style="width:100%;max-width:960px;aspect-ratio:16/9;background:#000;display:block"
       stream-type="on-demand"
@@ -273,12 +269,13 @@ async function openVideo(itemId, courseId, moduleId) {
   });
 }
 
+// ===== Texto =====
 async function openText(itemId, courseId, moduleId) {
   const wrap = $("#courseOut");
   const host = document.createElement("div");
   host.className = "card";
   host.innerHTML = `
-    <div class="muted">itemId: <code>${itemId}</code>, courseId: <code>${courseId}</code>, moduleId: <code>${moduleId}</code></div>
+    <div class="muted">itemId: <code>${itemId}</code>, moduleId: <code>${moduleId}</code></div>
     <div class="row" style="margin-top:8px">
       <button id="btnPageRead" class="btn">Enviar page-read (15s)</button>
     </div>
@@ -296,9 +293,10 @@ async function openText(itemId, courseId, moduleId) {
   });
 }
 
+// ===== Certificados =====
 async function loadCerts() {
   const out = $("#certsOut");
-  out.innerHTML = "Carregando...";
+  out.innerHTML = spinnerHtml("Carregando certificados...");
   const { status, body } = await api(`/api/certificates?unique=1`);
   if (status !== 200) { setText(out, { status, body }); return; }
   const arr = Array.isArray(body.certificates) ? body.certificates : [];
@@ -310,7 +308,7 @@ async function loadCerts() {
     card.className = "card";
     card.innerHTML = `
       <div>courseId: <code>${c.course_id}</code></div>
-      <div>emitido em: ${new Date(c.issued_at).toLocaleString()}</div>
+      <div>emitido: ${new Date(c.issued_at).toLocaleString()}</div>
       <div><a href="${c.pdf_url}" target="_blank" rel="noreferrer">Abrir PDF</a></div>
       ${c.serial ? `<div>serial: <code>${c.serial}</code></div>` : ""}
     `;
@@ -320,25 +318,53 @@ async function loadCerts() {
   out.appendChild(list);
 }
 
-async function checkHints() {
+// ===== Health =====
+async function health() {
+  const { status, body } = await api("/api/health");
+  log("Health response: " + JSON.stringify({status,body}));
+  alert("Health status " + status);
+}
+
+// ===== Decode JWT =====
+function decodeJwt() {
+  const tok = readToken();
+  if (!tok) { alert("Sem token"); return; }
+  try {
+    const parts = tok.split(".");
+    if (parts.length < 2) throw new Error("Formato inválido");
+    const payload = JSON.parse(atob(parts[1].replace(/-/g,"+").replace(/_/g,"/")));
+    log("JWT payload:\n" + JSON.stringify(payload,null,2));
+    alert("Email: " + (payload.email||"(sem)") + "\nsub: " + (payload.sub||"(sem)"));
+  } catch (e) {
+    alert("Falha ao decodificar: " + String(e));
+  }
+}
+
+// ===== Hints =====
+function checkHints() {
   const hint = $("#hint");
   const tok = readToken();
   const msgs = [];
-  if (!tok) msgs.push("Cole seu JWT no topo e clique em Salvar.");
-  setText(hint, msgs.length ? msgs.join(" ") : "Pronto para uso.");
+  if (!tok) msgs.push("Cole seu JWT e clique em Salvar para destravar rotas protegidas.");
+  msgs.push("API base: " + (API_BASE || "(mesmo host)"));
+  setText(hint, msgs.join(" "));
 }
 
-// Bind inicial
+// ===== Init =====
 (function init(){
-  // token
+  window.addEventListener("error", (e)=>{
+    log("JS ERROR: " + (e.message||String(e.error||e)));
+  });
+
   $("#jwt").value = readToken();
   $("#btnSaveToken").addEventListener("click", ()=>{
     const ok = saveToken(String($("#jwt").value||"").trim());
     alert(ok ? "Token salvo." : "Falha ao salvar token.");
     checkHints();
   });
+  $("#btnDecode").addEventListener("click", decodeJwt);
+  $("#btnHealth").addEventListener("click", health);
 
-  // nav simples
   document.querySelectorAll('nav a[data-section]').forEach(a=>{
     a.addEventListener("click", (e)=>{
       e.preventDefault();
@@ -346,13 +372,12 @@ async function checkHints() {
       goto(sec);
       if (sec === "catalog") loadCatalog();
       if (sec === "certs") loadCerts();
+      if (sec === "debug") log("Entrou na aba Debug");
     });
   });
 
-  // course
   $("#btnLoadCourse").addEventListener("click", loadCourse);
 
-  // defaults
   checkHints();
   goto("catalog");
   loadCatalog();
