@@ -4,5 +4,9 @@
   # publish é relativo ao base; como base=web, deve ser ".next" (e não "web/.next")
   publish = ".next"
 
+[build.environment]
+  NEXT_PUBLIC_API_BASE = "https://lifeflourishconsulting.netlify.app"
+
 [[plugins]]
   package = "@netlify/plugin-nextjs"
+
