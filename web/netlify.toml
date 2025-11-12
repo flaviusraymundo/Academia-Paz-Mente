@@ -1,8 +1,7 @@
 [build]
   base = "web"
   command = "npm run build"
-  # IMPORTANTE: publish deve ser diferente do base
-  publish = ".netlify"
+  # Não defina publish aqui; vamos setar via UI (e o plugin usa).
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
