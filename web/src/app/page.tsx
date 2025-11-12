@@ -117,7 +117,7 @@ export default function CatalogPage() {
         </div>
       )}
 
-      {!loading && !err && courses.length === 0 && (
+      {jwt && !loading && !err && catalog && courses.length === 0 && (
         <p style={{ fontSize:14, color:"#555" }}>Nenhum curso disponível.</p>
       )}
     </div>
