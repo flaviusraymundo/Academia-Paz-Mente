@@ -52,7 +52,7 @@ export default function CoursePage() {
               <li key={it.item_id} style={{ marginBottom: 6 }}>
                 {it.order}. {it.type}
                 {it.type === "quiz" && (
-                  <> - <Link href={`/quiz/${encodeURIComponent(it.payload_ref?.quiz_id || "")}`}>abrir quiz</Link></>
+                  <Link href={`/quiz/${encodeURIComponent(it.payload_ref?.quiz_id || "")}`}>- abrir quiz</Link>
                 )}
                 {it.type === "video" && (
                   <> - <Link href={`/video/${encodeURIComponent(it.item_id)}?courseId=${encodeURIComponent(courseId)}&moduleId=${encodeURIComponent(m.id)}`}>abrir vídeo</Link></>

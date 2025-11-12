@@ -9,9 +9,9 @@ npm run dev
 ```
 Cole seu JWT no topo (TokenBar). Se a API estiver em outra origem, defina:
 ```
-NEXT_PUBLIC_API_BASE=https://seu-backend.netlify.app
+NEXT_PUBLIC_API_BASE=https://SEU-BACKEND.NETLIFY.APP
 ```
-em `web/.env.local`.
+no arquivo `.env.local`.
 
 ## Deploy no Netlify (site separado)
 - Base directory: `web`
@@ -19,4 +19,10 @@ em `web/.env.local`.
 - Publish directory: `.next`
 - Env:
   - `NEXT_PUBLIC_API_BASE=https://SEU-BACKEND.NETLIFY.APP`
-- O Netlify detecta Next.js automaticamente (Next 14). Se preferir outra plataforma, adapte as variáveis.
+
+Opcional — acessar via site principal:
+- No site principal (marketing), adicione em `_redirects`:
+```
+/app/*  https://SEU-APP-NEXT.netlify.app/:splat  200
+```
+Assim `https://seu-site.netlify.app/app/` serve o app Next.

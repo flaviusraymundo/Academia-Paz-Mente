@@ -45,7 +45,7 @@ export default function VideoItemPage() {
       <p><strong>playback token:</strong> <code>{token || "-"}</code></p>
       <button onClick={beat} style={{ padding: "8px 12px" }}>Enviar heartbeat (15s)</button>
       {status && <pre style={{ marginTop: 12 }}>{JSON.stringify(status, null, 2)}</pre>}
-      <p style={{ color:"#666" }}>Player Mux pode ser plugado depois; por ora validamos o token e o heartbeat.</p>
+      <p style={{ color:"#666" }}>Player Mux pode ser integrado depois; por ora validamos token e heartbeat.</p>
     </div>
   );
 }
