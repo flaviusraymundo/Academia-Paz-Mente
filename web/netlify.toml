@@ -1,13 +1,8 @@
-# Config exclusiva do APP Next (site do aluno)
 [build]
   base = "web"
   command = "npm run build"
-  publish = "web/.next"   # <- definimos explicitamente; diferente do base (porque inclui /.next)
-  # Justificativa: plugin v5 lê a saída padrão do next build (.next),
-  # e evitar ".netlify" elimina o erro de "não encontrou artefatos" antes de mover.
+  # publish é relativo ao base; como base=web, deve ser ".next" (e não "web/.next")
+  publish = ".next"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
-
-[build.environment]
-  NEXT_FORCE_EDGE_IMAGES = "true" # opcional, só para evitar warnings de Image; pode remover se não usa Image
