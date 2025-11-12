@@ -22,22 +22,12 @@ function saveToken(v) {
   } catch { return false; }
 }
 function clearToken() {
-  try {
-    for (const k of LS_KEYS.jwt) localStorage.removeItem(k);
-  } catch {}
+  try { for (const k of LS_KEYS.jwt) localStorage.removeItem(k); } catch {}
 }
-function getApiBase() {
-  try { return (localStorage.getItem(LS_KEYS.apiBase) || "").trim(); } catch { return ""; }
-}
-function setApiBase(v) {
-  try { localStorage.setItem(LS_KEYS.apiBase, String(v||"").trim()); } catch {}
-}
-function getMuxKey() {
-  try { return (localStorage.getItem(LS_KEYS.muxKey) || "").trim(); } catch { return ""; }
-}
-function setMuxKey(v) {
-  try { localStorage.setItem(LS_KEYS.muxKey, String(v||"").trim()); } catch {}
-}
+function getApiBase() { try { return (localStorage.getItem(LS_KEYS.apiBase) || "").trim(); } catch { return ""; } }
+function setApiBase(v) { try { localStorage.setItem(LS_KEYS.apiBase, String(v||"").trim()); } catch {} }
+function getMuxKey() { try { return (localStorage.getItem(LS_KEYS.muxKey) || "").trim(); } catch { return ""; } }
+function setMuxKey(v) { try { localStorage.setItem(LS_KEYS.muxKey, String(v||"").trim()); } catch {} }
 
 // ===== Toasts =====
 function showToast(msg, type="info", ttl=3500) {
@@ -79,8 +69,7 @@ async function api(path, init = {}) {
     showToast(`Falha ao acessar ${path}`, "error");
     return { status: 0, body: { error: "fetch_failed", detail: String(e) } };
   }
-  let body = text;
-  try { body = JSON.parse(text); } catch {}
+  let body = text; try { body = JSON.parse(text); } catch {}
   log(`HTTP ${res.status} ${url}\n${text.slice(0,500)}`);
   return { status: res.status, body };
 }
@@ -173,13 +162,14 @@ async function loadCourse() {
       const quizId = it?.payload_ref?.quiz_id || "";
       const playbackId = it?.playbackId || it?.payload_ref?.mux_playback_id || it?.payload_ref?.playback_id || "";
       const textMeta = it?.docMeta?.docId || it?.payload_ref?.doc_id || "";
+      const disabled = m.unlocked ? "" : "disabled";
       li.innerHTML = `
         <div><strong>${type.toUpperCase()}</strong> (order ${it.order})</div>
         <div class="muted">itemId: <code>${it.item_id}</code></div>
         <div class="row" style="margin-top:6px">
-          ${type==="quiz" ? `<button class="btn" data-open-quiz="${quizId}">Abrir quiz</button>` : ""}
-          ${type==="video" ? `<button class="btn" data-open-video="${it.item_id}" data-course="${cid}" data-module="${m.id}">Abrir vídeo</button>` : ""}
-          ${type==="text" ? `<button class="btn" data-open-text="${it.item_id}" data-course="${cid}" data-module="${m.id}">Abrir texto</button>` : ""}
+          ${type==="quiz" ? `<button class="btn" ${disabled} data-open-quiz="${quizId}">Abrir quiz</button>` : ""}
+          ${type==="video" ? `<button class="btn" ${disabled} data-open-video="${it.item_id}" data-course="${cid}" data-module="${m.id}">Abrir vídeo</button>` : ""}
+          ${type==="text" ? `<button class="btn" ${disabled} data-open-text="${it.item_id}" data-course="${cid}" data-module="${m.id}">Abrir texto</button>` : ""}
         </div>
         <div class="muted" style="margin-top:6px">
           ${type==="quiz" ? `quiz_id: <code>${quizId||"-"}</code>` : ""}
@@ -194,10 +184,13 @@ async function loadCourse() {
   $("#courseOut").innerHTML = "";
   $("#courseOut").appendChild(host);
 
+  // binds (apenas se não estiver disabled)
   $("#courseOut").querySelectorAll("[data-open-quiz]").forEach(b=>{
+    if (b.hasAttribute("disabled")) return;
     b.addEventListener("click", ()=> openQuiz(b.getAttribute("data-open-quiz")));
   });
   $("#courseOut").querySelectorAll("[data-open-video]").forEach(b=>{
+    if (b.hasAttribute("disabled")) return;
     b.addEventListener("click", ()=> openVideo(
       b.getAttribute("data-open-video"),
       b.getAttribute("data-course"),
@@ -205,6 +198,7 @@ async function loadCourse() {
     ));
   });
   $("#courseOut").querySelectorAll("[data-open-text]").forEach(b=>{
+    if (b.hasAttribute("disabled")) return;
     b.addEventListener("click", ()=> openText(
       b.getAttribute("data-open-text"),
       b.getAttribute("data-course"),
@@ -248,6 +242,7 @@ async function openQuiz(quizId) {
   wrap.appendChild(host);
 
   $("#btnSubmitQuiz").addEventListener("click", async ()=>{
+    const cid = String($("#courseId").value||"").trim();
     const inputs = form.querySelectorAll("input[data-answer]");
     const answers = [];
     inputs.forEach((inp)=>{
@@ -264,6 +259,10 @@ async function openQuiz(quizId) {
     setText(out, { status, body });
     host.appendChild(out);
     showToast(status===200 ? "Tentativa enviada" : "Falha ao enviar tentativa", status===200?"success":"error");
+    // Recarrega módulos para refletir status/unlock
+    if (status === 200 && cid) {
+      await loadCourse();
+    }
   });
 }
 
@@ -357,6 +356,25 @@ async function loadCerts() {
   out.appendChild(list);
 }
 
+// ===== Emitir certificado (aluno) =====
+async function issueCert() {
+  const cid = String($("#courseId").value||"").trim();
+  if (!cid) { showToast("Informe o courseId para emitir", "warn"); return; }
+  const { status, body } = await api(`/api/me/certificates/${encodeURIComponent(cid)}/issue`, { method:"POST" });
+  log("Issue cert response: " + JSON.stringify({ status, body }));
+  if (status === 200) {
+    showToast("Certificado emitido", "success");
+    // Atualiza lista de certificados
+    await loadCerts();
+  } else if (status === 409) {
+    showToast("Ainda não elegível para emitir", "warn");
+  } else if (status === 403) {
+    showToast("Sem acesso ao curso", "error");
+  } else {
+    showToast("Falha ao emitir certificado", "error");
+  }
+}
+
 // ===== Health =====
 async function health() {
   const { status, body } = await api("/api/health");
@@ -435,6 +453,7 @@ function bindSettings() {
   });
   $("#btnDecode").addEventListener("click", decodeJwt);
   $("#btnHealth").addEventListener("click", health);
+  $("#btnIssueCert").addEventListener("click", issueCert);
   bindSettings();
 
   document.querySelectorAll('nav a[data-section]').forEach(a=>{
