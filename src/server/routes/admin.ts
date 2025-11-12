@@ -204,8 +204,10 @@ router.post("/entitlements", async (req, res) => {
 // ====== ADDITION: Duplicate Course (append-only) ======
 router.post("/courses/:courseId/duplicate", async (req, res) => {
   const sourceCourseId = String(req.params.courseId || "");
-  const actor = (req as any).user?.email || req.ip || "unknown";
-  const gate = allowRate(`dup-course:${actor}:${sourceCourseId}`, 5, 60_000);
+  // Preferir e-mail do auth; fallback para IP apenas p/ rate limit
+  const actorEmail = (req as any).auth?.email || null;
+  const rateActor = actorEmail || req.ip || "unknown";
+  const gate = allowRate(`dup-course:${rateActor}:${sourceCourseId}`, 5, 60_000);
   if (!gate.ok)
     return res
       .status(429)
@@ -444,7 +446,7 @@ router.post("/courses/:courseId/duplicate", async (req, res) => {
       modules: previewModules.map((m) => ({ title: m.title, order: m.order, itemCount: m.items.length }))
     };
     safeAudit({
-      actorEmail: actor,
+      actorEmail,
       action: "courses.duplicate",
       entityType: "course",
       entityId: newCourseId,
@@ -553,8 +555,9 @@ router.get("/modules/:id/items", async (req, res) => {
 // Body: { targetModuleId: uuid, newOrder?: number }
 router.post("/items/:itemId/move", async (req, res) => {
   const itemId = String(req.params.itemId || "").trim();
-  const actor = (req as any).user?.email || req.ip || "unknown";
-  const gate = allowRate(`move-item:${actor}`, 30, 60_000);
+  const actorEmail = (req as any).auth?.email || null;
+  const rateActor = actorEmail || req.ip || "unknown";
+  const gate = allowRate(`move-item:${rateActor}`, 30, 60_000);
   if (!gate.ok)
     return res
       .status(429)
@@ -642,7 +645,7 @@ router.post("/items/:itemId/move", async (req, res) => {
       }
       await client.query("COMMIT");
       safeAudit({
-        actorEmail: actor,
+        actorEmail,
         action: "items.reorder",
         entityType: "module",
         entityId: targetModuleId,
@@ -678,7 +681,7 @@ router.post("/items/:itemId/move", async (req, res) => {
 
     await client.query("COMMIT");
     safeAudit({
-      actorEmail: actor,
+      actorEmail,
       action: "items.move",
       entityType: "item",
       entityId: itemId,
@@ -1922,8 +1925,9 @@ router.delete("/modules/:id", async (req, res) => {
 // Body: { targetCourseId?: uuid, title?: string, order?: number, blankMedia?: boolean }
 router.post("/modules/:moduleId/duplicate", async (req, res) => {
   const moduleId = String(req.params.moduleId || "");
-  const actor = (req as any).user?.email || req.ip || "unknown";
-  const gate = allowRate(`dup-module:${actor}`, 10, 60_000);
+  const actorEmail = (req as any).auth?.email || null;
+  const rateActor = actorEmail || req.ip || "unknown";
+  const gate = allowRate(`dup-module:${rateActor}`, 10, 60_000);
   if (!gate.ok)
     return res
       .status(429)
@@ -2044,7 +2048,7 @@ router.post("/modules/:moduleId/duplicate", async (req, res) => {
     await client.query("COMMIT");
     const resp = { ok: true, module: insM.rows[0], quizId: newQuizId };
     safeAudit({
-      actorEmail: actor,
+      actorEmail,
       action: "modules.duplicate",
       entityType: "module",
       entityId: insM.rows[0].id,
@@ -2185,8 +2189,9 @@ router.delete("/items/:itemId", async (req, res) => {
 // Body: { targetModuleId?: uuid, order?: number, blankMedia?: boolean }
 router.post("/items/:itemId/duplicate", async (req, res) => {
   const itemId = String(req.params.itemId || "");
-  const actor = (req as any).user?.email || req.ip || "unknown";
-  const gate = allowRate(`dup-item:${actor}`, 15, 60_000);
+  const actorEmail = (req as any).auth?.email || null;
+  const rateActor = actorEmail || req.ip || "unknown";
+  const gate = allowRate(`dup-item:${rateActor}`, 15, 60_000);
   if (!gate.ok)
     return res
       .status(429)
@@ -2245,7 +2250,7 @@ router.post("/items/:itemId/duplicate", async (req, res) => {
       await client.query("COMMIT");
       const resp = { ok: true, item: ins.rows[0] };
       safeAudit({
-        actorEmail: actor,
+        actorEmail,
         action: "items.duplicate",
         entityType: "item",
         entityId: ins.rows[0].id,
@@ -2319,7 +2324,7 @@ router.post("/items/:itemId/duplicate", async (req, res) => {
     await client.query("COMMIT");
     const resp2 = { ok: true, item: ins.rows[0], quizId: destQuizId };
     safeAudit({
-      actorEmail: actor,
+      actorEmail,
       action: "items.duplicate",
       entityType: "item",
       entityId: ins.rows[0].id,
