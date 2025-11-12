@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
-import TokenBar from "../components/TokenBar";
+import TokenBar from "../src/components/TokenBar";
 
 export const metadata = {
   title: "Academia Paz & Mente - Aluno",
