@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Verificar Certificado</title>
+  <style>
+    body{margin:0;font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#fafafa;color:#222}
+    .wrap{max-width:720px;margin:24px auto;padding:0 16px}
+    .card{background:#fff;border:1px solid #e2e2e2;border-radius:10px;padding:12px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    input{flex:1;min-width:280px;padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-family:monospace}
+    .btn{padding:8px 12px;border:1px solid #d0d0d0;border-radius:8px;background:#fff;cursor:pointer;font-size:13px}
+    .muted{color:#666;font-size:12px}
+    pre{white-space:pre-wrap}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Verificar certificado</h1>
+    <div class="card">
+      <div class="row">
+        <input id="serial" placeholder="Serial (ex.: 01K9QTS...)" />
+        <button id="btnSerial" class="btn">Verificar por serial</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <input id="hash" placeholder="Hash (query 'hash' do link)" />
+        <button id="btnHash" class="btn">Verificar por hash</button>
+      </div>
+      <div id="out" style="margin-top:12px"></div>
+    </div>
+    <p class="muted" style="margin-top:10px">Dica: você pode abrir diretamente o PDF se possuir o link protegido por hash.</p>
+  </div>
+<script type="module">
+const $ = (s)=>document.querySelector(s);
+function set(el,v){ el.innerHTML = typeof v==="string"? v : `<pre class="card">${JSON.stringify(v,null,2)}</pre>`; }
+
+async function call(path){
+  const r = await fetch(path);
+  let b = await r.text(); try{ b = JSON.parse(b); }catch{}
+  return { status:r.status, body:b };
+}
+
+$("#btnSerial").addEventListener("click", async ()=>{
+  const s = ($("#serial").value||"").trim();
+  if(!s) return set($("#out"), "<div class='muted'>Informe um serial.</div>");
+  const { status, body } = await call(`/api/certificates/verify/${encodeURIComponent(s)}`);
+  if(status===200){
+    set($("#out"), { ok:true, status, body });
+  } else {
+    set($("#out"), { ok:false, status, body });
+  }
+});
+
+$("#btnHash").addEventListener("click", async ()=>{
+  const h = ($("#hash").value||"").trim();
+  if(!h) return set($("#out"), "<div class='muted'>Informe um hash.</div>");
+  const { status, body } = await call(`/api/certificates/verify?hash=${encodeURIComponent(h)}`);
+  set($("#out"), { status, body, pdf_url: body?.pdf_url || null });
+});
+</script>
+</body>
+</html>
