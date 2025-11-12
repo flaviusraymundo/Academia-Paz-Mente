@@ -1,37 +1,82 @@
-// ===== Config =====
-const API_BASE = ""; // vazio → usa caminho relativo ao mesmo host (backend)
+// ===== Config persistida em localStorage =====
+const LS_KEYS = {
+  jwt: ["jwt","lms_jwt","apm_jwt"],
+  apiBase: "apm_api_base",
+  muxKey: "apm_mux_data_env_key",
+};
 
-// ===== Utilidades JWT / Fetch =====
+// ===== Utilidades JWT / Config =====
 function readToken() {
   try {
-    return localStorage.getItem("jwt") ||
-           localStorage.getItem("lms_jwt") ||
-           localStorage.getItem("apm_jwt") ||
-           "";
-  } catch { return ""; }
+    for (const k of LS_KEYS.jwt) {
+      const v = localStorage.getItem(k);
+      if (v) return v;
+    }
+  } catch {}
+  return "";
 }
 function saveToken(v) {
   try {
-    localStorage.setItem("jwt", v);
-    localStorage.setItem("lms_jwt", v);
-    localStorage.setItem("apm_jwt", v);
+    for (const k of LS_KEYS.jwt) localStorage.setItem(k, v);
     return true;
   } catch { return false; }
 }
+function clearToken() {
+  try {
+    for (const k of LS_KEYS.jwt) localStorage.removeItem(k);
+  } catch {}
+}
+function getApiBase() {
+  try { return (localStorage.getItem(LS_KEYS.apiBase) || "").trim(); } catch { return ""; }
+}
+function setApiBase(v) {
+  try { localStorage.setItem(LS_KEYS.apiBase, String(v||"").trim()); } catch {}
+}
+function getMuxKey() {
+  try { return (localStorage.getItem(LS_KEYS.muxKey) || "").trim(); } catch { return ""; }
+}
+function setMuxKey(v) {
+  try { localStorage.setItem(LS_KEYS.muxKey, String(v||"").trim()); } catch {}
+}
+
+// ===== Toasts =====
+function showToast(msg, type="info", ttl=3500) {
+  const c = document.getElementById("toast-container");
+  if (!c) return;
+  const el = document.createElement("div");
+  el.className = `toast ${type==="error"?"error":type==="success"?"success":type==="warn"?"warn":""}`;
+  el.textContent = msg;
+  c.appendChild(el);
+  requestAnimationFrame(()=>{ el.style.opacity="1"; el.style.transform="translateY(0)"; });
+  setTimeout(()=> {
+    el.style.opacity="0"; el.style.transform="translateY(-6px)";
+    setTimeout(()=> el.remove(), 280);
+  }, ttl);
+}
+
+// ===== Logger =====
+function log(msg) {
+  const el = document.getElementById("log");
+  if (!el) return;
+  const time = new Date().toISOString();
+  el.textContent = `[${time}] ${msg}\n` + el.textContent;
+}
+
+// ===== Fetch util =====
 async function api(path, init = {}) {
-  const base = API_BASE.replace(/\/+$/,"");
+  const base = getApiBase().replace(/\/+$/,"");
   const url = base ? `${base}${path}` : path;
   const headers = { ...(init.headers||{}) };
   const tok = readToken();
   if (tok) headers.Authorization = `Bearer ${tok}`;
   if (init.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
-  let res;
-  let text;
+  let res, text;
   try {
     res = await fetch(url, { ...init, headers, cache: "no-store" });
     text = await res.text();
   } catch (e) {
     log(`FETCH ERROR ${url}\n${String(e)}`);
+    showToast(`Falha ao acessar ${path}`, "error");
     return { status: 0, body: { error: "fetch_failed", detail: String(e) } };
   }
   let body = text;
@@ -40,24 +85,12 @@ async function api(path, init = {}) {
   return { status: res.status, body };
 }
 
-// ===== DOM Helpers =====
+// ===== DOM helpers =====
 const $ = (sel) => document.querySelector(sel);
-function setText(el, v){
-  if (!el) return;
-  if (typeof v === "string") el.textContent = v;
-  else el.textContent = JSON.stringify(v, null, 2);
-}
+function setText(el, v){ if (!el) return; el.textContent = (typeof v === "string") ? v : JSON.stringify(v, null, 2); }
 function show(el){ el.classList.remove("hidden"); }
 function hide(el){ el.classList.add("hidden"); }
 function spinnerHtml(label=""){ return `<span class="spinner"></span> ${label}`; }
-
-// ===== Logger =====
-function log(msg) {
-  const el = $("#log");
-  if (!el) return;
-  const time = new Date().toISOString();
-  el.textContent = `[${time}] ${msg}\n` + el.textContent;
-}
 
 // ===== Navegação =====
 function goto(section) {
@@ -77,6 +110,7 @@ async function loadCatalog() {
   const { status, body } = await api("/api/catalog");
   if (status !== 200) {
     wrap.innerHTML = `<pre class="card" style="grid-column:1/-1">${JSON.stringify({status,body},null,2)}</pre>`;
+    showToast("Falha ao carregar catálogo", "error");
     return;
   }
   const items = body.items || body.courses || [];
@@ -113,7 +147,7 @@ async function loadCourse() {
   if (!cid) { $("#courseOut").innerHTML = `<div class="card bad">Informe courseId</div>`; return; }
   $("#courseOut").innerHTML = spinnerHtml("Carregando módulos...");
   const { status, body } = await api(`/api/me/items?courseId=${encodeURIComponent(cid)}`);
-  if (status !== 200) { setText($("#courseOut"), { status, body }); return; }
+  if (status !== 200) { setText($("#courseOut"), { status, body }); showToast("Falha ao carregar módulos", "error"); return; }
   const items = Array.isArray(body.items) ? body.items : [];
   if (!items.length) { $("#courseOut").innerHTML = `<div class="card muted">Curso sem módulos.</div>`; return; }
 
@@ -137,8 +171,8 @@ async function loadCourse() {
       li.style.margin = "6px 0";
       const type = String(it.type);
       const quizId = it?.payload_ref?.quiz_id || "";
-      const playbackId = it?.payload_ref?.mux_playback_id || it?.payload_ref?.playback_id || "";
-      const textMeta = it?.payload_ref?.doc_id ? `doc_id: ${it.payload_ref.doc_id}` : "";
+      const playbackId = it?.playbackId || it?.payload_ref?.mux_playback_id || it?.payload_ref?.playback_id || "";
+      const textMeta = it?.docMeta?.docId || it?.payload_ref?.doc_id || "";
       li.innerHTML = `
         <div><strong>${type.toUpperCase()}</strong> (order ${it.order})</div>
         <div class="muted">itemId: <code>${it.item_id}</code></div>
@@ -150,7 +184,7 @@ async function loadCourse() {
         <div class="muted" style="margin-top:6px">
           ${type==="quiz" ? `quiz_id: <code>${quizId||"-"}</code>` : ""}
           ${type==="video" ? `playback_id: <code>${playbackId||"-"}</code>` : ""}
-          ${type==="text" ? `${textMeta}` : ""}
+          ${type==="text" ? `doc_id: <code>${textMeta||"-"}</code>` : ""}
         </div>
       `;
       list.appendChild(li);
@@ -185,7 +219,7 @@ async function openQuiz(quizId) {
   const wrap = $("#courseOut");
   wrap.innerHTML = spinnerHtml("Carregando quiz...");
   const { status, body } = await api(`/api/quizzes/${encodeURIComponent(quizId)}`);
-  if (status !== 200) { setText(wrap, { status, body }); return; }
+  if (status !== 200) { setText(wrap, { status, body }); showToast("Falha ao carregar quiz", "error"); return; }
   const quiz = body.quiz || {};
   const qs = Array.isArray(quiz.questions) ? quiz.questions : [];
   const host = document.createElement("div");
@@ -229,6 +263,7 @@ async function openQuiz(quizId) {
     out.className = "card";
     setText(out, { status, body });
     host.appendChild(out);
+    showToast(status===200 ? "Tentativa enviada" : "Falha ao enviar tentativa", status===200?"success":"error");
   });
 }
 
@@ -237,10 +272,11 @@ async function openVideo(itemId, courseId, moduleId) {
   const wrap = $("#courseOut");
   wrap.innerHTML = spinnerHtml("Carregando vídeo...");
   const { status, body } = await api(`/api/video/${encodeURIComponent(itemId)}/playback-token`, { method:"POST" });
-  if (status !== 200) { setText(wrap, { status, body }); return; }
+  if (status !== 200) { setText(wrap, { status, body }); showToast("Falha ao carregar vídeo", "error"); return; }
   const playbackId = body?.playbackId || "";
   const token = body?.token || null;
   const policy = body?.policy || "unknown";
+  const muxKey = getMuxKey() || undefined;
   const host = document.createElement("div");
   host.className = "card";
   host.innerHTML = `
@@ -250,6 +286,7 @@ async function openVideo(itemId, courseId, moduleId) {
       stream-type="on-demand"
       playback-id="${playbackId}"
       ${token ? `playback-token="${token}"` : ""}
+      ${muxKey ? `data-env-key="${muxKey}"` : ""}
       muted autoplay preload="metadata">
     </mux-player>
     <div class="row" style="margin-top:8px">
@@ -266,6 +303,7 @@ async function openVideo(itemId, courseId, moduleId) {
       body: JSON.stringify({ courseId, moduleId, itemId, secs: 15 })
     });
     setText($("#beatOut"), { status, body });
+    showToast(status===200 ? "Heartbeat ok" : "Falha no heartbeat", status===200?"success":"error");
   });
 }
 
@@ -290,6 +328,7 @@ async function openText(itemId, courseId, moduleId) {
       body: JSON.stringify({ courseId, moduleId, itemId, ms: 15000 })
     });
     setText($("#textOut"), { status, body });
+    showToast(status===200 ? "Page-read ok" : "Falha no page-read", status===200?"success":"error");
   });
 }
 
@@ -298,7 +337,7 @@ async function loadCerts() {
   const out = $("#certsOut");
   out.innerHTML = spinnerHtml("Carregando certificados...");
   const { status, body } = await api(`/api/certificates?unique=1`);
-  if (status !== 200) { setText(out, { status, body }); return; }
+  if (status !== 200) { setText(out, { status, body }); showToast("Falha ao carregar certificados", "error"); return; }
   const arr = Array.isArray(body.certificates) ? body.certificates : [];
   if (!arr.length) { out.innerHTML = `<div class="card muted">Nenhum certificado encontrado.</div>`; return; }
   const list = document.createElement("div");
@@ -322,21 +361,21 @@ async function loadCerts() {
 async function health() {
   const { status, body } = await api("/api/health");
   log("Health response: " + JSON.stringify({status,body}));
-  alert("Health status " + status);
+  showToast(`Health ${status}`, status===200?"success":"warn");
 }
 
 // ===== Decode JWT =====
 function decodeJwt() {
   const tok = readToken();
-  if (!tok) { alert("Sem token"); return; }
+  if (!tok) { showToast("Sem token", "warn"); return; }
   try {
     const parts = tok.split(".");
     if (parts.length < 2) throw new Error("Formato inválido");
     const payload = JSON.parse(atob(parts[1].replace(/-/g,"+").replace(/_/g,"/")));
     log("JWT payload:\n" + JSON.stringify(payload,null,2));
-    alert("Email: " + (payload.email||"(sem)") + "\nsub: " + (payload.sub||"(sem)"));
+    showToast(`Email: ${payload.email||"(sem)"}; sub: ${payload.sub||"(sem)"}`);
   } catch (e) {
-    alert("Falha ao decodificar: " + String(e));
+    showToast("Falha ao decodificar token", "error");
   }
 }
 
@@ -345,25 +384,58 @@ function checkHints() {
   const hint = $("#hint");
   const tok = readToken();
   const msgs = [];
-  if (!tok) msgs.push("Cole seu JWT e clique em Salvar para destravar rotas protegidas.");
-  msgs.push("API base: " + (API_BASE || "(mesmo host)"));
-  setText(hint, msgs.join(" "));
+  if (!tok) msgs.push("Cole seu JWT e clique em Salvar para destravar rotas.");
+  const base = getApiBase() || "(mesmo host)";
+  msgs.push("API base: " + base);
+  const mk = getMuxKey();
+  if (mk) msgs.push("Mux Data: ativo");
+  setText(hint, msgs.join(" | "));
+}
+
+// ===== Settings modal =====
+function bindSettings() {
+  const modal = $("#settings");
+  const inputApi = $("#cfg-api");
+  const inputMux = $("#cfg-mux");
+  $("#btnSettings").addEventListener("click", ()=> {
+    inputApi.value = getApiBase();
+    inputMux.value = getMuxKey();
+    modal.classList.add("show");
+    modal.setAttribute("aria-hidden","false");
+  });
+  $("#cfg-close").addEventListener("click", ()=> {
+    modal.classList.remove("show");
+    modal.setAttribute("aria-hidden","true");
+  });
+  $("#cfg-save").addEventListener("click", ()=> {
+    setApiBase(inputApi.value);
+    setMuxKey(inputMux.value);
+    modal.classList.remove("show");
+    modal.setAttribute("aria-hidden","true");
+    checkHints();
+    showToast("Configurações salvas", "success");
+  });
+  $("#cfg-clear").addEventListener("click", ()=> {
+    clearToken();
+    $("#jwt").value = "";
+    showToast("Token limpo", "success");
+    checkHints();
+  });
 }
 
 // ===== Init =====
 (function init(){
-  window.addEventListener("error", (e)=>{
-    log("JS ERROR: " + (e.message||String(e.error||e)));
-  });
+  window.addEventListener("error", (e)=>{ log("JS ERROR: " + (e.message||String(e.error||e))); });
 
   $("#jwt").value = readToken();
   $("#btnSaveToken").addEventListener("click", ()=>{
     const ok = saveToken(String($("#jwt").value||"").trim());
-    alert(ok ? "Token salvo." : "Falha ao salvar token.");
+    showToast(ok ? "Token salvo" : "Falha ao salvar token", ok ? "success":"error");
     checkHints();
   });
   $("#btnDecode").addEventListener("click", decodeJwt);
   $("#btnHealth").addEventListener("click", health);
+  bindSettings();
 
   document.querySelectorAll('nav a[data-section]').forEach(a=>{
     a.addEventListener("click", (e)=>{
