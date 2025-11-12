@@ -1,9 +1,40 @@
-/* Reset e fontes base */
-html, body {
-  padding: 0;
-  margin: 0;
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  background: #fafafa;
-  color: #222;
+:root {
+  --font-sans: system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --radius-sm: 4px;
+  --radius: 8px;
+  --color-bg: #fafafa;
+  --color-surface: #fff;
+  --color-border: #e2e2e2;
+  --color-border-strong: #d0d0d0;
+  --color-text: #222;
+  --color-text-soft: #555;
+  --color-primary: #5c3ef7;
+  --color-primary-hover: #4729e6;
+  --color-accent: #0366d6;
+  --color-danger: #d9363e;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.05);
+  --shadow: 0 2px 8px -2px rgba(0,0,0,.1), 0 1px 3px rgba(0,0,0,.08);
 }
+
 * { box-sizing: border-box; }
+html, body { margin:0; padding:0; font-family: var(--font-sans); background: var(--color-bg); color: var(--color-text); }
+a { color: var(--color-accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+::-webkit-scrollbar { width: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #ccc; border-radius: 6px; }
+::-webkit-scrollbar-thumb:hover { background: #aaa; }
+
+h1,h2,h3 { font-weight: 600; line-height: 1.2; }
+
+code {
+  background: #f1f1f5;
+  padding: 2px 5px;
+  border-radius: var(--radius-sm);
+  font-size: .85rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,"Liberation Mono","Courier New",monospace;
+}
+
+.fade-in { animation: fade .25s ease; }
+@keyframes fade { from { opacity:0; transform: translateY(4px);} to {opacity:1; transform:translateY(0);} }
