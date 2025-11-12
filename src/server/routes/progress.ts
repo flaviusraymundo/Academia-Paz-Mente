@@ -9,6 +9,7 @@ import {
   getActiveEntitlements,
   hasActiveCourseEntitlement,
 } from "../lib/entitlements.js";
+import { issueCertificate } from "../lib/certificates.js";
 
 const router = Router();
 
@@ -398,6 +399,72 @@ router.get("/me/progress-summary", requireAuth, async (req: Request, res: Respon
   } catch (err) {
     console.error("me/progress-summary error", err);
     return res.status(500).json({ error: "server_error" });
+  }
+});
+
+// ===== ADD: POST /api/me/certificates/:courseId/issue =====
+// Observações:
+// - Alias “/me” autenticado para o fluxo de emissão do próprio aluno.
+// - Reutiliza issueCertificate (mesma lógica do módulo de certificados).
+// - Retorna verifyUrl e pdf_url consistentes.
+function publicBase(req: Request) {
+  const envBase = process.env.APP_BASE_URL?.trim();
+  if (envBase) return envBase.replace(/\/+$/, "");
+  const host = req.get("host") ?? "";
+  return `${req.protocol}://${host}`;
+}
+function buildPdfUrl(base: string, userId: string, courseId: string, hash?: string | null) {
+  const path = `/api/certificates/${encodeURIComponent(userId)}/${encodeURIComponent(courseId)}.pdf`;
+  if (hash) return `${base}${path}?h=${encodeURIComponent(hash)}`;
+  return `${base}${path}`;
+}
+
+router.post("/me/certificates/:courseId/issue", async (req: Request, res: Response) => {
+  const userId = req.auth?.userId;
+  const courseId = String(req.params.courseId || "");
+  if (!userId) return res.status(401).json({ error: "unauthorized" });
+  if (!isUuid(courseId)) return res.status(400).json({ error: "invalid_course_id" });
+
+  const reissue = String(req.query.reissue || "") === "1";
+  const keepIssuedAt = String(req.query.keepIssuedAt || "") === "1";
+  const fullNameQ =
+    typeof req.query.fullName === "string" ? req.query.fullName.trim() : undefined;
+  const fullName = fullNameQ && fullNameQ.length > 0 ? fullNameQ : undefined;
+
+  try {
+    const row = await withClient((client) =>
+      issueCertificate({
+        client,
+        userId,
+        courseId,
+        reissue,
+        keepIssuedAt,
+        fullName,
+      })
+    );
+
+    const base = publicBase(req);
+    const verifyUrl = row.serial ? `${base}/api/certificates/verify/${row.serial}` : null;
+    const pdfUrl = buildPdfUrl(base, row.user_id, row.course_id, row.hash);
+
+    return res.json({
+      id: row.id,
+      user_id: row.user_id,
+      course_id: row.course_id,
+      issued_at: row.issued_at,
+      pdf_url: pdfUrl,
+      serial: row.serial ?? null,
+      hash: row.hash ?? null,
+      verifyUrl,
+      reissue,
+      keepIssuedAt,
+    });
+  } catch (e: any) {
+    const msg = String(e?.message || e);
+    if (/eligible|not_eligible|forbidden/i.test(msg)) {
+      return res.status(409).json({ error: "not_eligible", detail: msg });
+    }
+    return res.status(500).json({ error: "issue_failed", detail: msg });
   }
 });
 

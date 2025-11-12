@@ -57,6 +57,124 @@ const normBool = (v: unknown): boolean => {
   return Boolean(v);
 };
 
+// ===== ADD: GET /api/quizzes/:quizId (aluno) =====
+// Observações:
+// - Requer JWT (o app já monta quizzesRouter sob requireAuth).
+// - Valida quizId, carrega quiz + módulo + curso.
+// - Se ENTITLEMENTS_ENFORCE=1, exige entitlement ativo para o curso.
+// - Bloqueia acesso se módulo anterior não estiver "passed" (regra alinhada ao /api/me/items).
+// - Retorna questões sem answerKey (não expor gabarito no fetch).
+router.get("/:quizId", async (req: Request, res: Response) => {
+  const quizId = String(req.params.quizId || "");
+  if (!isUuid(quizId)) return res.status(400).json({ error: "invalid_quiz_id" });
+
+  const userId = req.auth?.userId;
+  if (!userId) return res.status(401).json({ error: "unauthorized" });
+
+  const client = await pool.connect();
+  try {
+    // Carrega quiz + módulo + curso
+    const quizQ = await client.query(
+      `
+      select q.id, q.module_id, q.pass_score, m.course_id, m."order"
+        from quizzes q
+        join modules m on m.id = q.module_id
+       where q.id = $1
+       limit 1
+      `,
+      [quizId]
+    );
+    if (!quizQ.rowCount) {
+      client.release();
+      return res.status(404).json({ error: "quiz_not_found" });
+    }
+    const quiz = quizQ.rows[0] as {
+      id: string;
+      module_id: string;
+      pass_score: number;
+      course_id: string;
+      order: number;
+    };
+
+    // Entitlement (opcional por env)
+    if (process.env.ENTITLEMENTS_ENFORCE === "1") {
+      const ent = await client.query(
+        `
+        select 1
+          from entitlements
+         where user_id = $1
+           and course_id = $2
+           and status = 'active'
+           and (expires_at is null or expires_at > now())
+         limit 1
+        `,
+        [userId, quiz.course_id]
+      );
+      if (!ent.rowCount) {
+        client.release();
+        return res.status(403).json({ error: "no_entitlement" });
+      }
+    }
+
+    // Desbloqueio por pré-requisito: módulo anterior precisa estar "passed"
+    const prevOrderQ = await client.query(
+      `select max("order") as prev_order from modules where course_id = $1 and "order" < $2`,
+      [quiz.course_id, quiz.order]
+    );
+    const prevOrder = prevOrderQ.rows[0]?.prev_order;
+    if (prevOrder !== null && prevOrder !== undefined) {
+      const prevStatusQ = await client.query(
+        `
+        select p.status
+          from progress p
+         where p.user_id = $1
+           and p.module_id in (
+             select id from modules where course_id = $2 and "order" = $3
+           )
+         limit 1
+        `,
+        [userId, quiz.course_id, prevOrder]
+      );
+      const status = String(prevStatusQ.rows[0]?.status || "");
+      if (status !== "passed") {
+        client.release();
+        return res.status(403).json({ error: "forbidden" });
+      }
+    }
+
+    // Carrega questões (sem answer_key)
+    const questionsQ = await client.query(
+      `
+      select id, kind, body, choices
+        from questions
+       where quiz_id = $1
+       order by id
+      `,
+      [quizId]
+    );
+
+    client.release();
+    return res.json({
+      quiz: {
+        id: quiz.id,
+        moduleId: quiz.module_id,
+        passScore: Number(quiz.pass_score),
+        questions: questionsQ.rows.map((q: any) => ({
+          id: q.id,
+          kind: q.kind,
+          body: q.body || {},
+          choices: q.choices || [],
+        })),
+      },
+    });
+  } catch (e: any) {
+    try {
+      client.release();
+    } catch {}
+    return res.status(500).json({ error: "quiz_fetch_failed", detail: String(e?.message || e) });
+  }
+});
+
 router.post("/:quizId/submit", async (req: Request, res: Response) => {
   const { quizId } = req.params;
   if (!isUuid(quizId)) {
