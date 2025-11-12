@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { apiGet } from "../lib/api";
+import { apiGet, getApiBase } from "../lib/api";
 
 interface CatalogItem {
   id: string;
@@ -38,19 +38,19 @@ export default function CatalogPage() {
     load();
   }, [jwt]);
 
-  const apiBase = process.env.NEXT_PUBLIC_API_BASE;
+  const apiBase = getApiBase();
 
   return (
     <div>
       <h2>Catálogo</h2>
       {!apiBase && (
         <div style={{ background: "#fff3cd", border: "1px solid #ffe08a", padding: 12, borderRadius: 8, marginBottom: 12 }}>
-          Defina NEXT_PUBLIC_API_BASE no Netlify para apontar a API.
+          Defina NEXT_PUBLIC_API_BASE no ambiente (Netlify/Codespaces) para apontar a API.
         </div>
       )}
       {!jwt && (
         <div style={{ background: "#e7f0ff", border: "1px solid #c6dafd", padding: 12, borderRadius: 8, marginBottom: 12 }}>
-          Entre primeiro (botão “Entrar” no topo) para carregar o catálogo.
+          Clique em “Entrar” (topo) e cole seu token para carregar o catálogo.
         </div>
       )}
       {loading && <div>Carregando...</div>}
