@@ -42,6 +42,7 @@
       .modal .dialog h3{margin:0 0 8px 0}
       .modal .dialog .row{margin-top:8px}
       .modal .dialog input{width:100%;padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-family:monospace}
+      .modal .dialog .hint{font-size:12px;color:#666}
     </style>
     <script type="module" src="https://cdn.jsdelivr.net/npm/@mux/mux-player"></script>
   </head>
@@ -61,6 +62,7 @@
           <a href="#" data-section="course">Curso</a>
           <a href="#" data-section="certs">Certificados</a>
           <a href="#" data-section="debug">Debug</a>
+          <a href="./verify.html" target="_blank">Verificar certificado</a>
         </nav>
       </div>
     </header>
@@ -114,6 +116,21 @@
           <button id="cfg-save" class="btn">Salvar</button>
           <button id="cfg-close" class="btn">Fechar</button>
           <button id="cfg-clear" class="btn">Limpar token</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Emitir Certificado -->
+    <div id="issue-modal" class="modal" aria-hidden="true">
+      <div class="dialog">
+        <h3>Emitir certificado</h3>
+        <div class="hint">Opcional: nome completo impresso no certificado.</div>
+        <div class="row">
+          <input id="issue-fullname" placeholder="Nome completo (opcional)"/>
+        </div>
+        <div class="row">
+          <button id="issue-run" class="btn">Emitir</button>
+          <button id="issue-close" class="btn">Fechar</button>
         </div>
       </div>
     </div>
