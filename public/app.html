@@ -28,10 +28,25 @@
       #log{white-space:pre-wrap;max-height:320px;overflow:auto;background:#111;color:#d4d4d4}
       #log a{color:#58a6ff}
       .log-wrap{margin-top:18px}
+      /* Toasts */
+      #toast-container{position:fixed;top:12px;right:12px;display:flex;flex-direction:column;gap:8px;z-index:9999}
+      .toast{font:13px/1.4 system-ui,sans-serif;padding:10px 14px;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.15);background:#f0f4ff;border:1px solid #c6dafd;color:#222;opacity:0;transform:translateY(-6px);transition:opacity .25s, transform .25s;max-width:360px}
+      .toast.error{background:#ffe5e5;border-color:#ffb4b4}
+      .toast.success{background:#e7f9ed;border-color:#b8e7c7}
+      .toast.warn{background:#fff7d6;border-color:#ffe08a}
+      /* Modal */
+      .modal{position:fixed;inset:0;background:rgba(0,0,0,.3);display:none;align-items:center;justify-content:center;z-index:9998}
+      .modal.show{display:flex}
+      .modal .dialog{background:#fff;border-radius:10px;min-width:320px;max-width:560px;padding:14px;border:1px solid #eee}
+      .modal .dialog h3{margin:0 0 8px 0}
+      .modal .dialog .row{margin-top:8px}
+      .modal .dialog input{width:100%;padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-family:monospace}
     </style>
     <script type="module" src="https://cdn.jsdelivr.net/npm/@mux/mux-player"></script>
   </head>
   <body>
+    <div id="toast-container"></div>
+
     <header>
       <div class="row">
         <strong>JWT:</strong>
@@ -39,6 +54,7 @@
         <button id="btnSaveToken" class="btn">Salvar</button>
         <button id="btnDecode" class="btn">Decodificar</button>
         <button id="btnHealth" class="btn">Health</button>
+        <button id="btnSettings" class="btn">Configurar</button>
         <nav>
           <a href="#" data-section="catalog">Catálogo</a>
           <a href="#" data-section="course">Curso</a>
@@ -78,6 +94,26 @@
           <pre id="log"></pre>
         </div>
       </section>
+    </div>
+
+    <!-- Modal Settings -->
+    <div id="settings" class="modal" aria-hidden="true">
+      <div class="dialog">
+        <h3>Configurações</h3>
+        <div class="row">
+          <label style="min-width:140px;display:inline-block">API Base (opcional)</label>
+          <input id="cfg-api" placeholder="ex.: https://seu-backend.netlify.app"/>
+        </div>
+        <div class="row">
+          <label style="min-width:140px;display:inline-block">Mux Data Env Key</label>
+          <input id="cfg-mux" placeholder="MUX_DATA_ENV_KEY (para analytics)"/>
+        </div>
+        <div class="row">
+          <button id="cfg-save" class="btn">Salvar</button>
+          <button id="cfg-close" class="btn">Fechar</button>
+          <button id="cfg-clear" class="btn">Limpar token</button>
+        </div>
+      </div>
     </div>
 
     <script type="module" src="./app.js"></script>
