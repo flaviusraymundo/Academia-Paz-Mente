@@ -1,6 +1,10 @@
 [build]
   base = "web"
-  command = "npm run build"
+  command = "npm run export"
+  publish = "web/out"
 
-[[plugins]]
-  package = "@netlify/plugin-nextjs"
+# Para roteamento SPA (rotas dinâmicas client-side):
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
