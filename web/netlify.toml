@@ -1,15 +1,7 @@
 [build]
   base = "web"
   command = "npm run build"
-  # Não defina publish aqui; o plugin cuida disso.
+  # publish: gerenciado pelo plugin
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
-
-# Importante: REMOVER o redirect SPA que manda tudo para /index.html para não quebrar SSR.
-# Se você tinha:
-# [[redirects]]
-#   from = "/*"
-#   to = "/index.html"
-#   status = 200
-# apague-o deste arquivo.
