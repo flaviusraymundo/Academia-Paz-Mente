@@ -307,6 +307,89 @@ paths:
         "500":
           $ref: "#/components/responses/ServerError"
 
+  /quizzes/{quizId}:
+    get:
+      summary: Get quiz and its questions for the authenticated learner
+      parameters:
+        - in: path
+          name: quizId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  quiz:
+                    type: object
+                    properties:
+                      id: { type: string, format: uuid }
+                      moduleId: { type: string, format: uuid }
+                      passScore: { type: integer }
+                      questions:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id: { type: string }
+                            kind: { type: string }
+                            body: { type: object, additionalProperties: true }
+                            choices:
+                              type: array
+                              items: { type: object, additionalProperties: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/ServerError" }
+
+  /me/certificates/{courseId}/issue:
+    post:
+      summary: Issue a course certificate for the authenticated learner
+      parameters:
+        - in: path
+          name: courseId
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: reissue
+          schema: { type: string, enum: ["1"] }
+        - in: query
+          name: keepIssuedAt
+          schema: { type: string, enum: ["1"] }
+        - in: query
+          name: fullName
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  user_id: { type: string }
+                  course_id: { type: string }
+                  issued_at: { type: string }
+                  pdf_url: { type: string }
+                  serial: { type: string, nullable: true }
+                  hash: { type: string, nullable: true }
+                  verifyUrl: { type: string, nullable: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "500": { $ref: "#/components/responses/ServerError" }
+
 components:
   responses:
     BadRequest:
