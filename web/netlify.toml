@@ -1,10 +1,16 @@
-[build]
+  [build]
+  # O app Next está na pasta web
   base = "web"
-  command = "npm run export"
-  publish = "web/out"
+  # Não use mais `next export`. O `output: 'export'` cuida disso ao rodar build.
+  command = "npm run build"
+  # Como base = "web", o publish deve ser relativo: "out"
+  publish = "out"
 
-# Para roteamento SPA (rotas dinâmicas client-side):
+# Fallback SPA para aceitar deep links (rotas do App Router)
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
+
+[build.environment]
+  NEXT_PUBLIC_MARKER = "ALUNO_EXPORT"
