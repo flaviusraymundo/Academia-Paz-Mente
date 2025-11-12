@@ -29,14 +29,30 @@ export default function CatalogPage() {
   }, []);
 
   useEffect(() => {
-    if (!jwt) { setLoading(false); return; }
+    // JWT ausente: refletir estado não autenticado e limpar dados sensíveis
+    if (!jwt) {
+      setLoading(false);
+      setErr(null);        // evita mostrar erro antigo após logout
+      setCatalog(null);    // evita exibir cursos privados após logout
+      return;
+    }
+
     let alive = true;
     (async () => {
       setLoading(true);
+      setErr(null);        // limpa erro antes da nova tentativa
+
       const { status, body } = await api("/api/catalog");
       if (!alive) return;
-      if (status === 200 && typeof body === "object") setCatalog(body);
-      else setErr({ status, body });
+
+      if (status === 200 && typeof body === "object") {
+        setCatalog(body);
+        setErr(null);      // garante que erro não persiste após sucesso
+      } else {
+        setCatalog(null);  // não manter dados possivelmente antigos
+        setErr({ status, body });
+      }
+
       setLoading(false);
     })();
     return () => { alive = false; };
