@@ -39,4 +39,12 @@
 
 [context.next-static.build.environment]
   NEXT_PUBLIC_MARKER = "ALUNO_EXPORT"
-############################################
+###########################################
+
+[context.next-plugin.build]
+  base = "web"
+  command = "npm run build"
+  publish = "web/.next"
+
+[[context.next-plugin.plugins]]
+  package = "@netlify/plugin-nextjs"
