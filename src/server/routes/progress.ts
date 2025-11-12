@@ -140,10 +140,30 @@ async function meItemsHandler(req: Request, res: Response) {
         items[i].unlocked = prev.progress.status === "passed";
       }
     }
-
+    
     for (const item of items) {
       item.itemCount = item.items.length;
     }
+    // PATCH (append-only): normalizar campos de item antes do retorno, logo antes do 'return res.json({ items });'
+    // Normalização de campos úteis para o front (evita depender de payload_ref bruto)
+    for (const mod of items) {
+      for (const it of (mod.items as any[])) {
+        const ref = it.payload_ref || {};
+        if (it.type === "video") {
+          it.playbackId =
+            ref.mux_playback_id ||
+            ref.muxPlaybackId ||
+            ref.playback_id ||
+            ref.playbackId ||
+            null;
+        } else if (it.type === "text") {
+          it.docMeta = {
+            docId: ref.doc_id || ref.docId || null,
+            title: ref.title || null,
+          };
+        }
+      }
+    }    
 
     return res.json({ items });
   } catch (err) {
@@ -465,7 +485,7 @@ router.post("/me/certificates/:courseId/issue", async (req: Request, res: Respon
       return res.status(409).json({ error: "not_eligible", detail: msg });
     }
     return res.status(500).json({ error: "issue_failed", detail: msg });
-  }
+  }  
 });
 
 export default router;
