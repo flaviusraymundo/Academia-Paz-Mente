@@ -692,6 +692,28 @@ ends_at: 2025-03-01T12:00:00Z
     <pre id="dcs-out" style="white-space:pre-wrap;border:1px solid #ddd;padding:8px;margin-top:8px;"></pre>
   </section>
 
+  <!-- === Auditoria (lista) === -->
+  <section id="admin-audit" data-testid="admin-audit-section">
+    <h2>Auditoria</h2>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+      <input id="au-action" data-testid="admin-audit-action" placeholder="action (ex.: courses.%)" size="22" />
+      <input id="au-entityType" data-testid="admin-audit-entity" placeholder="entityType" size="14" />
+      <input id="au-actor" data-testid="admin-audit-actor" placeholder="actor (email)" size="24" />
+      <input id="au-limit" data-testid="admin-audit-limit" type="number" min="1" max="200" value="50" style="width:90px" />
+      <button id="au-run" data-testid="admin-audit-run" type="button">Carregar eventos</button>
+    </div>
+    <small style="color:#555">Use <code>*</code> como wildcard (ex.: <code>courses.*</code>) nos filtros de action/actor.</small>
+    <pre id="au-out" data-testid="admin-audit-output" style="white-space:pre-wrap;border:1px solid #ddd;padding:8px;margin-top:8px;max-height:260px;overflow:auto;"></pre>
+  </section>
+
+  <!-- === Diagnóstico básico === -->
+  <section id="admin-diagnostics" data-testid="admin-diagnostics-section">
+    <h2>Diagnóstico básico</h2>
+    <p style="margin:4px 0 8px 0;color:#555;">Executa checagens rápidas sobre módulos, itens e quizzes.</p>
+    <button id="dg-run" data-testid="admin-diagnostics-run" type="button">Rodar diagnósticos</button>
+    <pre id="dg-out" data-testid="admin-diagnostics-output" style="white-space:pre-wrap;border:1px solid #ddd;padding:8px;margin-top:8px;max-height:260px;overflow:auto;"></pre>
+  </section>
+
   <script src="/admin.js"></script>
   <script>
     (function(){
