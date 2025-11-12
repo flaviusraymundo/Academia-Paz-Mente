@@ -10,6 +10,7 @@ export default function CatalogPage() {
   const [items, setItems] = useState<Course[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const hint = !process.env.NEXT_PUBLIC_API_BASE ? "Defina NEXT_PUBLIC_API_BASE no Netlify para apontar a API." : null;
 
   useEffect(() => {
     let alive = true;
@@ -26,6 +27,7 @@ export default function CatalogPage() {
   return (
     <div>
       <h1>Catálogo</h1>
+      {hint && <p style={{ color:"#996a00", background:"#fff7d6", padding:"6px 8px", border:"1px solid #ffe08a", borderRadius:6 }}>{hint}</p>}
       {loading && <p>Carregando...</p>}
       {err && <pre style={{ color: "crimson" }}>{err}</pre>}
       <ul style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 12, padding: 0 }}>
@@ -37,6 +39,9 @@ export default function CatalogPage() {
           </li>
         ))}
       </ul>
+      <div style={{ marginTop: 16 }}>
+        <Link href="/health">/health</Link>
+      </div>
     </div>
   );
 }
