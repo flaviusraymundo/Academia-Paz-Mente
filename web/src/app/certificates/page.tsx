@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api } from "../../lib/api";
+import { useAuth } from "../../contexts/AuthContext";
 
 type Cert = {
   course_id: string;
@@ -12,24 +13,36 @@ type Cert = {
 };
 
 export default function CertificatesPage() {
+  const { jwt, ready } = useAuth();
   const [items, setItems] = useState<Cert[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!ready) return;
+    if (!jwt) {
+      setItems([]);
+      setErr(null);
+      setLoading(false);
+      return;
+    }
+
     let alive = true;
     (async () => {
-      const { status, body } = await api(`/api/certificates?unique=1`);
+      setLoading(true);
+      const { status, body } = await api(`/api/certificates?unique=1`, { jwt });
       if (!alive) return;
       if (status === 200 && Array.isArray(body?.certificates)) {
         setItems(body.certificates);
+        setErr(null);
       } else {
+        setItems([]);
         setErr(JSON.stringify({ status, body }));
       }
       setLoading(false);
     })();
     return () => { alive = false; };
-  }, []);
+  }, [jwt, ready]);
 
   return (
     <div>
