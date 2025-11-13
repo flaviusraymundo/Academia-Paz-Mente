@@ -4,7 +4,7 @@ export type Item = {
   item_id: string;
   type: ItemType;
   order: number;
-  payload_ref: any;
+  payload_ref?: any;
 };
 
 export type Module = {
@@ -12,11 +12,11 @@ export type Module = {
   title: string;
   order: number;
   unlocked: boolean;
-  itemCount: number;
+  itemCount?: number;
   items: Item[];
-  progress: {
+  progress?: {
     status: string;
-    score: number;
-    timeSpentSecs: number;
+    score?: number;
+    timeSpentSecs?: number;
   };
 };

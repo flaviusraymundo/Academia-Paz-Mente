@@ -3,6 +3,7 @@ import Link from "next/link";
 import "./globals.css";
 import { ClientAuthBar } from "../components/ClientAuthBar";
 import { AuthProvider } from "../contexts/AuthContext";
+import { DebugToolbar } from "../components/DebugToolbar";
 
 export const metadata = {
   title: "Academia Paz & Mente - Aluno",
@@ -14,6 +15,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="pt-br">
       <body style={{ margin: 0, fontFamily: "system-ui, sans-serif", background: "#fafafa" }}>
         <AuthProvider>
+          <DebugToolbar />
           <ClientAuthBar />
           <nav style={{ padding: "8px 16px", borderBottom: "1px solid #eee", display: "flex", gap: 16, background: "#fff" }}>
             <Link href="/">Catálogo</Link>

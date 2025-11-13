@@ -7,11 +7,9 @@ import { Card } from "../components/ui/Card";
 import { Skeleton } from "../components/ui/Skeleton";
 import { CourseCard, Course } from "../components/catalog/CourseCard";
 import { TrackSection, Track } from "../components/catalog/TrackSection";
+import { CatalogSchema, CatalogData } from "../schemas/catalog";
 
-type CatalogResponse = {
-  courses?: Course[];
-  tracks?: Track[];
-};
+type CatalogResponse = CatalogData;
 
 export default function CatalogPage() {
   const { jwt, ready } = useAuth();
@@ -35,8 +33,14 @@ export default function CatalogPage() {
       const { status, body } = await api<CatalogResponse>("/api/catalog", { jwt });
       if (!alive) return;
       if (status === 200 && typeof body === "object") {
-        setCatalog(body);
-        setError(null);
+        const parsed = CatalogSchema.safeParse(body);
+        if (parsed.success) {
+          setCatalog(parsed.data);
+          setError(null);
+        } else {
+          setCatalog(null);
+          setError({ status, validationError: parsed.error.flatten() });
+        }
       } else {
         setCatalog(null);
         setError({ status, body });
