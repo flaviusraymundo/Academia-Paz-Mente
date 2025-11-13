@@ -24,7 +24,8 @@ export const ModuleSchema = z.object({
 });
 
 export const ModuleItemsResponseSchema = z.object({
-  items: z.array(ModuleSchema).optional(),
+  // Aceita undefined ou null (compatibilidade com respostas antigas { items: null })
+  items: z.array(ModuleSchema).nullish(),
 });
 
 export type ModuleData = z.infer<typeof ModuleSchema>;
