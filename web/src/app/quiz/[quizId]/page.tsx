@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { api } from "../../../lib/api";
+import { useAuth } from "../../../contexts/AuthContext";
 
 type Question = {
   id: string;
@@ -17,27 +18,40 @@ export default function QuizPage() {
   const [passScore, setPassScore] = useState<number>(0);
   const [out, setOut] = useState<any>(null);
   const [err, setErr] = useState<string | null>(null);
+  const { jwt, ready } = useAuth();
 
   useEffect(() => {
+    if (!ready) return;
+    if (!jwt) {
+      setQuestions([]);
+      setPassScore(0);
+      setErr(null);
+      return;
+    }
     let alive = true;
     (async () => {
       const { status, body } = await api(`/api/quizzes/${encodeURIComponent(quizId)}`);
       if (!alive) return;
       if (status === 200) {
         setQuestions(body.quiz?.questions || []);
-        setPassScore(body.quiz?.passScore || 0);
+        setPassScore(body.quiz?.pass_score || 0);
+        setErr(null);
       } else {
+        setQuestions([]);
+        setPassScore(0);
         setErr(JSON.stringify({ status, body }));
       }
     })();
     return () => { alive = false; };
-  }, [quizId]);
+  }, [quizId, jwt, ready]);
 
   async function submit() {
     // Como payload, enviamos cada questão com a primeira escolha (demo)
     const answers = questions.map(q => ({
       questionId: q.id,
-      choiceIds: Array.isArray(q.choices) && q.choices.length > 0 ? [q.choices[0]?.id ?? q.choices[0]?.value ?? q.choices[0]] : []
+      choiceIds: Array.isArray(q.choices) && q.choices.length > 0
+        ? [q.choices[0]?.id ?? q.choices[0]?.value ?? q.choices[0]]
+        : []
     }));
     const { status, body } = await api(`/api/quizzes/${encodeURIComponent(quizId)}/submit`, {
       method: "POST",
@@ -54,7 +68,7 @@ export default function QuizPage() {
       <ol>
         {questions.map((q, i) => (
           <li key={q.id} style={{ marginBottom: 8 }}>
-            <div><strong>Q{i+1}</strong>: {JSON.stringify(q.body)}</div>
+            <div><strong>Q{i + 1}</strong>: {JSON.stringify(q.body)}</div>
             <div style={{ color: "#555" }}>choices: {JSON.stringify(q.choices)}</div>
           </li>
         ))}
