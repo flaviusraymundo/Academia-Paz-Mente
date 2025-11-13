@@ -1,13 +1,25 @@
+import type { CSSProperties } from "react";
 import Link from "next/link";
 import { Item } from "../../types/course";
 
 export function ItemRow({ item, courseId, moduleId }: { item: Item; courseId: string; moduleId: string }) {
-  const link =
-    item.type === "quiz"
-      ? `/quiz/${encodeURIComponent(item.payload_ref?.quiz_id || "")}`
-      : item.type === "video"
-      ? `/video/${encodeURIComponent(item.item_id)}?courseId=${encodeURIComponent(courseId)}&moduleId=${encodeURIComponent(moduleId)}`
-      : `/text/${encodeURIComponent(item.item_id)}?courseId=${encodeURIComponent(courseId)}&moduleId=${encodeURIComponent(moduleId)}`;
+  const t = String(item.type || "").toLowerCase();
+  const isQuiz = t === "quiz";
+  const isVideo = t === "video";
+  const isText = t === "text";
+
+  const ref: any = (item as any).payload_ref ?? (item as any).payloadRef ?? {};
+  const quizId = ref?.quiz_id || "";
+
+  const link = isQuiz
+    ? quizId
+      ? `/quiz/${encodeURIComponent(quizId)}`
+      : undefined
+    : isVideo
+    ? `/video/${encodeURIComponent(item.item_id)}?courseId=${encodeURIComponent(courseId)}&moduleId=${encodeURIComponent(moduleId)}`
+    : isText
+    ? `/text/${encodeURIComponent(item.item_id)}?courseId=${encodeURIComponent(courseId)}&moduleId=${encodeURIComponent(moduleId)}`
+    : undefined;
 
   return (
     <li
@@ -22,26 +34,34 @@ export function ItemRow({ item, courseId, moduleId }: { item: Item; courseId: st
     >
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         <span style={{ color: "#777", fontSize: 12 }}>{item.order}.</span>
-        <strong style={{ textTransform: "uppercase", fontSize: 12, color: "#333" }}>{item.type}</strong>
+        <strong style={{ textTransform: "uppercase", fontSize: 12, color: "#333" }}>{t.toUpperCase()}</strong>
         <span style={{ fontSize: 12, color: "#666" }}>itemId: <code>{item.item_id}</code></span>
       </div>
       <div style={{ marginTop: 8 }}>
-        <Link
-          href={link}
-          style={{
-            display: "inline-block",
-            background: "var(--color-primary)",
-            color: "#fff",
-            padding: "6px 10px",
-            borderRadius: 6,
-            fontSize: 13,
-            textDecoration: "none",
-          }}
-          data-testid={`course-module-item-link-${moduleId}-${item.item_id}`}
-        >
-          Abrir {item.type}
-        </Link>
+        {link ? (
+          <Link
+            href={link}
+            style={primaryBtn}
+            data-testid={`course-module-item-link-${moduleId}-${item.item_id}`}
+          >
+            Abrir {isQuiz ? "quiz" : isVideo ? "vídeo" : "texto"}
+          </Link>
+        ) : (
+          <span style={{ fontSize: 12, color: "#777" }}>
+            {isQuiz ? "quiz_id ausente no payload_ref" : "Tipo não suportado para abertura direta."}
+          </span>
+        )}
       </div>
     </li>
   );
 }
+
+const primaryBtn: CSSProperties = {
+  display: "inline-block",
+  background: "var(--color-primary)",
+  color: "#fff",
+  padding: "6px 10px",
+  borderRadius: 6,
+  fontSize: 13,
+  textDecoration: "none",
+};
