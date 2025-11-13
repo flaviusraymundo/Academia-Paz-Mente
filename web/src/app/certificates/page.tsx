@@ -8,7 +8,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import { Card } from "../../components/ui/Card";
 import { Badge } from "../../components/ui/Badge";
 import { Skeleton } from "../../components/ui/Skeleton";
-import { Certificate, CertificateListSchema } from "../../schemas/certificates";
+import { CertificateListSchema, type Certificate } from "../../schemas/certificates";
 
 export default function CertificatesPage() {
   const { jwt, ready } = useAuth();
@@ -34,7 +34,7 @@ export default function CertificatesPage() {
       if (status === 200 && typeof body === "object") {
         const parsed = CertificateListSchema.safeParse(body);
         if (parsed.success) {
-          setItems(parsed.data.certificates || []);
+          setItems(parsed.data.certificates ?? []);
           setErr(null);
         } else {
           setItems([]);
@@ -106,7 +106,7 @@ export default function CertificatesPage() {
             <Card key={c.serial ?? c.id ?? `${c.courseId ?? "unknown"}-${index}`} style={{ gap: 8 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                  <strong>Serial:</strong> <code>{c.serial}</code>
+                  <strong>Serial:</strong> <code>{c.serial ?? "-"}</code>
                   {c.status && <Badge tone={c.status === "valid" ? "success" : "neutral"}>{c.status}</Badge>}
                   {c.issuedAt && <Badge tone="info">{new Date(c.issuedAt).toLocaleDateString()}</Badge>}
                 </div>
@@ -120,12 +120,20 @@ export default function CertificatesPage() {
                       Verificar
                     </Link>
                   ) : (
-                    <span style={{ fontSize: 12, color: "#777" }}>serial ausente</span>
+                    <span style={{ ...linkBtn, opacity: 0.6, pointerEvents: "none" as const }}>Sem serial</span>
                   )}
-                  {c.url && (
-                    <a href={c.url} target="_blank" rel="noreferrer" style={primaryBtn} data-testid={`certificate-download-${c.serial ?? index}`}>
+                  {c.url ? (
+                    <a
+                      href={c.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={primaryBtn}
+                      data-testid={`certificate-download-${c.serial ?? index}`}
+                    >
                       Baixar PDF
                     </a>
+                  ) : (
+                    <span style={{ ...linkBtn, opacity: 0.6, pointerEvents: "none" as const }}>Sem PDF</span>
                   )}
                 </div>
               </div>

@@ -6,7 +6,7 @@ import { api } from "../../../lib/api";
 import { Card } from "../../../components/ui/Card";
 import { Badge } from "../../../components/ui/Badge";
 import { Skeleton } from "../../../components/ui/Skeleton";
-import { CertificateVerifySchema } from "../../../schemas/certificates";
+import { CertificateVerifyRawSchema } from "../../../schemas/certificates";
 
 export default function CertificateVerifyPage() {
   const { serial } = useParams<{ serial: string }>();
@@ -25,9 +25,11 @@ export default function CertificateVerifyPage() {
         const { status, body } = await api(`/api/certificates/verify?${qs.toString()}`);
         if (!alive) return;
         if (status === 200 && typeof body === "object") {
-          const parsed = CertificateVerifySchema.safeParse(body);
+          const parsed = CertificateVerifyRawSchema.safeParse(body);
           if (parsed.success) {
-            setData(parsed.data);
+            const normalized = parsed.data as any;
+            const valid = Boolean(normalized?.serial || normalized?.url || normalized?.courseId);
+            setData({ ...normalized, valid });
             setErr(null);
           } else {
             setData(null);
@@ -78,7 +80,9 @@ export default function CertificateVerifyPage() {
         <Card style={{ gap: 8 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <strong>Resultado</strong>
-            <Badge tone={data.valid ? "success" : "warn"}>{data.valid ? "válido" : "inválido"}</Badge>
+            {"valid" in data && (
+              <Badge tone={data.valid ? "success" : "warn"}>{data.valid ? "válido" : "inválido"}</Badge>
+            )}
           </div>
           <div style={{ fontSize: 13 }}>
             {data.courseId && (
