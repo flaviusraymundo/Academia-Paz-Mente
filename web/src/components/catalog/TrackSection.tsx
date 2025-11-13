@@ -1,13 +1,19 @@
 import { Card } from "../ui/Card";
 import { Badge } from "../ui/Badge";
-import { Course, CourseCard } from "./CourseCard";
+import { CourseCard, Course } from "./CourseCard";
 
-interface Track {
+interface TrackRel {
+  courseId: string;
+  order: number;
+  required: boolean;
+}
+
+export interface Track {
   id: string;
   slug?: string;
   title: string;
   active?: boolean;
-  courses: { courseId: string; order: number; required: boolean }[];
+  courses: TrackRel[];
 }
 
 export function TrackSection({ track, coursesById }:{
@@ -23,6 +29,7 @@ export function TrackSection({ track, coursesById }:{
       </div>
       <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
         {track.courses
+          .slice()
           .sort((a,b)=>a.order-b.order)
           .map(rel => {
             const c = coursesById[rel.courseId];
