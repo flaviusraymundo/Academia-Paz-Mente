@@ -1,15 +1,15 @@
-//page.tsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { api } from "../../../lib/api";
 import { useAuth } from "../../../contexts/AuthContext";
-import type { Module } from "../../../types/course";
+import { Module } from "../../../types/course";
 import { CourseHeader } from "../../../components/course/CourseHeader";
 import { ModuleCard } from "../../../components/course/ModuleCard";
 import { Card } from "../../../components/ui/Card";
 import { Skeleton } from "../../../components/ui/Skeleton";
+import { ModuleItemsResponseSchema } from "../../../schemas/modules";
 
 export default function CoursePage() {
   const params = useParams<{ courseId: string }>();
@@ -21,9 +21,11 @@ export default function CoursePage() {
 
   useEffect(() => {
     if (!ready) return;
+
     if (!jwt) {
       setMods([]);
       setErr(null);
+      setLoading(false);
       return;
     }
 
@@ -33,11 +35,18 @@ export default function CoursePage() {
       setErr(null);
       try {
         const qs = new URLSearchParams({ courseId });
-        const { status, body } = await api(`/api/me/items?${qs.toString()}`);
+        const { status, body } = await api(`/api/me/items?${qs.toString()}`, { jwt });
         if (!alive) return;
+
         if (status === 200) {
-          setMods(body.items || []);
-          setErr(null);
+          const parsed = ModuleItemsResponseSchema.safeParse(body);
+          if (parsed.success) {
+            setMods(parsed.data.items || []);
+            setErr(null);
+          } else {
+            setMods([]);
+            setErr(JSON.stringify({ status, validationError: parsed.error.flatten() }));
+          }
         } else {
           setMods([]);
           setErr(JSON.stringify({ status, body }));
@@ -51,19 +60,26 @@ export default function CoursePage() {
         setLoading(false);
       }
     })();
+
     return () => {
       alive = false;
     };
   }, [courseId, jwt, ready]);
 
   const DEBUG = process.env.NEXT_PUBLIC_DEBUG === "1";
+  const title = useMemo(() => `Curso`, []);
 
   return (
     <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <CourseHeader
-        title={<>
-          Curso <span style={{ fontSize: 12, color: "#777", marginLeft: 8 }}><code>{courseId}</code></span>
-        </>}
+        title={
+          <>
+            {title}{" "}
+            <span style={{ fontSize: 12, color: "#777", marginLeft: 8 }}>
+              <code>{courseId}</code>
+            </span>
+          </>
+        }
         right={
           DEBUG ? (
             <div style={{ display: "flex", gap: 8 }}>
@@ -74,14 +90,20 @@ export default function CoursePage() {
       />
 
       {!ready && (
-        <div data-testid="course-loading-placeholder" style={{ display: "grid", gap: 10 }}>
-          <Card><Skeleton h={16} w="40%" /><Skeleton h={12} w="90%" /></Card>
-          <Card><Skeleton h={16} w="60%" /><Skeleton h={12} w="85%" /></Card>
+        <div style={{ display: "grid", gap: 10 }}>
+          <Card>
+            <Skeleton h={16} w="40%" />
+            <Skeleton h={12} w="90%" />
+          </Card>
+          <Card>
+            <Skeleton h={16} w="60%" />
+            <Skeleton h={12} w="85%" />
+          </Card>
         </div>
       )}
 
       {ready && !jwt && (
-        <Card data-testid="course-auth-warning">
+        <Card>
           <strong>Não autenticado</strong>
           <p style={{ margin: 0, fontSize: 13, color: "var(--color-text-soft)" }}>
             Clique em “Entrar” (topo) para visualizar o conteúdo do curso.
@@ -90,7 +112,7 @@ export default function CoursePage() {
       )}
 
       {ready && jwt && loading && (
-        <div data-testid="course-modules-loading" style={{ display: "grid", gap: 12 }}>
+        <div style={{ display: "grid", gap: 12 }}>
           {Array.from({ length: 3 }).map((_, i) => (
             <Card key={i}>
               <Skeleton h={18} w="50%" />
@@ -102,18 +124,18 @@ export default function CoursePage() {
       )}
 
       {ready && jwt && err && !loading && (
-        <Card data-testid="course-error" style={{ borderColor: "#f2c2c2", background: "#fff6f6", color: "#842029" }}>
+        <Card style={{ borderColor: "#f2c2c2", background: "#fff6f6", color: "#842029" }}>
           <strong>Erro ao carregar módulos</strong>
           <pre style={{ margin: 0, whiteSpace: "pre-wrap", fontSize: 12 }}>{err}</pre>
         </Card>
       )}
 
       {ready && jwt && !err && !loading && mods.length === 0 && (
-        <p data-testid="course-empty-state" style={{ fontSize: 14, color: "#555" }}>Nenhum módulo disponível.</p>
+        <p style={{ fontSize: 14, color: "#555" }}>Nenhum módulo disponível.</p>
       )}
 
       {ready && jwt && !err && !loading && mods.length > 0 && (
-        <div data-testid="course-modules" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           {mods
             .slice()
             .sort((a, b) => a.order - b.order)

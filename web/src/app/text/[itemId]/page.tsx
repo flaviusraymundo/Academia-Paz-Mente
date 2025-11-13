@@ -16,7 +16,8 @@ export default function TextItemPage() {
   async function pageRead() {
     const { status, body } = await api(`/api/events/page-read`, {
       method: "POST",
-      body: JSON.stringify({ courseId, moduleId, itemId, ms: 15000 })
+      body: JSON.stringify({ courseId, moduleId, itemId, ms: 15000 }),
+      jwt
     });
     setOut({ status, body });
   }

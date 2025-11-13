@@ -1,6 +1,6 @@
-import { Badge } from "../ui/Badge";
-import { Card } from "../ui/Card";
 import Link from "next/link";
+import { Card } from "../ui/Card";
+import { Badge } from "../ui/Badge";
 
 export interface Course {
   id: string;
