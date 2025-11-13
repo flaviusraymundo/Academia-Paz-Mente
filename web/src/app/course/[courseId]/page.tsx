@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { api } from "../../../lib/api";
+import { useAuth } from "../../../contexts/AuthContext";
 
 type Item = { item_id: string; type: "video" | "text" | "quiz"; order: number; payload_ref: any };
 type Module = {
@@ -21,8 +22,16 @@ export default function CoursePage() {
   const courseId = params.courseId;
   const [mods, setMods] = useState<Module[]>([]);
   const [err, setErr] = useState<string | null>(null);
+  const { jwt, ready } = useAuth();
 
   useEffect(() => {
+    if (!ready) return;
+    if (!jwt) {
+      setMods([]);
+      setErr(null);
+      return;
+    }
+
     let alive = true;
     (async () => {
       const qs = new URLSearchParams({ courseId });
@@ -32,7 +41,7 @@ export default function CoursePage() {
       else setErr(JSON.stringify({ status, body }));
     })();
     return () => { alive = false; };
-  }, [courseId]);
+  }, [courseId, jwt, ready]);
 
   return (
     <div>
@@ -55,10 +64,14 @@ export default function CoursePage() {
                   <Link href={`/quiz/${encodeURIComponent(it.payload_ref?.quiz_id || "")}`}>- abrir quiz</Link>
                 )}
                 {it.type === "video" && (
-                  <> - <Link href={`/video/${encodeURIComponent(it.item_id)}?courseId=${encodeURIComponent(courseId)}&moduleId=${encodeURIComponent(m.id)}`}>abrir vídeo</Link></>
+                  <> - <Link href={`/video/${encodeURIComponent(it.item_id)}?courseId=${encodeURIComponent(courseId)}&moduleId=${encodeURIComponent(m.id)}`}>
+                    abrir vídeo
+                  </Link></>
                 )}
                 {it.type === "text" && (
-                  <> - <Link href={`/text/${encodeURIComponent(it.item_id)}?courseId=${encodeURIComponent(courseId)}&moduleId=${encodeURIComponent(m.id)}`}>abrir texto</Link></>
+                  <> - <Link href={`/text/${encodeURIComponent(it.item_id)}?courseId=${encodeURIComponent(courseId)}&moduleId=${encodeURIComponent(m.id)}`}>
+                    abrir texto
+                  </Link></>
                 )}
               </li>
             ))}

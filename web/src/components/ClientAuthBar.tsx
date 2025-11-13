@@ -1,36 +1,25 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useAuth } from "../contexts/AuthContext";
 
 export function ClientAuthBar() {
-  const [jwt, setJwt] = useState("");
+  const { jwt, setJwt, logout } = useAuth();
   const [showModal, setShowModal] = useState(false);
+  const [draft, setDraft] = useState("");
 
   useEffect(() => {
-    try {
-      const t = localStorage.getItem("jwt") || "";
-      if (t) setJwt(t);
-    } catch {}
-  }, []);
+    if (showModal) setDraft(jwt);
+  }, [jwt, showModal]);
 
-  function saveToken(value: string) {
-    try {
-      localStorage.setItem("jwt", value.trim());
-      setJwt(value.trim());
-      setShowModal(false);
-    } catch {
-      alert("Falha ao salvar token.");
-    }
-  }
-
-  function logout() {
-    try { localStorage.removeItem("jwt"); } catch {}
-    setJwt("");
+  function handleSave() {
+    setJwt(draft);
+    setShowModal(false);
   }
 
   return (
     <>
-      <div style={{
+      <div data-e2e="auth-bar" style={{
         padding: "8px 16px",
         borderBottom: "1px solid #eee",
         background: "#fff",
@@ -44,10 +33,10 @@ export function ClientAuthBar() {
           {jwt ? (
             <>
               <span style={{ fontSize: 12, color: "#555" }}>Autenticado</span>
-              <button onClick={logout} style={btnStyle}>Sair</button>
+              <button data-e2e="auth-logout-btn" onClick={logout} style={btnStyle}>Sair</button>
             </>
           ) : (
-            <button onClick={() => setShowModal(true)} style={btnPrimaryStyle}>Entrar</button>
+            <button data-e2e="auth-login-btn" onClick={() => setShowModal(true)} style={btnPrimaryStyle}>Entrar</button>
           )}
         </div>
       </div>
@@ -59,15 +48,16 @@ export function ClientAuthBar() {
               Temporário: cole o JWT (vamos evoluir para login com senha).
             </p>
             <textarea
+              data-e2e="auth-jwt-input"
               rows={4}
               placeholder="Cole o JWT"
               style={areaStyle}
-              onChange={(e) => setJwt(e.target.value)}
-              value={jwt}
+              onChange={(e) => setDraft(e.target.value)}
+              value={draft}
             />
             <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-              <button onClick={() => saveToken(jwt)} style={btnPrimaryStyle}>Salvar</button>
-              <button onClick={() => setShowModal(false)} style={btnStyle}>Cancelar</button>
+              <button data-e2e="auth-save-btn" onClick={handleSave} style={btnPrimaryStyle}>Salvar</button>
+              <button data-e2e="auth-cancel-btn" onClick={() => setShowModal(false)} style={btnStyle}>Cancelar</button>
             </div>
           </div>
         </div>
@@ -82,14 +72,14 @@ const btnStyle: React.CSSProperties = {
   background: "#fff",
   border: "1px solid #ccc",
   borderRadius: 6,
-  cursor: "pointer"
+  cursor: "pointer",
 };
 
 const btnPrimaryStyle: React.CSSProperties = {
   ...btnStyle,
   background: "#0366d6",
   color: "#fff",
-  border: "1px solid #0366d6"
+  border: "1px solid #0366d6",
 };
 
 const modalWrap: React.CSSProperties = {
@@ -99,7 +89,7 @@ const modalWrap: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-  zIndex: 999
+  zIndex: 999,
 };
 
 const modalCard: React.CSSProperties = {
@@ -109,7 +99,7 @@ const modalCard: React.CSSProperties = {
   width: "100%",
   maxWidth: 420,
   boxShadow: "0 4px 18px rgba(0,0,0,.25)",
-  border: "1px solid #e2e2e2"
+  border: "1px solid #e2e2e2",
 };
 
 const areaStyle: React.CSSProperties = {
@@ -119,5 +109,5 @@ const areaStyle: React.CSSProperties = {
   fontSize: 12,
   padding: 8,
   borderRadius: 6,
-  border: "1px solid #ccc"
+  border: "1px solid #ccc",
 };
