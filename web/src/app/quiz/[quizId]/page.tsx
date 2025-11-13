@@ -19,8 +19,8 @@ export default function QuizPage() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // respostas selecionadas: questionId -> choiceId
-  const [answers, setAnswers] = useState<Record<string, string>>({});
+  // respostas selecionadas: questionId -> string[] (mesmo single mantém índice 0)
+  const [answers, setAnswers] = useState<Record<string, string[]>>({});
   const [submitOut, setSubmitOut] = useState<any>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -87,7 +87,9 @@ export default function QuizPage() {
   const allRequiredAnswered = useMemo(() => {
     const required = questions.filter((q) => q.required);
     if (required.length === 0) return true;
-    return required.every((q) => !!answers[q.id]);
+    return required.every(
+      (q) => Array.isArray(answers[q.id]) && answers[q.id].length > 0,
+    );
   }, [questions, answers]);
 
   async function submit() {
@@ -96,7 +98,7 @@ export default function QuizPage() {
     try {
       const payload = questions.map((q) => ({
         questionId: q.id,
-        choiceIds: answers[q.id] ? [answers[q.id]] : [],
+        choiceIds: Array.isArray(answers[q.id]) ? answers[q.id] : [],
       }));
       const { status, body } = await api(`/api/quizzes/${encodeURIComponent(quizId)}/submit`, {
         method: "POST",
@@ -171,9 +173,20 @@ export default function QuizPage() {
             <QuestionCard
               key={q.id}
               q={q}
-              selectedChoiceId={answers[q.id] || null}
-              onSelect={(choiceId) =>
-                setAnswers((prev) => ({ ...prev, [q.id]: choiceId }))
+              selectedChoiceIds={answers[q.id] || []}
+              onToggle={(choiceId) =>
+                setAnswers((prev) => {
+                  const current = prev[q.id] || [];
+                  const isMultiple = q.kind === "multiple";
+                  if (isMultiple) {
+                    const exists = current.includes(choiceId);
+                    const next = exists
+                      ? current.filter((value) => value !== choiceId)
+                      : [...current, choiceId];
+                    return { ...prev, [q.id]: next };
+                  }
+                  return { ...prev, [q.id]: [choiceId] };
+                })
               }
             />
           ))}
