@@ -32,7 +32,7 @@ export default function CatalogPage() {
     (async () => {
       setLoading(true);
       setError(null);
-      const { status, body } = await api<CatalogResponse>("/api/catalog");
+      const { status, body } = await api<CatalogResponse>("/api/catalog", { jwt });
       if (!alive) return;
       if (status === 200 && typeof body === "object") {
         setCatalog(body);

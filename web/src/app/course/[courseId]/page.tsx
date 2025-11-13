@@ -35,7 +35,7 @@ export default function CoursePage() {
     let alive = true;
     (async () => {
       const qs = new URLSearchParams({ courseId });
-      const { status, body } = await api(`/api/me/items?${qs.toString()}`);
+      const { status, body } = await api(`/api/me/items?${qs.toString()}`, { jwt });
       if (!alive) return;
       if (status === 200) setMods(body.items || []);
       else setErr(JSON.stringify({ status, body }));

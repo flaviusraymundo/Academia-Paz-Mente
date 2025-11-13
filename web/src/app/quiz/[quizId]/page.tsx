@@ -30,7 +30,7 @@ export default function QuizPage() {
     }
     let alive = true;
     (async () => {
-      const { status, body } = await api(`/api/quizzes/${encodeURIComponent(quizId)}`);
+      const { status, body } = await api(`/api/quizzes/${encodeURIComponent(quizId)}`, { jwt });
       if (!alive) return;
       if (status === 200) {
         setQuestions(body.quiz?.questions || []);
@@ -55,7 +55,8 @@ export default function QuizPage() {
     }));
     const { status, body } = await api(`/api/quizzes/${encodeURIComponent(quizId)}/submit`, {
       method: "POST",
-      body: JSON.stringify({ answers })
+      body: JSON.stringify({ answers }),
+      jwt
     });
     setOut({ status, body });
   }

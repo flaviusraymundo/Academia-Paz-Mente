@@ -27,7 +27,8 @@ export default function VideoItemPage() {
     let alive = true;
     (async () => {
       const { status, body } = await api(`/api/video/${encodeURIComponent(itemId)}/playback-token`, {
-        method: "POST"
+        method: "POST",
+        jwt
       });
       if (!alive) return;
       if (status === 200) setToken(body?.token || null);
@@ -39,7 +40,8 @@ export default function VideoItemPage() {
   async function beat() {
     const { status, body } = await api(`/api/video/heartbeat`, {
       method: "POST",
-      body: JSON.stringify({ courseId, moduleId, itemId, secs: 15 })
+      body: JSON.stringify({ courseId, moduleId, itemId, secs: 15 }),
+      jwt
     });
     setStatus({ status, body });
   }
