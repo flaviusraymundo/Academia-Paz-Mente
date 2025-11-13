@@ -21,15 +21,22 @@ export const QuestionSchema = z.object({
   choices: z.array(RawChoiceSchema).default([]),
 });
 
+const QuizInnerRaw = z
+  .object({
+    id: z.string().optional(),
+    title: z.string().optional(),
+    questions: z.array(QuestionSchema).default([]),
+    passScore: z.number().optional(),
+    pass_score: z.number().optional(),
+  })
+  .passthrough()
+  .transform((quiz) => ({
+    ...quiz,
+    passScore: quiz.passScore ?? quiz.pass_score ?? 0,
+  }));
+
 export const QuizSchema = z.object({
-  quiz: z
-    .object({
-      id: z.string().optional(),
-      title: z.string().optional(),
-      questions: z.array(QuestionSchema).default([]),
-      passScore: z.number().default(0),
-    })
-    .passthrough(),
+  quiz: QuizInnerRaw,
 });
 
 export type RawChoice = z.infer<typeof RawChoiceSchema>;

@@ -50,12 +50,7 @@ export default function QuizPage() {
             const quizData = parsed.data.quiz;
             const qs = quizData.questions || [];
             setQuestions(qs);
-            const passScoreValue =
-              quizData.passScore ??
-              (typeof (quizData as any).pass_score === "number"
-                ? (quizData as any).pass_score
-                : 0);
-            setPassScore(passScoreValue);
+            setPassScore(quizData.passScore ?? 0);
             setErr(null);
             setAnswers({});
           } else {
