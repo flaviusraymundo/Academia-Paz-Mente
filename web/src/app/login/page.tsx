@@ -1,16 +1,20 @@
 "use client";
-import { Suspense, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { useRouter, useSearchParams } from "next/navigation";
 import { USE_COOKIE_MODE, DEV_FAKE } from "../../lib/config";
 
 function LoginPageInner() {
-  const { login, authReady, jwt, lastError, logout, email, isAuthenticated } = useAuth();
+  const { login, authReady, lastError, logout, email, isAuthenticated, flags } = useAuth();
   const [inputEmail, setInputEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
   const qs = useSearchParams();
   const from = qs.get("from") || "/";
+  const DEBUG = useMemo(
+    () => process.env.NEXT_PUBLIC_DEBUG === "1" || process.env.NEXT_PUBLIC_DEBUG === "true",
+    []
+  );
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -31,6 +35,31 @@ function LoginPageInner() {
         <div style={{ marginBottom: 12, fontSize: 13, color: "#0a6" }}>
           Sessão ativa {USE_COOKIE_MODE ? (email ? `(${email})` : "") : ""}.
           <button onClick={() => void logout()} style={{ marginLeft: 8 }}>Logout</button>
+        </div>
+      )}
+
+      {DEBUG && flags && (
+        <div
+          style={{
+            background: "#fafafa",
+            border: "1px solid #ddd",
+            padding: "8px 10px",
+            borderRadius: 8,
+            fontSize: 11,
+            marginBottom: 12,
+            lineHeight: 1.4,
+            maxHeight: 220,
+            overflow: "auto",
+          }}
+        >
+          <strong>Server Flags</strong>
+          <pre
+            style={{
+              margin: "6px 0 0",
+              fontSize: 11,
+              whiteSpace: "pre-wrap",
+            }}
+          >{JSON.stringify(flags, null, 2)}</pre>
         </div>
       )}
 

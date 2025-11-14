@@ -3,9 +3,16 @@ export const runtime = "nodejs";
 import { buildSessionCookie, getUserIdFromEmail, signHS256 } from "../_utils";
 
 export async function POST(req: Request) {
-  // Cookie mode precisa estar habilitado no servidor
+  // Gate explícito com mensagem clara (não 404 silencioso)
   if (process.env.COOKIE_MODE !== "1") {
-    return new Response(JSON.stringify({ error: "Auth cookie disabled" }), { status: 404 });
+    return new Response(
+      JSON.stringify({
+        error: "COOKIE_MODE_DISABLED",
+        detail:
+          "Rota /api/auth/login não habilitada: defina COOKIE_MODE=1 no ambiente do build (server).",
+      }),
+      { status: 403, headers: { "Content-Type": "application/json" } }
+    );
   }
 
   const secret = process.env.JWT_SECRET || process.env.DEV_JWT_SECRET || "insecure-dev-secret";
@@ -40,4 +47,26 @@ export async function POST(req: Request) {
   } catch (e: any) {
     return new Response(JSON.stringify({ error: String(e?.message || e) }), { status: 500 });
   }
+}
+
+// Para testes rápidos via GET (opcional - não documentado em produção)
+export async function GET() {
+  if (process.env.COOKIE_MODE !== "1") {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        error: "COOKIE_MODE_DISABLED",
+        detail: "Defina COOKIE_MODE=1 para habilitar login por cookie.",
+      }),
+      { status: 403, headers: { "Content-Type": "application/json" } }
+    );
+  }
+  return new Response(
+    JSON.stringify({
+      ok: false,
+      error: "METHOD_NOT_ALLOWED",
+      detail: "Use POST para /api/auth/login",
+    }),
+    { status: 405, headers: { "Content-Type": "application/json" } }
+  );
 }
