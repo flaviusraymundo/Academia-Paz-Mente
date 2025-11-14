@@ -1,7 +1,6 @@
 // Rota Next para emitir um JWT de desenvolvimento.
 // GATED: só funciona se DEV_JWT_ENABLED=1 E não está em produção.
-// Assina token com HS256 (não usar alg "none").
-// runtime nodejs para permitir uso de crypto.
+// Assina token com HS256 usando preferencialmente JWT_SECRET (para compat com o backend).
 export const runtime = "nodejs";
 
 import crypto from "crypto";
@@ -40,7 +39,10 @@ export async function GET(req: Request) {
     dev: true,
   };
 
-  const secret = process.env.DEV_JWT_SECRET || "insecure-dev-secret";
+  // IMPORTANTE: usar a mesma chave que o backend usa para validar (JWT_SECRET).
+  // Fallback para DEV_JWT_SECRET apenas se JWT_SECRET não estiver definida no ambiente DEV.
+  const secret =
+    process.env.JWT_SECRET || process.env.DEV_JWT_SECRET || "insecure-dev-secret";
 
   const headerPart = b64url(JSON.stringify(header));
   const payloadPart = b64url(JSON.stringify(payload));

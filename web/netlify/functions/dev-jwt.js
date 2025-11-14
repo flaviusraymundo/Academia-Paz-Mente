@@ -1,5 +1,6 @@
 // Função Netlify para emitir JWT DEV assinado (HS256).
 // GATED: DEV_JWT_ENABLED=1 e NODE_ENV !== 'production'.
+// Assina com JWT_SECRET (fallback DEV_JWT_SECRET) para compatibilidade com middleware.
 const crypto = require("crypto");
 
 function b64url(input) {
@@ -36,7 +37,8 @@ exports.handler = async (event) => {
       dev: true,
     };
 
-    const secret = process.env.DEV_JWT_SECRET || "insecure-dev-secret";
+    const secret =
+      process.env.JWT_SECRET || process.env.DEV_JWT_SECRET || "insecure-dev-secret";
 
     const headerPart = b64url(JSON.stringify(header));
     const payloadPart = b64url(JSON.stringify(payload));
