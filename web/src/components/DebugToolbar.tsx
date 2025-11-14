@@ -1,31 +1,21 @@
 "use client";
-import { useAuth } from "../contexts/AuthContext";
 import { useState, type CSSProperties } from "react";
-
-function decodeJwt(token: string) {
-  try {
-    const parts = token.split(".");
-    if (parts.length !== 3) return null;
-    const payload = parts[1]
-      .replace(/-/g, "+")
-      .replace(/_/g, "/")
-      .padEnd(Math.ceil(parts[1].length / 4) * 4, "=");
-    const json = atob(payload);
-    return JSON.parse(json);
-  } catch {
-    return null;
-  }
-}
+import { useAuth } from "../contexts/AuthContext";
+import { decodeJwt, type DecodedJwt } from "../lib/jwt";
 
 export function DebugToolbar() {
-  const { jwt, logout } = useAuth();
-  const [decoded, setDecoded] = useState<any>(null);
+  const { jwt, decoded, logout } = useAuth();
+  const [inspected, setInspected] = useState<DecodedJwt | null>(null);
   const DEBUG = process.env.NEXT_PUBLIC_DEBUG === "1";
 
   if (!DEBUG) return null;
 
   function handleDecode() {
-    setDecoded(jwt ? decodeJwt(jwt) : null);
+    if (decoded) {
+      setInspected(decoded);
+      return;
+    }
+    setInspected(jwt ? decodeJwt(jwt) : null);
   }
   function handleCopy() {
     if (!jwt) {
@@ -41,7 +31,7 @@ export function DebugToolbar() {
   }
   function handleClear() {
     logout();
-    setDecoded(null);
+    setInspected(null);
   }
 
   return (
@@ -61,11 +51,13 @@ export function DebugToolbar() {
       <button style={btn} onClick={handleDecode}>Decodificar JWT</button>
       <button style={btn} onClick={handleCopy}>Copiar</button>
       <button style={btnDanger} onClick={handleClear}>Limpar</button>
-      <a style={link} href="/health">Health</a>
+      <a style={link} href="/health">
+        Health
+      </a>
       <span style={{ marginLeft: "auto", fontSize: 11, color: "#666" }}>
         API: <code>{process.env.NEXT_PUBLIC_API_BASE || "?"}</code>
       </span>
-      {decoded && (
+      {inspected && (
         <pre
           style={{
             flexBasis: "100%",
@@ -78,7 +70,7 @@ export function DebugToolbar() {
             overflow: "auto",
           }}
         >
-          {JSON.stringify(decoded, null, 2)}
+          {JSON.stringify(inspected, null, 2)}
         </pre>
       )}
     </div>

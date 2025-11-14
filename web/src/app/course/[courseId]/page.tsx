@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { api } from "../../../lib/api";
-import { useAuth } from "../../../contexts/AuthContext";
+import { useRequireAuth } from "../../../hooks/useRequireAuth";
 import { Module } from "../../../types/course";
 import { CourseHeader } from "../../../components/course/CourseHeader";
 import { ModuleCard } from "../../../components/course/ModuleCard";
@@ -17,7 +17,7 @@ export default function CoursePage() {
   const [mods, setMods] = useState<Module[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const { jwt, ready } = useAuth();
+  const { jwt, ready } = useRequireAuth();
 
   useEffect(() => {
     if (!ready) return;
