@@ -1,5 +1,12 @@
 "use client";
-import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { decodeJwt, msUntilExpiry } from "../lib/jwt";
 import { buildDevJwt } from "../lib/devJwt";
 import { USE_COOKIE_MODE, DEV_FAKE } from "../lib/config";
@@ -9,17 +16,17 @@ export type Toast = { id: string; text: string; kind: "info" | "error" | "succes
 type AuthState = {
   jwt: string | null;
   decoded: ReturnType<typeof decodeJwt>;
-  ready: boolean;
-  authReady: boolean;
+  ready: boolean; // contexto inicializado
+  authReady: boolean; // sessão carregada (cookie mode) ou igual a ready (header mode)
   login: (email: string) => Promise<boolean>;
   logout: () => Promise<void> | void;
   refreshing: boolean;
   lastError: string | null;
   toasts: Toast[];
   dismissToast: (id: string) => void;
-  authenticated?: boolean;
+  authenticated?: boolean; // só populado em cookie mode
   email?: string | null;
-  isAuthenticated: boolean;
+  isAuthenticated: boolean; // unificado para consumidores
 };
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -30,6 +37,7 @@ export const useAuth = () => {
 };
 
 const LS_KEY = "lms_jwt";
+const BC_NAME = "auth";
 
 function addToastSetter(setToasts: React.Dispatch<React.SetStateAction<Toast[]>>) {
   return (text: string, kind: Toast["kind"] = "info") =>
@@ -57,7 +65,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [authenticated, setAuthenticated] = useState<boolean | undefined>(undefined);
   const [email, setEmail] = useState<string | null>(null);
   const addToast = addToastSetter(setToasts);
+
   const refreshTimerRef = useRef<number | null>(null);
+  const bcRef = useRef<BroadcastChannel | null>(null);
 
   const refreshSession = useCallback(async () => {
     try {
@@ -73,8 +83,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch {
       setAuthenticated(false);
       setEmail(null);
-    } finally {
-      setAuthReady(true);
     }
   }, []);
 
@@ -100,9 +108,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Inicialização
   useEffect(() => {
     if (USE_COOKIE_MODE) {
-      setAuthReady(false);
       void refreshSession().finally(() => {
         setReady(true);
+        setAuthReady(true);
       });
       return;
     }
@@ -115,6 +123,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setAuthReady(true);
   }, [refreshSession]);
 
+  // Timer de refresh (apenas header/JWT mode)
   useEffect(() => {
     if (USE_COOKIE_MODE) return;
     if (refreshTimerRef.current) {
@@ -132,6 +141,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [jwt, scheduleRefresh]);
 
+  // Cleanup timer em unmount
   useEffect(() => {
     return () => {
       if (refreshTimerRef.current) {
@@ -140,6 +150,83 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     };
   }, []);
+
+  // Cross-tab sync via BroadcastChannel (cookie e header mode)
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof BroadcastChannel === "undefined") return;
+    const bc = new BroadcastChannel(BC_NAME);
+    bc.onmessage = (ev) => {
+      const msg = ev.data?.type as string | undefined;
+      if (!msg) return;
+
+      if (msg === "logout") {
+        if (USE_COOKIE_MODE) {
+          void refreshSession();
+        } else {
+          setJwt(null);
+          setDecoded(null);
+          if (refreshTimerRef.current) {
+            window.clearTimeout(refreshTimerRef.current);
+            refreshTimerRef.current = null;
+          }
+        }
+      } else if (msg === "login" || msg === "session-refresh") {
+        if (USE_COOKIE_MODE) {
+          void refreshSession();
+        } else {
+          const tok = window.localStorage.getItem(LS_KEY);
+          if (tok) {
+            setJwt(tok);
+            setDecoded(decodeJwt(tok));
+          }
+        }
+      }
+    };
+    bcRef.current = bc;
+    return () => {
+      try {
+        bc.close();
+      } catch {
+        // noop
+      }
+      bcRef.current = null;
+    };
+  }, [refreshSession]);
+
+  // Cross-tab sync via storage event (header/JWT mode)
+  useEffect(() => {
+    if (USE_COOKIE_MODE) return;
+    if (typeof window === "undefined") return;
+
+    const onStorage = (ev: StorageEvent) => {
+      if (ev.key !== LS_KEY) return;
+      const next = ev.newValue;
+      if (next) {
+        setJwt(next);
+        setDecoded(decodeJwt(next));
+      } else {
+        setJwt(null);
+        setDecoded(null);
+        if (refreshTimerRef.current) {
+          window.clearTimeout(refreshTimerRef.current);
+          refreshTimerRef.current = null;
+        }
+      }
+    };
+
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
+  // Revalida sessão quando aba volta a ficar visível (cookie mode)
+  useEffect(() => {
+    if (!USE_COOKIE_MODE) return;
+    const onVis = () => {
+      if (!document.hidden) void refreshSession();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, [refreshSession]);
 
   const login = useCallback(
     async (email: string) => {
@@ -152,7 +239,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         if (USE_COOKIE_MODE) {
-          setAuthReady(false);
           const r = await fetch("/api/auth/login", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -162,15 +248,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (!r.ok) {
             setLastError(`Login falhou (${r.status})`);
             addToast("Login falhou", "error");
-            setAuthReady(true);
             return false;
           }
           await refreshSession();
           addToast("Login via cookie efetuado", "success");
+          setAuthReady(true);
+          bcRef.current?.postMessage({ type: "session-refresh" });
           return true;
         }
 
-        // Modo header (DEV atual)
         let token: string | null = null;
 
         if (DEV_FAKE) {
@@ -192,6 +278,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               errors.push(`${url} -> ${String(e?.message || e)}`);
             }
           }
+
           if (!token) {
             const rawAllow =
               typeof process !== "undefined"
@@ -199,17 +286,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 : undefined;
             const allowClientFake = rawAllow === "1" || rawAllow === "true";
 
-            if (allowClientFake) {
-              token = await buildDevJwt(email);
-              addToast("Usando dev-jwt local (fallback)", "info");
-              setLastError(
-                `Dev endpoints indisponíveis (${errors.join(" ; ")}); usando fallback client.`
-              );
-            } else {
+            if (!allowClientFake) {
               setLastError(`Dev endpoints indisponíveis (${errors.join(" ; ")})`);
               addToast("Dev-jwt indisponível", "error");
               return false;
             }
+
+            token = await buildDevJwt(email);
+            addToast("Usando dev-jwt local (fallback)", "info");
+            setLastError(`Dev endpoints indisponíveis (${errors.join(" ; ")}); fallback client.`);
           }
         } else {
           const r = await fetch("/api/auth/login", {
@@ -233,15 +318,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         setJwt(token);
         window.localStorage.setItem(LS_KEY, token);
+        bcRef.current?.postMessage({ type: "login" });
         addToast("Login efetuado", "success");
         return true;
       } catch (e: any) {
         const msg = String(e?.message || e);
         setLastError(msg);
         addToast(`Erro de rede: ${msg}`, "error");
-        if (USE_COOKIE_MODE) {
-          setAuthReady(true);
-        }
         return false;
       }
     },
@@ -250,10 +333,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = useCallback(async () => {
     if (USE_COOKIE_MODE) {
-      setAuthReady(false);
       await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
       await refreshSession();
+      setAuthReady(true);
       addToast("Logout via cookie efetuado", "info");
+      bcRef.current?.postMessage({ type: "logout" });
       return;
     }
     setJwt(null);
@@ -264,6 +348,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       refreshTimerRef.current = null;
     }
     addToast("Logout efetuado", "info");
+    bcRef.current?.postMessage({ type: "logout" });
   }, [refreshSession, addToast]);
 
   const dismissToast = (id: string) => {
