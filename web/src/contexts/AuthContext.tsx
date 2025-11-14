@@ -10,6 +10,7 @@ import React, {
   useState,
 } from "react";
 import { decodeJwt, msUntilExpiry, type DecodedJwt } from "../lib/jwt";
+import { buildDevJwt } from "../lib/devJwt";
 
 type Toast = { id: string; text: string; kind: "info" | "error" | "success" };
 
@@ -161,14 +162,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return false;
         }
         let token: string | null = null;
-        if (process.env.NEXT_PUBLIC_DEV_FAKE === "1" || process.env.NEXT_PUBLIC_DEV_FAKE === "true") {
-          const r = await fetch(`/.netlify/functions/dev-jwt?email=${encodeURIComponent(email)}`);
-          if (!r.ok) {
-            setLastError("Falha ao obter dev-jwt");
-            addToast("Falha ao obter dev-jwt", "error");
-            return false;
+        const devMode =
+          process.env.NEXT_PUBLIC_DEV_FAKE === "1" || process.env.NEXT_PUBLIC_DEV_FAKE === "true";
+
+        if (devMode) {
+          const endpoints = [
+            `/api/dev-jwt?email=${encodeURIComponent(email)}`,
+            `/.netlify/functions/dev-jwt?email=${encodeURIComponent(email)}`,
+          ];
+          const errors: string[] = [];
+          for (const url of endpoints) {
+            try {
+              const response = await fetch(url);
+              if (response.ok) {
+                token = await response.text();
+                break;
+              }
+              errors.push(`${url} -> ${response.status}`);
+            } catch (error: any) {
+              errors.push(`${url} -> ${String(error?.message || error)}`);
+            }
           }
-          token = await r.text();
+
+          if (!token) {
+            token = buildDevJwt(email);
+            addToast("Usando dev-jwt local (fallback)", "info");
+            setLastError(
+              errors.length
+                ? `Falha endpoints dev-jwt; fallback local. Detalhes: ${errors.join(" ; ")}`
+                : "Falha endpoints dev-jwt; fallback local."
+            );
+          }
         } else {
           const r = await fetch("/api/auth/login", {
             method: "POST",
