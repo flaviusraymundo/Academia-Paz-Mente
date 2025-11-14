@@ -6,7 +6,7 @@ const crypto = require("crypto");
 function uuidV5(name, namespace) {
   const ns = /^[0-9a-fA-F-]{36}$/.test(namespace)
     ? namespace
-    : "00000000-0000-0000-0000-000000000000";
+    : "11111111-2222-3333-4444-555555555555";
   const nsBytes = Buffer.from(ns.replace(/-/g, ""), "hex");
   const nameBytes = Buffer.from(name, "utf8");
   const sha1 = crypto.createHash("sha1");
