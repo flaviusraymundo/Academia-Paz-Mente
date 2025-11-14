@@ -2,10 +2,10 @@
 import { Suspense, useEffect, useState } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { useRouter, useSearchParams } from "next/navigation";
-import { USE_COOKIE_MODE, DEV_FAKE } from "../../lib/config";
+import { DEV_FAKE } from "../../lib/config";
 
 function LoginPageInner() {
-  const { login, authReady, lastError, logout, email, isAuthenticated } = useAuth();
+  const { login, authReady, lastError, logout, email, isAuthenticated, cookieMode } = useAuth();
   const [inputEmail, setInputEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [diag, setDiag] = useState<{
@@ -77,7 +77,7 @@ function LoginPageInner() {
 
       {hasSession && (
         <div style={{ marginBottom: 12, fontSize: 13, color: "#0a6" }}>
-          Sessão ativa {USE_COOKIE_MODE ? (email ? `(${email})` : "") : ""}.
+          Sessão ativa {cookieMode ? (email ? `(${email})` : "") : ""}.
           <button onClick={() => void logout()} style={{ marginLeft: 8 }}>Logout</button>
         </div>
       )}
@@ -85,7 +85,7 @@ function LoginPageInner() {
       {DEBUG && (
         <div style={{ fontSize: 12, color: "#444", marginBottom: 12 }}>
           <div>
-            <strong>Flags (client):</strong> cookieMode={String(USE_COOKIE_MODE)} devFake={String(DEV_FAKE)}
+            <strong>Flags (client):</strong> cookieMode={String(cookieMode)} devFake={String(DEV_FAKE)}
           </div>
           {diag && (
             <div style={{ marginTop: 6, lineHeight: 1.5 }}>
@@ -141,7 +141,7 @@ function LoginPageInner() {
         )}
 
         <div style={{ fontSize: 12, color: "#555" }}>
-          {USE_COOKIE_MODE
+          {cookieMode
             ? "Modo cookie: o servidor emite um cookie HttpOnly 'session'."
             : DEV_FAKE
             ? "Modo DEV_FAKE: usa dev-jwt (servidor ou fallback local)."

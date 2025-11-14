@@ -15,7 +15,7 @@ export default function VideoItemPage() {
   const qs = useSearchParams();
   const courseId = qs.get("courseId") || "";
   const moduleId = qs.get("moduleId") || "";
-  const { authReady, isAuthenticated } = useRequireAuth();
+  const { authReady, isAuthenticated, cookieMode } = useRequireAuth();
   const { jwt } = useAuth();
 
   const [token, setToken] = useState<string | null>(null);
@@ -188,16 +188,25 @@ export default function VideoItemPage() {
   );
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <div
+      data-testid="video-page"
+      style={{ display: "flex", flexDirection: "column", gap: 16 }}
+    >
       <h1 style={{ margin: 0, fontSize: 24 }}>Vídeo</h1>
 
       {err && (
-        <div style={{ fontSize: 12, color: "#a00", whiteSpace: "pre-wrap" }}>
+        <div
+          data-testid="video-token-error"
+          style={{ fontSize: 12, color: "#a00", whiteSpace: "pre-wrap" }}
+        >
           Erro token: {err}
         </div>
       )}
       {metaErr && (
-        <div style={{ fontSize: 12, color: "#a00", whiteSpace: "pre-wrap" }}>
+        <div
+          data-testid="video-meta-error"
+          style={{ fontSize: 12, color: "#a00", whiteSpace: "pre-wrap" }}
+        >
           Erro meta: {metaErr}
         </div>
       )}
@@ -211,27 +220,52 @@ export default function VideoItemPage() {
         ))}
       </div>
 
-      {authReady && !isAuthenticated && <div style={{ fontSize: 14 }}>Faça login para reproduzir.</div>}
+      {DEBUG && (
+        <div
+          data-testid="video-debug-flags"
+          style={{ fontSize: 12, color: "#666", display: "flex", gap: 12 }}
+        >
+          <span>
+            <strong>cookieMode:</strong> <code>{String(cookieMode)}</code>
+          </span>
+          <span>
+            <strong>playing:</strong> <code>{String(playing)}</code>
+          </span>
+        </div>
+      )}
 
-      {authReady && isAuthenticated && loadingMeta && <div style={{ fontSize: 14 }}>Carregando metadata...</div>}
+      {authReady && !isAuthenticated && (
+        <div data-testid="video-auth-warning" style={{ fontSize: 14 }}>
+          Faça login para reproduzir.
+        </div>
+      )}
+
+      {authReady && isAuthenticated && loadingMeta && (
+        <div data-testid="video-meta-loading" style={{ fontSize: 14 }}>
+          Carregando metadata...
+        </div>
+      )}
 
       {showPlayer && (
-        <VideoPlayer
-          playbackId={playbackId}
-          playbackToken={token}
-          onPlayChange={(p) => (p ? onPlay() : onPause())}
-          debug={DEBUG}
-        />
+        <div data-testid="video-player">
+          <VideoPlayer
+            playbackId={playbackId}
+            playbackToken={token}
+            onPlayChange={(p) => (p ? onPlay() : onPause())}
+            debug={DEBUG}
+          />
+        </div>
       )}
 
       {authReady && isAuthenticated && !playbackId && !loadingMeta && (
-        <div style={{ fontSize: 12, color: "#555" }}>
+        <div data-testid="video-missing-playback" style={{ fontSize: 12, color: "#555" }}>
           PlaybackId não disponível neste item. Verifique payload_ref.mux_playback_id.
         </div>
       )}
 
       {DEBUG && status && (
         <pre
+          data-testid="video-status"
           style={{
             marginTop: 12,
             fontSize: 11,

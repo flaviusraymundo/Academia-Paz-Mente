@@ -18,6 +18,7 @@ type AuthState = {
   decoded: ReturnType<typeof decodeJwt>;
   ready: boolean; // contexto inicializado
   authReady: boolean; // sessão carregada (cookie mode) ou igual a ready (header mode)
+  cookieMode: boolean;
   login: (email: string) => Promise<boolean>;
   logout: () => Promise<void> | void;
   refreshing: boolean;
@@ -69,6 +70,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const refreshTimerRef = useRef<number | null>(null);
   const bcRef = useRef<BroadcastChannel | null>(null);
 
+  const cookieMode = USE_COOKIE_MODE;
+
   const refreshSession = useCallback(async () => {
     try {
       const r = await fetch("/api/auth/session", { credentials: "include" });
@@ -87,7 +90,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const scheduleRefresh = useCallback(async () => {
-    if (USE_COOKIE_MODE) return;
+    if (cookieMode) return;
     if (!jwt) return;
     setRefreshing(true);
     try {
@@ -107,7 +110,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Inicialização
   useEffect(() => {
-    if (USE_COOKIE_MODE) {
+    if (cookieMode) {
       void refreshSession().finally(() => {
         setReady(true);
         setAuthReady(true);
@@ -125,7 +128,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Timer de refresh (apenas header/JWT mode)
   useEffect(() => {
-    if (USE_COOKIE_MODE) return;
+    if (cookieMode) return;
     if (refreshTimerRef.current) {
       window.clearTimeout(refreshTimerRef.current);
       refreshTimerRef.current = null;
@@ -160,7 +163,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!msg) return;
 
       if (msg === "logout") {
-        if (USE_COOKIE_MODE) {
+        if (cookieMode) {
           void refreshSession();
         } else {
           setJwt(null);
@@ -171,7 +174,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         }
       } else if (msg === "login" || msg === "session-refresh") {
-        if (USE_COOKIE_MODE) {
+        if (cookieMode) {
           void refreshSession();
         } else {
           const tok = window.localStorage.getItem(LS_KEY);
@@ -195,7 +198,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Cross-tab sync via storage event (header/JWT mode)
   useEffect(() => {
-    if (USE_COOKIE_MODE) return;
+    if (cookieMode) return;
     if (typeof window === "undefined") return;
 
     const onStorage = (ev: StorageEvent) => {
@@ -220,7 +223,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Revalida sessão quando aba volta a ficar visível (cookie mode)
   useEffect(() => {
-    if (!USE_COOKIE_MODE) return;
+    if (!cookieMode) return;
     const onVis = () => {
       if (!document.hidden) void refreshSession();
     };
@@ -238,7 +241,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return false;
         }
 
-        if (USE_COOKIE_MODE) {
+        if (cookieMode) {
           const r = await fetch("/api/auth/login", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -332,7 +335,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const logout = useCallback(async () => {
-    if (USE_COOKIE_MODE) {
+        if (cookieMode) {
       await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
       await refreshSession();
       setAuthReady(true);
@@ -355,7 +358,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setToasts((ts) => ts.filter((t) => t.id !== id));
   };
 
-  const isAuthenticated = USE_COOKIE_MODE ? !!authenticated : !!jwt;
+  const isAuthenticated = cookieMode ? !!authenticated : !!jwt;
 
   return (
     <AuthContext.Provider
@@ -370,9 +373,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         lastError,
         toasts,
         dismissToast,
-        authenticated: USE_COOKIE_MODE ? !!authenticated : undefined,
-        email: USE_COOKIE_MODE ? email : undefined,
+        authenticated: cookieMode ? !!authenticated : undefined,
+        email: cookieMode ? email : undefined,
         isAuthenticated,
+        cookieMode,
       }}
     >
       {children}
