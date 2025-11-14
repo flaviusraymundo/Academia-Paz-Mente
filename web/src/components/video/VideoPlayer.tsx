@@ -118,11 +118,13 @@ export function VideoPlayer({ playbackId, playbackToken, poster, onPlayChange, d
           "width:100%;max-width:960px;aspect-ratio:16/9;background:#000;border-radius:12px;overflow:hidden"
         );
         el.setAttribute("prefer-mse", "true");
-        el.setAttribute("muted", "false");
         el.setAttribute("playsinline", "true");
         if (poster) {
           el.setAttribute("poster", poster);
         }
+        // Garantir áudio ativo (atributos booleanos em web components usam propriedades)
+        (el as any).muted = false;
+        (el as any).volume = 1;
         el.addEventListener("loadeddata", onLoaded);
         el.addEventListener("play", onPlay);
         el.addEventListener("pause", onPause);
