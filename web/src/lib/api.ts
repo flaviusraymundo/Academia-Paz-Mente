@@ -15,11 +15,24 @@ type ApiOptions = {
   timeoutMs?: number;
 };
 
+/**
+ * Helper de chamadas HTTP com timeout configurável.
+ * Retorna sempre { status, body } e normaliza erros de rede.
+ */
 export async function api<T = any>(path: string, opts: ApiOptions = {}): Promise<ApiResponse<T>> {
-  const { method = "GET", headers = {}, body, jwt, signal, timeoutMs = 30000 } = opts;
+  const { method = "GET", headers = {}, body, jwt, signal, timeoutMs } = opts;
   const h: Record<string, string> = { ...headers };
   const base = getApiBase();
   const url = base ? `${base}${path}` : path;
+
+  const envTimeout =
+    typeof window !== "undefined"
+      ? Number(process.env.NEXT_PUBLIC_API_TIMEOUT_MS)
+      : Number(process.env.API_TIMEOUT_MS);
+
+  const effectiveTimeout =
+    timeoutMs ??
+    (Number.isFinite(envTimeout) && envTimeout > 0 ? envTimeout : 30000);
 
   if (!USE_COOKIE_MODE && jwt) {
     h.Authorization = `Bearer ${jwt}`;
@@ -37,7 +50,7 @@ export async function api<T = any>(path: string, opts: ApiOptions = {}): Promise
       signal.addEventListener("abort", abortListener, { once: true });
     }
   }
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const timeout = setTimeout(() => controller.abort(), effectiveTimeout);
 
   try {
     const response = await fetch(url, {

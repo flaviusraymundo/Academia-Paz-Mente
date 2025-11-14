@@ -225,6 +225,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const msg = String(e?.message || e);
         setLastError(msg);
         addToast(`Erro de rede: ${msg}`, "error");
+        if (USE_COOKIE_MODE) {
+          setAuthReady(true);
+        }
         return false;
       }
     },
@@ -254,9 +257,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const isAuthenticated = USE_COOKIE_MODE ? !!authenticated : !!jwt;
-  const exposedEmail = USE_COOKIE_MODE
-    ? email
-    : ((decoded?.payload?.email as string | undefined) || null);
 
   return (
     <AuthContext.Provider
@@ -272,7 +272,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         toasts,
         dismissToast,
         authenticated: USE_COOKIE_MODE ? !!authenticated : undefined,
-        email: USE_COOKIE_MODE ? exposedEmail : undefined,
+        email: USE_COOKIE_MODE ? email : undefined,
         isAuthenticated,
       }}
     >

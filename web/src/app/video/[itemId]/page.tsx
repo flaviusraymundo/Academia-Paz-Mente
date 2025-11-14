@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { api } from "../../../lib/api";
 import { useRequireAuth } from "../../../hooks/useRequireAuth";
+import { useAuth } from "../../../contexts/AuthContext";
 import { PlaybackTokenResponseSchema } from "../../../schemas/video";
 import { useVideoHeartbeat } from "../../../hooks/useVideoHeartbeat";
 import { VideoPlayer } from "../../../components/video/VideoPlayer";
@@ -14,7 +15,8 @@ export default function VideoItemPage() {
   const qs = useSearchParams();
   const courseId = qs.get("courseId") || "";
   const moduleId = qs.get("moduleId") || "";
-  const { jwt, authReady, isAuthenticated } = useRequireAuth();
+  const { authReady, isAuthenticated } = useRequireAuth();
+  const { jwt } = useAuth();
 
   const [token, setToken] = useState<string | null>(null);
   const [status, setStatus] = useState<any>(null);

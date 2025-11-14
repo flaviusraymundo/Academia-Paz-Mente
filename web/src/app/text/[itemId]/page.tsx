@@ -4,13 +4,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { useRequireAuth } from "../../../hooks/useRequireAuth";
 import { usePageRead } from "../../../hooks/usePageRead";
+import { useAuth } from "../../../contexts/AuthContext";
 
 export default function TextItemPage() {
   const { itemId } = useParams<{ itemId: string }>();
   const qs = useSearchParams();
   const courseId = qs.get("courseId") || "";
   const moduleId = qs.get("moduleId") || "";
-  const { jwt, authReady, isAuthenticated } = useRequireAuth();
+  const { authReady, isAuthenticated } = useRequireAuth();
+  const { jwt } = useAuth();
 
   const [reading, setReading] = useState(true);
   const [lastBeat, setLastBeat] = useState<string | null>(null);

@@ -4,11 +4,11 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "../contexts/AuthContext";
 
 /**
- * Redireciona para /login quando a sessão não está autenticada.
- * Exponibiliza jwt (modo header), authReady e isAuthenticated para o consumidor.
+ * Redireciona para /login se não autenticado (header ou cookie mode).
+ * Usa authReady para evitar redirect prematuro em cookie mode.
  */
 export function useRequireAuth() {
-  const { jwt, authReady, isAuthenticated } = useAuth();
+  const { authReady, isAuthenticated } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
@@ -18,5 +18,5 @@ export function useRequireAuth() {
     }
   }, [authReady, isAuthenticated, router]);
 
-  return { jwt, authReady, isAuthenticated } as const;
+  return { authReady, isAuthenticated } as const;
 }

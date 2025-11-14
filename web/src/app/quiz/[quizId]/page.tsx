@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { api } from "../../../lib/api";
 import { useRequireAuth } from "../../../hooks/useRequireAuth";
+import { useAuth } from "../../../contexts/AuthContext";
 import { Card } from "../../../components/ui/Card";
 import { Skeleton } from "../../../components/ui/Skeleton";
 import { QuestionCard } from "../../../components/quiz/QuestionCard";
@@ -12,7 +13,8 @@ import { QuizSchema, Question } from "../../../schemas/quiz";
 
 export default function QuizPage() {
   const { quizId } = useParams<{ quizId: string }>();
-  const { jwt, authReady, isAuthenticated } = useRequireAuth();
+  const { authReady, isAuthenticated } = useRequireAuth();
+  const { jwt } = useAuth();
 
   const [questions, setQuestions] = useState<Question[]>([]);
   const [passScore, setPassScore] = useState<number>(0);
