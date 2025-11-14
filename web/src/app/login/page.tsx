@@ -1,16 +1,23 @@
 "use client";
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { useRouter, useSearchParams } from "next/navigation";
 import { USE_COOKIE_MODE, DEV_FAKE } from "../../lib/config";
 
 function LoginPageInner() {
-  const { login, authReady, jwt, lastError, logout, email, isAuthenticated } = useAuth();
+  const { login, authReady, lastError, logout, email, isAuthenticated } = useAuth();
   const [inputEmail, setInputEmail] = useState("");
   const [loading, setLoading] = useState(false);
+  const [diag, setDiag] = useState<{
+    cookieLogin?: number;
+    devJwtApi?: number;
+    devJwtFn?: number;
+  } | null>(null);
   const router = useRouter();
   const qs = useSearchParams();
   const from = qs.get("from") || "/";
+  const DEBUG =
+    process.env.NEXT_PUBLIC_DEBUG === "1" || process.env.NEXT_PUBLIC_DEBUG === "true";
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -23,6 +30,47 @@ function LoginPageInner() {
 
   const hasSession = isAuthenticated;
 
+  useEffect(() => {
+    if (!DEBUG) return;
+    let canceled = false;
+
+    (async () => {
+      const out: { cookieLogin?: number; devJwtApi?: number; devJwtFn?: number } = {};
+      try {
+        const r = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: "" }),
+          credentials: "include",
+        });
+        out.cookieLogin = r.status;
+      } catch {
+        out.cookieLogin = -1;
+      }
+
+      if (DEV_FAKE) {
+        try {
+          const r1 = await fetch(`/api/dev-jwt?email=diag@example.com`);
+          out.devJwtApi = r1.status;
+        } catch {
+          out.devJwtApi = -1;
+        }
+        try {
+          const r2 = await fetch(`/.netlify/functions/dev-jwt?email=diag@example.com`);
+          out.devJwtFn = r2.status;
+        } catch {
+          out.devJwtFn = -1;
+        }
+      }
+
+      if (!canceled) setDiag(out);
+    })();
+
+    return () => {
+      canceled = true;
+    };
+  }, [DEBUG, DEV_FAKE]);
+
   return (
     <div style={{ maxWidth: 420, margin: "40px auto", padding: "24px", border: "1px solid #eee", borderRadius: 12 }}>
       <h1 style={{ marginTop: 0 }}>Login</h1>
@@ -31,6 +79,26 @@ function LoginPageInner() {
         <div style={{ marginBottom: 12, fontSize: 13, color: "#0a6" }}>
           Sessão ativa {USE_COOKIE_MODE ? (email ? `(${email})` : "") : ""}.
           <button onClick={() => void logout()} style={{ marginLeft: 8 }}>Logout</button>
+        </div>
+      )}
+
+      {DEBUG && (
+        <div style={{ fontSize: 12, color: "#444", marginBottom: 12 }}>
+          <div>
+            <strong>Flags (client):</strong> cookieMode={String(USE_COOKIE_MODE)} devFake={String(DEV_FAKE)}
+          </div>
+          {diag && (
+            <div style={{ marginTop: 6, lineHeight: 1.5 }}>
+              <div>/api/auth/login status: {diag.cookieLogin}</div>
+              {DEV_FAKE && (
+                <>
+                  <div>/api/dev-jwt status: {diag.devJwtApi}</div>
+                  <div>/.netlify/functions/dev-jwt status: {diag.devJwtFn}</div>
+                </>
+              )}
+              <div style={{ color: "#666" }}>404 indica endpoint desligado; -1 indica erro de rede.</div>
+            </div>
+          )}
         </div>
       )}
 
