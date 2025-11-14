@@ -28,64 +28,64 @@ export default function VideoItemPage() {
     if (!ready) return;
     if (!jwt) {
       setToken(null);
+      setPlaybackId(null);
       setErr(null);
+      setMetaErr(null);
       setStatus(null);
       setPlaying(false);
-      setPlaybackId(null);
+      setLoadingMeta(false);
       return;
     }
+    if (!itemId) return;
+
+    setToken(null);
+    setPlaybackId(null);
+    setErr(null);
+    setMetaErr(null);
+    setStatus(null);
+    setPlaying(false);
+    setLoadingMeta(true);
+
     let alive = true;
-    const ac = new AbortController();
+    const acToken = new AbortController();
+    const acMeta = new AbortController();
+
     (async () => {
-      setErr(null);
-      setStatus(null);
       try {
-        const { status, body } = await api(`/api/video/${encodeURIComponent(itemId)}/playback-token`, {
+        const tokenPromise = api(`/api/video/${encodeURIComponent(itemId)}/playback-token`, {
           method: "POST",
           jwt,
-          signal: ac.signal,
+          signal: acToken.signal,
         });
+        const metaPromise = courseId
+          ? api(`/api/me/items?${new URLSearchParams({ courseId }).toString()}`, {
+              jwt,
+              signal: acMeta.signal,
+            })
+          : Promise.resolve({ status: 0, body: null });
+
+        const [tokenRes, metaRes] = await Promise.all([tokenPromise, metaPromise]);
         if (!alive) return;
-        if (status === 200 && typeof body === "object") {
-          const parsed = PlaybackTokenResponseSchema.safeParse(body);
+
+        if (tokenRes.status === 200 && typeof tokenRes.body === "object") {
+          const parsed = PlaybackTokenResponseSchema.safeParse(tokenRes.body);
           if (parsed.success) {
             setToken(parsed.data.token ?? null);
-            setErr(null);
           } else {
             setToken(null);
-            setErr(JSON.stringify({ status, validationError: parsed.error.flatten() }));
+            setErr(JSON.stringify({ status: tokenRes.status, validationError: parsed.error.flatten() }));
           }
         } else {
           setToken(null);
-          setErr(JSON.stringify({ status, body }));
+          if (tokenRes.status) {
+            setErr(JSON.stringify({ status: tokenRes.status, body: tokenRes.body }));
+          }
         }
-      } catch (e: any) {
-        if (!alive) return;
-        setToken(null);
-        setErr(JSON.stringify({ error: String(e) }));
-      }
-    })();
-    return () => {
-      alive = false;
-      ac.abort();
-    };
-  }, [itemId, jwt, ready]);
 
-  useEffect(() => {
-    if (!ready || !jwt) return;
-    if (!courseId) return;
-    let alive = true;
-    (async () => {
-      setLoadingMeta(true);
-      setMetaErr(null);
-      try {
-        const qs2 = new URLSearchParams({ courseId });
-        const { status, body } = await api(`/api/me/items?${qs2.toString()}`, { jwt });
-        if (!alive) return;
-        if (status === 200 && typeof body === "object") {
-          const parsed = ModuleItemsResponseSchema.safeParse(body);
-          if (parsed.success) {
-            const mods = parsed.data.items || [];
+        if (courseId && metaRes.status === 200 && typeof metaRes.body === "object") {
+          const parsedMeta = ModuleItemsResponseSchema.safeParse(metaRes.body);
+          if (parsedMeta.success) {
+            const mods = parsedMeta.data.items || [];
             let found: any = null;
             for (const m of mods) {
               const hit = (m.items || []).find((it: any) => it.item_id === itemId);
@@ -111,23 +111,32 @@ export default function VideoItemPage() {
             setPlaybackId(null);
             setMetaErr("falha validação módulos");
           }
-        } else {
+        } else if (courseId && metaRes.status) {
           setPlaybackId(null);
           setMetaErr("falha ao obter módulos");
+        } else if (!courseId) {
+          setPlaybackId(null);
         }
       } catch (e: any) {
         if (!alive) return;
+        const message = JSON.stringify({ error: String(e) });
+        setErr(message);
+        if (courseId) {
+          setMetaErr(String(e));
+        }
         setPlaybackId(null);
-        setMetaErr(String(e));
       } finally {
         if (!alive) return;
         setLoadingMeta(false);
       }
     })();
+
     return () => {
       alive = false;
+      acToken.abort();
+      acMeta.abort();
     };
-  }, [courseId, itemId, jwt, ready]);
+  }, [itemId, courseId, jwt, ready]);
 
   const DEBUG = process.env.NEXT_PUBLIC_DEBUG === "1";
 
