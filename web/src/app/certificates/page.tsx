@@ -3,7 +3,7 @@
 import type React from "react";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api } from "../../lib/api";
+import api from "../../lib/api";
 import { useRequireAuth } from "../../hooks/useRequireAuth";
 import { useAuth } from "../../contexts/AuthContext";
 import { Card } from "../../components/ui/Card";

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
-import { api } from "../../../lib/api";
+import api from "../../../lib/api";
 import { useRequireAuth } from "../../../hooks/useRequireAuth";
 import { useAuth } from "../../../contexts/AuthContext";
 import { PlaybackTokenResponseSchema } from "../../../schemas/video";
