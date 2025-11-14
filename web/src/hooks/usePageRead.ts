@@ -10,7 +10,7 @@ type PageReadOpts = {
   moduleId: string;
   itemId: string;
   intervalMs?: number; // default 15000
-  onBeat?: (at: number, final?: boolean) => void;
+  onBeat?: (at: number, final?: boolean) => void; // final=true no flush de encerramento
 };
 
 /**
@@ -55,6 +55,9 @@ export function usePageRead(opts: PageReadOpts) {
       const prev = lastAtRef.current ?? now;
       const delta = Math.max(0, now - prev);
 
+      // avança antes do await para ignorar latência da request
+      lastAtRef.current = now;
+
       try {
         await api("/api/events/page-read", {
           method: "POST",
@@ -64,7 +67,6 @@ export function usePageRead(opts: PageReadOpts) {
       } catch {
         // silencioso
       } finally {
-        lastAtRef.current = now;
         onBeatRef.current?.(now, final);
       }
     }
@@ -78,11 +80,14 @@ export function usePageRead(opts: PageReadOpts) {
       }
     }
 
-    sendDelta(false);
-    const id = window.setInterval(() => sendDelta(false), intervalMs);
+    void sendDelta(false);
+    const id = window.setInterval(() => {
+      void sendDelta(false);
+    }, intervalMs);
     timerRef.current = id;
 
     return () => {
+      // flush final antes de limpar o intervalo para não perder delta pendente
       flushFinal();
       if (timerRef.current) {
         window.clearInterval(timerRef.current);
