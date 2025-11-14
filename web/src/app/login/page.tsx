@@ -1,51 +1,46 @@
 "use client";
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
 import { useAuth } from "../../contexts/AuthContext";
+import { useRouter, useSearchParams } from "next/navigation";
+import { USE_COOKIE_MODE, DEV_FAKE } from "../../lib/config";
 
-export default function LoginPage() {
-  const { login, ready, jwt, lastError, logout } = useAuth();
-  const [email, setEmail] = useState("");
+function LoginPageInner() {
+  const { login, ready, jwt, lastError, logout, authenticated, email } = useAuth();
+  const [inputEmail, setInputEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const qs = useSearchParams();
+  const from = qs.get("from") || "/";
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!ready || loading) return;
+    if (!ready) return;
     setLoading(true);
-    const ok = await login(email.trim());
+    const ok = await login(inputEmail.trim());
     setLoading(false);
-    if (ok) {
-      router.replace("/");
-    }
+    if (ok) router.replace(from);
   }
 
+  const hasSession = USE_COOKIE_MODE ? authenticated : !!jwt;
+
   return (
-    <div
-      style={{
-        maxWidth: 420,
-        margin: "40px auto",
-        padding: "24px",
-        border: "1px solid #eee",
-        borderRadius: 12,
-        background: "#fff",
-        boxShadow: "0 8px 20px rgba(15,23,42,0.08)",
-      }}
-    >
+    <div style={{ maxWidth: 420, margin: "40px auto", padding: "24px", border: "1px solid #eee", borderRadius: 12 }}>
       <h1 style={{ marginTop: 0 }}>Login</h1>
-      {jwt && (
+
+      {hasSession && (
         <div style={{ marginBottom: 12, fontSize: 13, color: "#0a6" }}>
-          Sessão ativa.
-          <button onClick={logout} style={{ marginLeft: 8, fontSize: 12 }}>Logout</button>
+          Sessão ativa {USE_COOKIE_MODE ? (email ? `(${email})` : "") : ""}.
+          <button onClick={() => void logout()} style={{ marginLeft: 8 }}>Logout</button>
         </div>
       )}
+
       <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           <span>Email</span>
           <input
             type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            value={inputEmail}
+            onChange={(e) => setInputEmail(e.target.value)}
             required
             placeholder="seu@email"
             style={{
@@ -67,20 +62,32 @@ export default function LoginPage() {
             border: "none",
             fontSize: 15,
             cursor: loading ? "not-allowed" : "pointer",
-            transition: "background 0.2s ease",
           }}
+          data-e2e="login-submit"
         >
           {loading ? "Entrando..." : "Entrar"}
         </button>
+
         {lastError && (
           <div style={{ fontSize: 12, color: "#a00", whiteSpace: "pre-wrap" }}>{lastError}</div>
         )}
+
         <div style={{ fontSize: 12, color: "#555" }}>
-          {process.env.NEXT_PUBLIC_DEV_FAKE === "1"
-            ? "Modo DEV_FAKE: gera JWT local na função dev-jwt."
-            : "Produção: espera backend /api/auth/login retornar token ou definir cookie HttpOnly."}
+          {USE_COOKIE_MODE
+            ? "Modo cookie: o servidor emite um cookie HttpOnly 'session'."
+            : DEV_FAKE
+            ? "Modo DEV_FAKE: usa dev-jwt (servidor ou fallback local)."
+            : "Modo header: aguarda backend /api/auth/login retornar token em JSON."}
         </div>
       </form>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginPageInner />
+    </Suspense>
   );
 }

@@ -23,7 +23,7 @@ export function uuidV5(name: string, namespace: string): string {
   const hash = sha1.digest(); // 20 bytes
   const bytes = Buffer.from(hash.slice(0, 16));
   bytes[6] = (bytes[6] & 0x0f) | 0x50; // version 5
-  bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant RFC 4122
+  bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant
   const hex = bytes.toString("hex");
   return [
     hex.slice(0, 8),
@@ -66,4 +66,24 @@ export function verifyHS256(token: string, secret: string): Record<string, any> 
   } catch {
     return null;
   }
+}
+
+/** Obtém userId (UUID) via fallback determinístico v5; sem DB por padrão */
+export async function getUserIdFromEmail(email: string) {
+  const ns = process.env.DEV_USER_NAMESPACE_UUID || "11111111-2222-3333-4444-555555555555";
+  return uuidV5(email.toLowerCase(), ns);
+}
+
+/** Constrói cabeçalho Set-Cookie seguro para cookie "session" */
+export function buildSessionCookie(token: string, maxAgeSec = 24 * 60 * 60) {
+  const secure = true; // em Netlify/Prod sempre Secure
+  const parts = [
+    `session=${token}`,
+    `Path=/`,
+    `HttpOnly`,
+    `SameSite=Lax`,
+    `Max-Age=${maxAgeSec}`,
+    `Secure`,
+  ];
+  return parts.join("; ");
 }

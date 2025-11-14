@@ -1,17 +1,48 @@
 // Rota Next para emitir um JWT de desenvolvimento.
-// GATED: somente se DEV_JWT_ENABLED=1 e NODE_ENV !== 'production'.
-// sub é um UUID válido (obtido via upsert opcional em DB ou gerado determinístico v5).
+// GATED: habilitada somente quando DEV_JWT_ENABLED=1.
+// sub é um UUID válido (via upsert opcional em DB ou UUID v5 determinístico).
 export const runtime = "nodejs";
 
-import { signHS256, uuidV5 } from "../../../lib/server/jwt";
+import crypto from "crypto";
+
+/** UUID v5 (determinístico a partir do e-mail + namespace) */
+function uuidV5(name: string, namespace: string): string {
+  const ns = /^[0-9a-fA-F-]{36}$/.test(namespace)
+    ? namespace
+    : "00000000-0000-0000-0000-000000000000";
+  const nsBytes = Buffer.from(ns.replace(/-/g, ""), "hex");
+  const nameBytes = Buffer.from(name, "utf8");
+  const sha1 = crypto.createHash("sha1");
+  sha1.update(nsBytes);
+  sha1.update(nameBytes);
+  const hash = sha1.digest(); // 20 bytes
+  const bytes = Buffer.from(hash.slice(0, 16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x50; // version 5
+  bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant RFC 4122
+  const hex = bytes.toString("hex");
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    hex.slice(12, 16),
+    hex.slice(16, 20),
+    hex.slice(20),
+  ].join("-");
+}
+
+/** Base64url helper */
+function b64url(input: Buffer | string) {
+  const base = (input instanceof Buffer ? input : Buffer.from(input))
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+  return base;
+}
 
 /**
  * Tenta criar/obter userId (UUID) no banco quando DEV_JWT_UPSERT_DB=1.
  * Caso contrário (ou se falhar), gera UUID v5 determinístico a partir do e‑mail.
  * FECHA a conexão no finally, evitando leak mesmo em erro.
- *
- * Importante: não referenciar tipos de "pg" e não usar require direto,
- * para não forçar o TypeScript a resolver o módulo em build.
  */
 async function createOrFetchUserId(email: string): Promise<string> {
   const wantDb =
@@ -53,7 +84,7 @@ async function createOrFetchUserId(email: string): Promise<string> {
     client = new Client(config);
     await client.connect();
 
-    // Adapte ao seu schema real.
+    // Adapte ao seu schema real (este é um exemplo genérico).
     const sql = `
       INSERT INTO users (id, email)
       VALUES (gen_random_uuid(), $1)
@@ -86,9 +117,8 @@ async function createOrFetchUserId(email: string): Promise<string> {
 
 export async function GET(req: Request) {
   const enabled = process.env.DEV_JWT_ENABLED === "1";
-  const isProd = process.env.NODE_ENV === "production";
-  if (!enabled || isProd) {
-    // Esconde a existência do endpoint em produção/desabilitado
+  if (!enabled) {
+    // Esconde a existência do endpoint quando desabilitado
     return new Response("Not Found", { status: 404 });
   }
 
@@ -100,6 +130,7 @@ export async function GET(req: Request) {
   // sub: UUID válido (compatível com middleware que espera uuid)
   const userId = await createOrFetchUserId(email);
 
+  const header = { alg: "HS256", typ: "JWT" };
   const payload = {
     sub: userId,
     email,
@@ -110,10 +141,16 @@ export async function GET(req: Request) {
     aud: "web",
     dev: true,
   };
+
   // Assina com JWT_SECRET para alinhar com middleware
   const secret =
     process.env.JWT_SECRET || process.env.DEV_JWT_SECRET || "insecure-dev-secret";
-  const token = signHS256(payload, secret);
+
+  const headerPart = b64url(JSON.stringify(header));
+  const payloadPart = b64url(JSON.stringify(payload));
+  const toSign = `${headerPart}.${payloadPart}`;
+  const signature = b64url(crypto.createHmac("sha256", secret).update(toSign).digest());
+  const token = `${toSign}.${signature}`;
 
   return new Response(token, {
     status: 200,
