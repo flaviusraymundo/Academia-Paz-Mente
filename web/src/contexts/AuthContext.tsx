@@ -161,14 +161,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return false;
         }
         let token: string | null = null;
-        if (process.env.NEXT_PUBLIC_DEV_FAKE === "1" || process.env.NEXT_PUBLIC_DEV_FAKE === "true") {
-          const r = await fetch(`/.netlify/functions/dev-jwt?email=${encodeURIComponent(email)}`);
-          if (!r.ok) {
-            setLastError("Falha ao obter dev-jwt");
-            addToast("Falha ao obter dev-jwt", "error");
+
+        const devFlagClient =
+          process.env.NEXT_PUBLIC_DEV_FAKE === "1" || process.env.NEXT_PUBLIC_DEV_FAKE === "true";
+        // Server gate (só confiável no backend, mas aqui usamos para decidir tentar endpoints)
+        const devEnabledServerHint = devFlagClient; // pode espelhar DEV_JWT_ENABLED no build se quiser
+
+        if (devFlagClient && devEnabledServerHint) {
+          const endpoints = [
+            `/api/dev-jwt?email=${encodeURIComponent(email)}`,
+            `/.netlify/functions/dev-jwt?email=${encodeURIComponent(email)}`,
+          ];
+          const errors: string[] = [];
+          for (const url of endpoints) {
+            try {
+              const r = await fetch(url);
+              if (r.ok) {
+                const t = await r.text();
+                token = t;
+                break;
+              } else {
+                errors.push(`${url} -> ${r.status}`);
+              }
+            } catch (e: any) {
+              errors.push(`${url} -> ${String(e?.message || e)}`);
+            }
+          }
+          if (!token) {
+            setLastError(`Dev endpoints indisponíveis (${errors.join(" ; ")})`);
+            addToast("Dev-jwt desabilitado ou falhou", "error");
             return false;
           }
-          token = await r.text();
         } else {
           const r = await fetch("/api/auth/login", {
             method: "POST",
@@ -181,7 +204,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             return false;
           }
           const data = await r.json();
-          token = data?.token ?? null;
+          token = data?.token || null;
           if (!token && USE_COOKIE_MODE) {
             addToast("Login via cookie concluído", "success");
             applyJwt(null);
@@ -189,7 +212,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         }
         if (!token) {
-          addToast("Token ausente na resposta", "error");
+          addToast("Token ausente", "error");
           return false;
         }
         applyJwt(token);
