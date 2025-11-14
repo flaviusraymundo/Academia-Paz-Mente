@@ -49,6 +49,12 @@ qz as (
   select m.module_id, 70.0 from m
   returning id as quiz_id, module_id
 ),
+qi as (
+  -- cria o item 'quiz' no módulo para aparecer em /api/me/items
+  insert into module_items(module_id, type, "order", payload_ref)
+  select qz.module_id, 'quiz', 3, jsonb_build_object('quiz_id', qz.quiz_id) from qz
+  returning id as quiz_item_id, module_id
+),
 
 -- 3) Questões
 q1 as (
