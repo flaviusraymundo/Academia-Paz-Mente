@@ -44,7 +44,7 @@ exports.handler = async (event) => {
   try {
     const email =
       (event && event.queryStringParameters && event.queryStringParameters.email) ||
-      "dev@example.com";
+      "flaviusraymundo@gmail.com";
     const now = Math.floor(Date.now() / 1000);
     const day = 24 * 60 * 60;
 
