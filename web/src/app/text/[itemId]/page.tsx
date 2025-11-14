@@ -40,7 +40,11 @@ export default function TextItemPage() {
 
   useEffect(() => {
     if (!ready) return;
-    if (!jwt) setReading(false);
+    if (!jwt) {
+      setReading(false);
+    } else {
+      setReading(true);
+    }
   }, [ready, jwt]);
 
   return (
@@ -74,8 +78,8 @@ export default function TextItemPage() {
           enquanto a leitura estiver ativa.
         </p>
         <p>
-          Você pode pausar/retomar a leitura usando o botão abaixo (apenas influencia na telemetria;
-          o conteúdo permanece visível).
+          Você pode pausar/retomar a leitura usando o botão abaixo. Se entrar sem login e depois
+          autenticar, a leitura retoma automaticamente.
         </p>
       </article>
 
