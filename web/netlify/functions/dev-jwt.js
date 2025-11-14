@@ -4,11 +4,10 @@ const crypto = require("crypto");
 
 // UUID v5 determinístico (sem dependência externa)
 function uuidV5(name, namespace) {
-  const nsHex = namespace.replace(/-/g, "");
-  if (nsHex.length !== 32) {
-    namespace = "00000000-0000-0000-0000-000000000000";
-  }
-  const nsBytes = Buffer.from(namespace.replace(/-/g, ""), "hex");
+  const ns = /^[0-9a-fA-F-]{36}$/.test(namespace)
+    ? namespace
+    : "00000000-0000-0000-0000-000000000000";
+  const nsBytes = Buffer.from(ns.replace(/-/g, ""), "hex");
   const nameBytes = Buffer.from(name, "utf8");
   const sha1 = crypto.createHash("sha1");
   sha1.update(nsBytes);
