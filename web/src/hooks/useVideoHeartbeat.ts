@@ -2,10 +2,11 @@
 
 import { useEffect, useRef } from "react";
 import { api } from "../lib/api";
+import { USE_COOKIE_MODE } from "../lib/config";
 
 type HeartbeatOpts = {
   enabled: boolean;
-  jwt: string;
+  jwt?: string | null;
   courseId: string;
   moduleId: string;
   itemId: string;
@@ -36,7 +37,8 @@ export function useVideoHeartbeat(opts: HeartbeatOpts) {
       timerRef.current = null;
     }
 
-    if (!enabled || !jwt || !itemId) return;
+    if (!enabled || !itemId) return;
+    if (!USE_COOKIE_MODE && !jwt) return;
 
     async function sendBeat() {
       lastBeatRef.current = Date.now();
@@ -44,7 +46,7 @@ export function useVideoHeartbeat(opts: HeartbeatOpts) {
         await api(`/api/video/heartbeat`, {
           method: "POST",
           body: JSON.stringify({ courseId, moduleId, itemId, secs: Math.round(intervalMs / 1000) }),
-          jwt,
+          jwt: jwt ?? null,
         });
         onBeatRef.current?.({ at: lastBeatRef.current });
       } catch {

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { api } from "../../../lib/api";
 import { useRequireAuth } from "../../../hooks/useRequireAuth";
+import { useAuth } from "../../../contexts/AuthContext";
 import { PlaybackTokenResponseSchema } from "../../../schemas/video";
 import { useVideoHeartbeat } from "../../../hooks/useVideoHeartbeat";
 import { VideoPlayer } from "../../../components/video/VideoPlayer";
@@ -14,7 +15,8 @@ export default function VideoItemPage() {
   const qs = useSearchParams();
   const courseId = qs.get("courseId") || "";
   const moduleId = qs.get("moduleId") || "";
-  const { jwt, ready } = useRequireAuth();
+  const { authReady, isAuthenticated } = useRequireAuth();
+  const { jwt } = useAuth();
 
   const [token, setToken] = useState<string | null>(null);
   const [status, setStatus] = useState<any>(null);
@@ -25,8 +27,8 @@ export default function VideoItemPage() {
   const [loadingMeta, setLoadingMeta] = useState(false);
 
   useEffect(() => {
-    if (!ready) return;
-    if (!jwt) {
+    if (!authReady) return;
+    if (!isAuthenticated) {
       setToken(null);
       setPlaybackId(null);
       setErr(null);
@@ -142,7 +144,7 @@ export default function VideoItemPage() {
       acToken.abort();
       acMeta.abort();
     };
-  }, [itemId, courseId, jwt, ready]);
+  }, [itemId, courseId, jwt, authReady, isAuthenticated]);
 
   const DEBUG = process.env.NEXT_PUBLIC_DEBUG === "1";
 
@@ -156,8 +158,8 @@ export default function VideoItemPage() {
   );
 
   useVideoHeartbeat({
-    enabled: !!(DEBUG && playing && jwt && itemId),
-    jwt: jwt || "",
+    enabled: !!(DEBUG && playing && isAuthenticated && itemId),
+    jwt,
     courseId,
     moduleId,
     itemId,
@@ -172,7 +174,7 @@ export default function VideoItemPage() {
     setPlaying(false);
   }
 
-  const showPlayer = ready && !!jwt && !!playbackId;
+  const showPlayer = authReady && isAuthenticated && !!playbackId;
 
   const infoRows = useMemo(
     () => [
@@ -209,9 +211,9 @@ export default function VideoItemPage() {
         ))}
       </div>
 
-      {!jwt && ready && <div style={{ fontSize: 14 }}>Faça login para reproduzir.</div>}
+      {authReady && !isAuthenticated && <div style={{ fontSize: 14 }}>Faça login para reproduzir.</div>}
 
-      {ready && jwt && loadingMeta && <div style={{ fontSize: 14 }}>Carregando metadata...</div>}
+      {authReady && isAuthenticated && loadingMeta && <div style={{ fontSize: 14 }}>Carregando metadata...</div>}
 
       {showPlayer && (
         <VideoPlayer
@@ -222,7 +224,7 @@ export default function VideoItemPage() {
         />
       )}
 
-      {ready && jwt && !playbackId && !loadingMeta && (
+      {authReady && isAuthenticated && !playbackId && !loadingMeta && (
         <div style={{ fontSize: 12, color: "#555" }}>
           PlaybackId não disponível neste item. Verifique payload_ref.mux_playback_id.
         </div>

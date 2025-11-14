@@ -5,13 +5,13 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "../contexts/AuthContext";
 
 export function ClientAuthBar() {
-  const { jwt, decoded, logout, ready, refreshing } = useAuth();
+  const { decoded, logout, authReady, refreshing, isAuthenticated, email } = useAuth();
   const router = useRouter();
   const handleLogin = useCallback(() => {
     router.push("/login");
   }, [router]);
 
-  const email = (decoded?.payload?.email as string | undefined) || null;
+  const derivedEmail = email ?? ((decoded?.payload?.email as string | undefined) || null);
 
   return (
     <div
@@ -28,17 +28,22 @@ export function ClientAuthBar() {
     >
       <strong style={{ fontSize: 14 }}>Academia Paz &amp; Mente</strong>
       <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-        {jwt ? (
+        {isAuthenticated ? (
           <>
             <span style={{ fontSize: 12, color: "#555" }}>
-              Autenticado{email ? ` • ${email}` : ""}
+              Autenticado{derivedEmail ? ` • ${derivedEmail}` : ""}
             </span>
             {refreshing && (
               <span data-e2e="auth-refreshing" style={{ fontSize: 11, color: "#777" }}>
                 Atualizando token…
               </span>
             )}
-            <button data-e2e="auth-logout-btn" onClick={logout} style={btnStyle} disabled={!ready}>
+            <button
+              data-e2e="auth-logout-btn"
+              onClick={() => void logout()}
+              style={btnStyle}
+              disabled={!authReady}
+            >
               Sair
             </button>
           </>
@@ -47,7 +52,7 @@ export function ClientAuthBar() {
             data-e2e="auth-login-btn"
             onClick={handleLogin}
             style={btnPrimaryStyle}
-            disabled={!ready}
+            disabled={!authReady}
           >
             Entrar
           </button>

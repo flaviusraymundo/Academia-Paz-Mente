@@ -1,85 +1,93 @@
 "use client";
-
 import React, {
   createContext,
   useCallback,
   useContext,
   useEffect,
-  useMemo,
   useRef,
   useState,
 } from "react";
-import { decodeJwt, msUntilExpiry, type DecodedJwt } from "../lib/jwt";
+import { decodeJwt, msUntilExpiry } from "../lib/jwt";
+import { buildDevJwt } from "../lib/devJwt";
+import { USE_COOKIE_MODE, DEV_FAKE } from "../lib/config";
 
-type Toast = { id: string; text: string; kind: "info" | "error" | "success" };
+export type Toast = { id: string; text: string; kind: "info" | "error" | "success" };
 
 type AuthState = {
   jwt: string | null;
-  decoded: DecodedJwt | null;
-  ready: boolean;
+  decoded: ReturnType<typeof decodeJwt>;
+  ready: boolean; // contexto inicializado
+  authReady: boolean; // sessão carregada (cookie mode) ou igual a ready (header mode)
   login: (email: string) => Promise<boolean>;
-  logout: () => void;
+  logout: () => Promise<void> | void;
   refreshing: boolean;
   lastError: string | null;
   toasts: Toast[];
   dismissToast: (id: string) => void;
+  authenticated?: boolean; // só populado em cookie mode
+  email?: string | null;
+  isAuthenticated: boolean; // unificado para consumidores
 };
 
 const AuthContext = createContext<AuthState | null>(null);
+export const useAuth = () => {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error("AuthContext não disponível");
+  return ctx;
+};
 
-const USE_COOKIE_MODE = false;
 const LS_KEY = "lms_jwt";
+const BC_NAME = "auth";
 
-function makeToastId() {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
-  }
-  return Math.random().toString(36).slice(2);
+function addToastSetter(setToasts: React.Dispatch<React.SetStateAction<Toast[]>>) {
+  return (text: string, kind: Toast["kind"] = "info") =>
+    setToasts((prev) => [
+      ...prev,
+      {
+        id:
+          typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+            ? crypto.randomUUID()
+            : Math.random().toString(36).slice(2),
+        text,
+        kind,
+      },
+    ]);
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [jwt, setJwtState] = useState<string | null>(null);
-  const [decoded, setDecoded] = useState<DecodedJwt | null>(null);
+  const [jwt, setJwt] = useState<string | null>(null);
+  const [decoded, setDecoded] = useState<ReturnType<typeof decodeJwt>>(null);
   const [ready, setReady] = useState(false);
+  const [authReady, setAuthReady] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [authenticated, setAuthenticated] = useState<boolean | undefined>(undefined);
+  const [email, setEmail] = useState<string | null>(null);
+  const addToast = addToastSetter(setToasts);
+
   const refreshTimerRef = useRef<number | null>(null);
+  const bcRef = useRef<BroadcastChannel | null>(null);
 
-  const addToast = useCallback(
-    (text: string, kind: Toast["kind"] = "info") => {
-      const id = makeToastId();
-      setToasts((prev) => [...prev, { id, text, kind }]);
-    },
-    [setToasts]
-  );
-
-  const dismissToast = useCallback(
-    (id: string) => {
-      setToasts((current) => current.filter((t) => t.id !== id));
-    },
-    [setToasts]
-  );
-
-  const applyJwt = useCallback(
-    (token: string | null) => {
-      setJwtState(token);
-      setDecoded(token ? decodeJwt(token) : null);
-      if (USE_COOKIE_MODE) return;
-      try {
-        if (token) {
-          window.localStorage.setItem(LS_KEY, token);
-        } else {
-          window.localStorage.removeItem(LS_KEY);
-        }
-      } catch {
-        // noop
+  const refreshSession = useCallback(async () => {
+    try {
+      const r = await fetch("/api/auth/session", { credentials: "include" });
+      const j = await r.json();
+      if (j?.authenticated) {
+        setAuthenticated(true);
+        setEmail(j?.email || null);
+      } else {
+        setAuthenticated(false);
+        setEmail(null);
       }
-    },
-    [setDecoded, setJwtState]
-  );
+    } catch {
+      setAuthenticated(false);
+      setEmail(null);
+    }
+  }, []);
 
   const scheduleRefresh = useCallback(async () => {
+    if (USE_COOKIE_MODE) return;
     if (!jwt) return;
     setRefreshing(true);
     try {
@@ -88,7 +96,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         addToast("Token sem exp (DEV); nenhum refresh realizado.", "info");
         return;
       }
-      // TODO: implementar chamada real para refresh
       addToast("Refresh stub concluído (implementar rota real).", "info");
     } catch (e: any) {
       setLastError(String(e?.message || e));
@@ -96,52 +103,45 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setRefreshing(false);
     }
-  }, [addToast, jwt, setLastError, setRefreshing]);
+  }, [jwt, addToast]);
 
+  // Inicialização
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!USE_COOKIE_MODE) {
-      try {
-        const stored = window.localStorage.getItem(LS_KEY);
-        if (stored) {
-          setJwtState(stored);
-          setDecoded(decodeJwt(stored));
-        }
-      } catch {
-        // noop
-      }
+    if (USE_COOKIE_MODE) {
+      void refreshSession().finally(() => {
+        setReady(true);
+        setAuthReady(true);
+      });
+      return;
+    }
+    const initial = window.localStorage.getItem(LS_KEY);
+    if (initial) {
+      setJwt(initial);
+      setDecoded(decodeJwt(initial));
     }
     setReady(true);
-  }, []);
+    setAuthReady(true);
+  }, [refreshSession]);
 
+  // Timer de refresh (apenas header/JWT mode)
   useEffect(() => {
-    if (typeof window === "undefined" || USE_COOKIE_MODE) return;
-    function onStorage(event: StorageEvent) {
-      if (event.key !== LS_KEY) return;
-      const value = event.newValue;
-      setJwtState(value);
-      setDecoded(value ? decodeJwt(value) : null);
-    }
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, []);
-
-  useEffect(() => {
+    if (USE_COOKIE_MODE) return;
     if (refreshTimerRef.current) {
       window.clearTimeout(refreshTimerRef.current);
       refreshTimerRef.current = null;
     }
     if (!jwt) return;
-    const d = decoded ?? decodeJwt(jwt);
-    if (!d) return;
+    const d = decodeJwt(jwt);
+    setDecoded(d);
     const ms = msUntilExpiry(d);
     if (ms != null && ms > 0) {
       refreshTimerRef.current = window.setTimeout(() => {
         void scheduleRefresh();
       }, ms);
     }
-  }, [decoded, jwt, scheduleRefresh]);
+  }, [jwt, scheduleRefresh]);
 
+  // Cleanup timer em unmount
   useEffect(() => {
     return () => {
       if (refreshTimerRef.current) {
@@ -150,6 +150,83 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     };
   }, []);
+
+  // Cross-tab sync via BroadcastChannel (cookie e header mode)
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof BroadcastChannel === "undefined") return;
+    const bc = new BroadcastChannel(BC_NAME);
+    bc.onmessage = (ev) => {
+      const msg = ev.data?.type as string | undefined;
+      if (!msg) return;
+
+      if (msg === "logout") {
+        if (USE_COOKIE_MODE) {
+          void refreshSession();
+        } else {
+          setJwt(null);
+          setDecoded(null);
+          if (refreshTimerRef.current) {
+            window.clearTimeout(refreshTimerRef.current);
+            refreshTimerRef.current = null;
+          }
+        }
+      } else if (msg === "login" || msg === "session-refresh") {
+        if (USE_COOKIE_MODE) {
+          void refreshSession();
+        } else {
+          const tok = window.localStorage.getItem(LS_KEY);
+          if (tok) {
+            setJwt(tok);
+            setDecoded(decodeJwt(tok));
+          }
+        }
+      }
+    };
+    bcRef.current = bc;
+    return () => {
+      try {
+        bc.close();
+      } catch {
+        // noop
+      }
+      bcRef.current = null;
+    };
+  }, [refreshSession]);
+
+  // Cross-tab sync via storage event (header/JWT mode)
+  useEffect(() => {
+    if (USE_COOKIE_MODE) return;
+    if (typeof window === "undefined") return;
+
+    const onStorage = (ev: StorageEvent) => {
+      if (ev.key !== LS_KEY) return;
+      const next = ev.newValue;
+      if (next) {
+        setJwt(next);
+        setDecoded(decodeJwt(next));
+      } else {
+        setJwt(null);
+        setDecoded(null);
+        if (refreshTimerRef.current) {
+          window.clearTimeout(refreshTimerRef.current);
+          refreshTimerRef.current = null;
+        }
+      }
+    };
+
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
+  // Revalida sessão quando aba volta a ficar visível (cookie mode)
+  useEffect(() => {
+    if (!USE_COOKIE_MODE) return;
+    const onVis = () => {
+      if (!document.hidden) void refreshSession();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, [refreshSession]);
 
   const login = useCallback(
     async (email: string) => {
@@ -160,14 +237,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           addToast("Email inválido", "error");
           return false;
         }
+
+        if (USE_COOKIE_MODE) {
+          const r = await fetch("/api/auth/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email }),
+            credentials: "include",
+          });
+          if (!r.ok) {
+            setLastError(`Login falhou (${r.status})`);
+            addToast("Login falhou", "error");
+            return false;
+          }
+          await refreshSession();
+          addToast("Login via cookie efetuado", "success");
+          setAuthReady(true);
+          bcRef.current?.postMessage({ type: "session-refresh" });
+          return true;
+        }
+
         let token: string | null = null;
 
-        const devFlagClient =
-          process.env.NEXT_PUBLIC_DEV_FAKE === "1" || process.env.NEXT_PUBLIC_DEV_FAKE === "true";
-        // Server gate (só confiável no backend, mas aqui usamos para decidir tentar endpoints)
-        const devEnabledServerHint = devFlagClient; // pode espelhar DEV_JWT_ENABLED no build se quiser
-
-        if (devFlagClient && devEnabledServerHint) {
+        if (DEV_FAKE) {
           const endpoints = [
             `/api/dev-jwt?email=${encodeURIComponent(email)}`,
             `/.netlify/functions/dev-jwt?email=${encodeURIComponent(email)}`,
@@ -177,8 +269,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             try {
               const r = await fetch(url);
               if (r.ok) {
-                const t = await r.text();
-                token = t;
+                token = await r.text();
                 break;
               } else {
                 errors.push(`${url} -> ${r.status}`);
@@ -187,10 +278,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               errors.push(`${url} -> ${String(e?.message || e)}`);
             }
           }
+
           if (!token) {
-            setLastError(`Dev endpoints indisponíveis (${errors.join(" ; ")})`);
-            addToast("Dev-jwt desabilitado ou falhou", "error");
-            return false;
+            const rawAllow =
+              typeof process !== "undefined"
+                ? (process as any).env?.NEXT_PUBLIC_ALLOW_CLIENT_FAKE_JWT
+                : undefined;
+            const allowClientFake = rawAllow === "1" || rawAllow === "true";
+
+            if (!allowClientFake) {
+              setLastError(`Dev endpoints indisponíveis (${errors.join(" ; ")})`);
+              addToast("Dev-jwt indisponível", "error");
+              return false;
+            }
+
+            token = await buildDevJwt(email);
+            addToast("Usando dev-jwt local (fallback)", "info");
+            setLastError(`Dev endpoints indisponíveis (${errors.join(" ; ")}); fallback client.`);
           }
         } else {
           const r = await fetch("/api/auth/login", {
@@ -205,17 +309,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
           const data = await r.json();
           token = data?.token || null;
-          if (!token && USE_COOKIE_MODE) {
-            addToast("Login via cookie concluído", "success");
-            applyJwt(null);
-            return true;
-          }
         }
+
         if (!token) {
           addToast("Token ausente", "error");
           return false;
         }
-        applyJwt(token);
+
+        setJwt(token);
+        window.localStorage.setItem(LS_KEY, token);
+        bcRef.current?.postMessage({ type: "login" });
         addToast("Login efetuado", "success");
         return true;
       } catch (e: any) {
@@ -225,35 +328,53 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return false;
       }
     },
-    [addToast, applyJwt, setLastError]
+    [refreshSession, addToast]
   );
 
-  const logout = useCallback(() => {
-    applyJwt(null);
+  const logout = useCallback(async () => {
+    if (USE_COOKIE_MODE) {
+      await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+      await refreshSession();
+      setAuthReady(true);
+      addToast("Logout via cookie efetuado", "info");
+      bcRef.current?.postMessage({ type: "logout" });
+      return;
+    }
+    setJwt(null);
+    setDecoded(null);
+    window.localStorage.removeItem(LS_KEY);
     if (refreshTimerRef.current) {
       window.clearTimeout(refreshTimerRef.current);
       refreshTimerRef.current = null;
     }
     addToast("Logout efetuado", "info");
-  }, [addToast, applyJwt]);
+    bcRef.current?.postMessage({ type: "logout" });
+  }, [refreshSession, addToast]);
 
-  const value = useMemo<AuthState>(
-    () => ({
-      jwt,
-      decoded,
-      ready,
-      login,
-      logout,
-      refreshing,
-      lastError,
-      toasts,
-      dismissToast,
-    }),
-    [decoded, dismissToast, jwt, lastError, login, logout, ready, refreshing, toasts]
-  );
+  const dismissToast = (id: string) => {
+    setToasts((ts) => ts.filter((t) => t.id !== id));
+  };
+
+  const isAuthenticated = USE_COOKIE_MODE ? !!authenticated : !!jwt;
 
   return (
-    <AuthContext.Provider value={value}>
+    <AuthContext.Provider
+      value={{
+        jwt,
+        decoded,
+        ready,
+        authReady,
+        login,
+        logout,
+        refreshing,
+        lastError,
+        toasts,
+        dismissToast,
+        authenticated: USE_COOKIE_MODE ? !!authenticated : undefined,
+        email: USE_COOKIE_MODE ? email : undefined,
+        isAuthenticated,
+      }}
+    >
       {children}
       <div
         style={{
@@ -294,9 +415,3 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     </AuthContext.Provider>
   );
 }
-
-export const useAuth = () => {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("AuthContext não disponível");
-  return ctx;
-};

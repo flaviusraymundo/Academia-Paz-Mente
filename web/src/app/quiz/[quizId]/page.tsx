@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { api } from "../../../lib/api";
 import { useRequireAuth } from "../../../hooks/useRequireAuth";
+import { useAuth } from "../../../contexts/AuthContext";
 import { Card } from "../../../components/ui/Card";
 import { Skeleton } from "../../../components/ui/Skeleton";
 import { QuestionCard } from "../../../components/quiz/QuestionCard";
@@ -12,7 +13,8 @@ import { QuizSchema, Question } from "../../../schemas/quiz";
 
 export default function QuizPage() {
   const { quizId } = useParams<{ quizId: string }>();
-  const { jwt, ready } = useRequireAuth();
+  const { authReady, isAuthenticated } = useRequireAuth();
+  const { jwt } = useAuth();
 
   const [questions, setQuestions] = useState<Question[]>([]);
   const [passScore, setPassScore] = useState<number>(0);
@@ -25,8 +27,8 @@ export default function QuizPage() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (!ready) return;
-    if (!jwt) {
+    if (!authReady) return;
+    if (!isAuthenticated) {
       setQuestions([]);
       setPassScore(0);
       setErr(null);
@@ -77,7 +79,7 @@ export default function QuizPage() {
     return () => {
       alive = false;
     };
-  }, [quizId, jwt, ready]);
+  }, [quizId, jwt, authReady, isAuthenticated]);
 
   const allRequiredAnswered = useMemo(() => {
     const required = questions.filter((q) => q.required);
@@ -121,14 +123,14 @@ export default function QuizPage() {
         </span>
       </div>
 
-      {!ready && (
+      {!authReady && (
         <div data-testid="quiz-auth-loading" style={{ display: "grid", gap: 12 }}>
           <Card><Skeleton h={16} w="50%" /><Skeleton h={12} w="90%" /></Card>
           <Card><Skeleton h={16} w="40%" /><Skeleton h={12} w="85%" /></Card>
         </div>
       )}
 
-      {ready && !jwt && (
+      {authReady && !isAuthenticated && (
         <Card data-testid="quiz-auth-warning">
           <strong>Não autenticado</strong>
           <p style={{ margin: 0, fontSize: 13, color: "var(--color-text-soft)" }}>
@@ -137,7 +139,7 @@ export default function QuizPage() {
         </Card>
       )}
 
-      {ready && jwt && loading && (
+      {authReady && isAuthenticated && loading && (
         <div data-testid="quiz-loading" style={{ display: "grid", gap: 12 }}>
           {Array.from({ length: 2 }).map((_, i) => (
             <Card key={i}>
@@ -149,7 +151,7 @@ export default function QuizPage() {
         </div>
       )}
 
-      {ready && jwt && err && !loading && (
+      {authReady && isAuthenticated && err && !loading && (
         <Card
           data-testid="quiz-error"
           style={{ borderColor: "#f2c2c2", background: "#fff6f6", color: "#842029" }}
@@ -159,7 +161,7 @@ export default function QuizPage() {
         </Card>
       )}
 
-      {ready && jwt && !err && !loading && questions.length > 0 && (
+      {authReady && isAuthenticated && !err && !loading && questions.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <div data-testid="quiz-pass-score" style={{ fontSize: 13, color: "#555" }}>
             passScore: {passScore}
@@ -208,7 +210,7 @@ export default function QuizPage() {
         </div>
       )}
 
-      {ready && jwt && submitOut && <ResultPanel result={submitOut} />}
+      {authReady && isAuthenticated && submitOut && <ResultPanel result={submitOut} />}
     </div>
   );
 }

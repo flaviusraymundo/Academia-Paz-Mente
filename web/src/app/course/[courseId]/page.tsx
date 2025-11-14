@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { api } from "../../../lib/api";
 import { useRequireAuth } from "../../../hooks/useRequireAuth";
+import { useAuth } from "../../../contexts/AuthContext";
 import { Module } from "../../../types/course";
 import { CourseHeader } from "../../../components/course/CourseHeader";
 import { ModuleCard } from "../../../components/course/ModuleCard";
@@ -17,12 +18,13 @@ export default function CoursePage() {
   const [mods, setMods] = useState<Module[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const { jwt, ready } = useRequireAuth();
+  const { authReady, isAuthenticated } = useRequireAuth();
+  const { jwt } = useAuth();
 
   useEffect(() => {
-    if (!ready) return;
+    if (!authReady) return;
 
-    if (!jwt) {
+    if (!isAuthenticated) {
       setMods([]);
       setErr(null);
       setLoading(false);
@@ -64,7 +66,7 @@ export default function CoursePage() {
     return () => {
       alive = false;
     };
-  }, [courseId, jwt, ready]);
+  }, [courseId, jwt, authReady, isAuthenticated]);
 
   const DEBUG = process.env.NEXT_PUBLIC_DEBUG === "1";
   const title = useMemo(() => `Curso`, []);
@@ -89,7 +91,7 @@ export default function CoursePage() {
         }
       />
 
-      {!ready && (
+      {!authReady && (
         <div style={{ display: "grid", gap: 10 }}>
           <Card>
             <Skeleton h={16} w="40%" />
@@ -102,7 +104,7 @@ export default function CoursePage() {
         </div>
       )}
 
-      {ready && !jwt && (
+      {authReady && !isAuthenticated && (
         <Card>
           <strong>Não autenticado</strong>
           <p style={{ margin: 0, fontSize: 13, color: "var(--color-text-soft)" }}>
@@ -111,7 +113,7 @@ export default function CoursePage() {
         </Card>
       )}
 
-      {ready && jwt && loading && (
+      {authReady && isAuthenticated && loading && (
         <div style={{ display: "grid", gap: 12 }}>
           {Array.from({ length: 3 }).map((_, i) => (
             <Card key={i}>
@@ -123,18 +125,18 @@ export default function CoursePage() {
         </div>
       )}
 
-      {ready && jwt && err && !loading && (
+      {authReady && isAuthenticated && err && !loading && (
         <Card style={{ borderColor: "#f2c2c2", background: "#fff6f6", color: "#842029" }}>
           <strong>Erro ao carregar módulos</strong>
           <pre style={{ margin: 0, whiteSpace: "pre-wrap", fontSize: 12 }}>{err}</pre>
         </Card>
       )}
 
-      {ready && jwt && !err && !loading && mods.length === 0 && (
+      {authReady && isAuthenticated && !err && !loading && mods.length === 0 && (
         <p style={{ fontSize: 14, color: "#555" }}>Nenhum módulo disponível.</p>
       )}
 
-      {ready && jwt && !err && !loading && mods.length > 0 && (
+      {authReady && isAuthenticated && !err && !loading && mods.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           {mods
             .slice()

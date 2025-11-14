@@ -1,52 +1,96 @@
-// Utilidades centralizadas para chamadas à API do backend.
+import { USE_COOKIE_MODE } from "./config";
 
 export function getApiBase(): string {
   return (process.env.NEXT_PUBLIC_API_BASE || "").replace(/\/+$/, "");
 }
 
-type ApiOptions = (RequestInit & { jwt?: string | null }) | undefined;
+export type ApiResponse<T = any> = { status: number; body: T | any };
 
-export async function api<T = any>(path: string, init?: ApiOptions): Promise<{ status: number; body: T | any }> {
+type ApiOptions = {
+  method?: string;
+  headers?: Record<string, string>;
+  body?: string;
+  jwt?: string | null;
+  signal?: AbortSignal;
+  timeoutMs?: number;
+};
+
+/**
+ * Helper de chamadas HTTP com timeout configurável.
+ * Retorna sempre { status, body } e normaliza erros de rede.
+ */
+export async function api<T = any>(path: string, opts: ApiOptions = {}): Promise<ApiResponse<T>> {
+  const { method = "GET", headers = {}, body, jwt, signal, timeoutMs } = opts;
+  const h: Record<string, string> = { ...headers };
   const base = getApiBase();
   const url = base ? `${base}${path}` : path;
 
-  const { jwt, headers, body, cache, ...rest } = init || {};
-  const h = new Headers(headers);
+  const envTimeout =
+    typeof window !== "undefined"
+      ? Number(process.env.NEXT_PUBLIC_API_TIMEOUT_MS)
+      : Number(process.env.API_TIMEOUT_MS);
 
-  const USE_COOKIE_MODE = false;
-  if (jwt && !USE_COOKIE_MODE) {
-    h.set("Authorization", `Bearer ${jwt}`);
+  const effectiveTimeout =
+    timeoutMs ??
+    (Number.isFinite(envTimeout) && envTimeout > 0 ? envTimeout : 30000);
+
+  if (!USE_COOKIE_MODE && jwt) {
+    h.Authorization = `Bearer ${jwt}`;
+  }
+  if (body && !("Content-Type" in h)) {
+    h["Content-Type"] = "application/json";
   }
 
-  if (typeof body === "string" && !h.has("Content-Type")) {
-    h.set("Content-Type", "application/json");
-  }
-
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      ...rest,
-      headers: h,
-      body,
-      credentials: USE_COOKIE_MODE ? "include" : "same-origin",
-      cache: cache ?? "no-store",
-    });
-  } catch (e: any) {
-    return { status: 0, body: { error: "fetch_failed", detail: String(e) } };
-  }
-
-  let data: any = null;
-  try {
-    data = await res.json();
-  } catch {
-    try {
-      data = await res.text();
-    } catch {
-      data = null;
+  const controller = new AbortController();
+  const abortListener = () => controller.abort();
+  if (signal) {
+    if (signal.aborted) {
+      controller.abort();
+    } else {
+      signal.addEventListener("abort", abortListener, { once: true });
     }
   }
+  const timeout = setTimeout(() => controller.abort(), effectiveTimeout);
 
-  return { status: res.status, body: data };
+  try {
+    const response = await fetch(url, {
+      method,
+      headers: h,
+      body,
+      signal: controller.signal,
+      credentials: USE_COOKIE_MODE ? "include" : "same-origin",
+    });
+    clearTimeout(timeout);
+    if (signal) {
+      signal.removeEventListener("abort", abortListener);
+    }
+
+    let data: any = null;
+    try {
+      data = await response.json();
+    } catch {
+      try {
+        data = await response.text();
+      } catch {
+        data = null;
+      }
+    }
+
+    return { status: response.status, body: data };
+  } catch (e: any) {
+    clearTimeout(timeout);
+    if (signal) {
+      signal.removeEventListener("abort", abortListener);
+    }
+    return {
+      status: 0,
+      body: {
+        error: String(e?.message || e),
+        path,
+        aborted: controller.signal.aborted,
+      },
+    };
+  }
 }
 
 export async function apiGet<T = any>(path: string, jwt?: string | null) {
@@ -54,8 +98,12 @@ export async function apiGet<T = any>(path: string, jwt?: string | null) {
 }
 
 export async function apiPost<T = any>(path: string, data?: any, jwt?: string | null) {
-  return api<T>(path, { method: "POST", body: data ? JSON.stringify(data) : undefined, jwt });
+  return api<T>(path, {
+    method: "POST",
+    body: data ? JSON.stringify(data) : undefined,
+    jwt,
+  });
 }
 
-const apiDefault = Object.assign(api, { get: apiGet, post: apiPost, base: getApiBase });
+const apiDefault = Object.assign(api, { base: getApiBase, get: apiGet, post: apiPost });
 export default apiDefault;

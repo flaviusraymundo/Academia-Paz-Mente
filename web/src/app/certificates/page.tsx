@@ -5,20 +5,22 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api } from "../../lib/api";
 import { useRequireAuth } from "../../hooks/useRequireAuth";
+import { useAuth } from "../../contexts/AuthContext";
 import { Card } from "../../components/ui/Card";
 import { Badge } from "../../components/ui/Badge";
 import { Skeleton } from "../../components/ui/Skeleton";
 import { CertificateListSchema, type Certificate } from "../../schemas/certificates";
 
 export default function CertificatesPage() {
-  const { jwt, ready } = useRequireAuth();
+  const { authReady, isAuthenticated } = useRequireAuth();
+  const { jwt } = useAuth();
   const [items, setItems] = useState<Certificate[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!ready) return;
-    if (!jwt) {
+    if (!authReady) return;
+    if (!isAuthenticated) {
       setItems([]);
       setErr(null);
       setLoading(false);
@@ -50,13 +52,13 @@ export default function CertificatesPage() {
     return () => {
       alive = false;
     };
-  }, [jwt, ready]);
+  }, [jwt, authReady, isAuthenticated]);
 
   return (
     <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <h1 style={{ margin: 0, fontSize: 22 }}>Certificados</h1>
 
-      {!ready && (
+      {!authReady && (
         <div style={{ display: "grid", gap: 12 }}>
           <Card>
             <Skeleton h={18} w="40%" />
@@ -69,7 +71,7 @@ export default function CertificatesPage() {
         </div>
       )}
 
-      {ready && !jwt && (
+      {authReady && !isAuthenticated && (
         <Card>
           <strong>Não autenticado</strong>
           <p style={{ margin: 0, fontSize: 13, color: "var(--color-text-soft)" }}>
@@ -78,7 +80,7 @@ export default function CertificatesPage() {
         </Card>
       )}
 
-      {ready && jwt && loading && (
+      {authReady && isAuthenticated && loading && (
         <div style={{ display: "grid", gap: 12 }}>
           {Array.from({ length: 3 }).map((_, i) => (
             <Card key={i}>
@@ -89,18 +91,18 @@ export default function CertificatesPage() {
         </div>
       )}
 
-      {ready && jwt && err && !loading && (
+      {authReady && isAuthenticated && err && !loading && (
         <Card style={{ borderColor: "#f2c2c2", background: "#fff6f6", color: "#842029" }}>
           <strong>Erro ao carregar certificados</strong>
           <pre style={{ margin: 0, whiteSpace: "pre-wrap", fontSize: 12 }}>{err}</pre>
         </Card>
       )}
 
-      {ready && jwt && !err && !loading && items.length === 0 && (
+      {authReady && isAuthenticated && !err && !loading && items.length === 0 && (
         <p style={{ fontSize: 14, color: "#555" }}>Nenhum certificado encontrado.</p>
       )}
 
-      {ready && jwt && !err && !loading && items.length > 0 && (
+      {authReady && isAuthenticated && !err && !loading && items.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {items.map((c, index) => (
             <Card key={c.serial ?? c.id ?? `${c.courseId ?? "unknown"}-${index}`} style={{ gap: 8 }}>

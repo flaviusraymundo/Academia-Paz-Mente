@@ -2,10 +2,11 @@
 
 import { useEffect, useRef } from "react";
 import { api } from "../lib/api";
+import { USE_COOKIE_MODE } from "../lib/config";
 
 type PageReadOpts = {
   enabled: boolean;
-  jwt: string;
+  jwt?: string | null;
   courseId: string;
   moduleId: string;
   itemId: string;
@@ -42,7 +43,11 @@ export function usePageRead(opts: PageReadOpts) {
     }
 
     const { enabled, jwt, courseId, moduleId, itemId, intervalMs = 15000 } = opts;
-    if (!enabled || !jwt || !courseId || !moduleId || !itemId) {
+    if (!enabled || !courseId || !moduleId || !itemId) {
+      activeRef.current = false;
+      return;
+    }
+    if (!USE_COOKIE_MODE && !jwt) {
       activeRef.current = false;
       return;
     }
@@ -62,7 +67,7 @@ export function usePageRead(opts: PageReadOpts) {
         await api("/api/events/page-read", {
           method: "POST",
           body: JSON.stringify({ courseId, moduleId, itemId, ms: delta }),
-          jwt,
+          jwt: jwt ?? null,
         });
       } catch {
         // silencioso

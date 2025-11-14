@@ -12,14 +12,14 @@ import { CatalogSchema, CatalogData } from "../schemas/catalog";
 type CatalogResponse = CatalogData;
 
 export default function CatalogPage() {
-  const { jwt, ready } = useAuth();
+  const { jwt, authReady, isAuthenticated } = useAuth();
   const [catalog, setCatalog] = useState<CatalogResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<any>(null);
 
   useEffect(() => {
-    if (!ready) return;
-    if (!jwt) {
+    if (!authReady) return;
+    if (!isAuthenticated) {
       setCatalog(null);
       setError(null);
       setLoading(false);
@@ -48,7 +48,7 @@ export default function CatalogPage() {
       setLoading(false);
     })();
     return () => { alive = false; };
-  }, [jwt, ready]);
+  }, [jwt, authReady, isAuthenticated]);
 
   const apiBase = getApiBase();
   const courses = useMemo(() => catalog?.courses ?? [], [catalog]);
@@ -66,7 +66,7 @@ export default function CatalogPage() {
         )}
       </div>
 
-      {ready && !jwt && (
+      {authReady && !isAuthenticated && (
         <Card style={{ padding:16, gap:8 }}>
           <strong>Não autenticado</strong>
           <p style={{ margin:0, fontSize:13, color:"var(--color-text-soft)" }}>
@@ -114,7 +114,7 @@ export default function CatalogPage() {
         </div>
       )}
 
-      {jwt && !loading && !error && catalog && courses.length === 0 && tracks.length === 0 && (
+      {isAuthenticated && !loading && !error && catalog && courses.length === 0 && tracks.length === 0 && (
         <p style={{ fontSize:14, color:"#555" }}>Nenhum curso disponível.</p>
       )}
     </div>

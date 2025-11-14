@@ -4,13 +4,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { useRequireAuth } from "../../../hooks/useRequireAuth";
 import { usePageRead } from "../../../hooks/usePageRead";
+import { useAuth } from "../../../contexts/AuthContext";
 
 export default function TextItemPage() {
   const { itemId } = useParams<{ itemId: string }>();
   const qs = useSearchParams();
   const courseId = qs.get("courseId") || "";
   const moduleId = qs.get("moduleId") || "";
-  const { jwt, ready } = useRequireAuth();
+  const { authReady, isAuthenticated } = useRequireAuth();
+  const { jwt } = useAuth();
 
   const [reading, setReading] = useState(true);
   const [lastBeat, setLastBeat] = useState<string | null>(null);
@@ -19,15 +21,15 @@ export default function TextItemPage() {
   // - wasAuthedRef: detectar transição real de login (false -> true)
   // - authPausedRef: lembrar se a última pausa foi automática por falta de auth
   // - manualPausedRef: o usuário pausou manualmente (apenas em DEBUG)
-  const wasAuthedRef = useRef<boolean>(!!jwt);
+  const wasAuthedRef = useRef<boolean>(isAuthenticated);
   const authPausedRef = useRef<boolean>(false);
   const manualPausedRef = useRef<boolean>(false);
 
   const DEBUG = process.env.NEXT_PUBLIC_DEBUG === "1";
 
   usePageRead({
-    enabled: !!(ready && jwt && reading && courseId && moduleId && itemId),
-    jwt: jwt || "",
+    enabled: !!(authReady && isAuthenticated && reading && courseId && moduleId && itemId),
+    jwt,
     courseId,
     moduleId,
     itemId,
@@ -52,9 +54,9 @@ export default function TextItemPage() {
   //   e não houver pausa manual.
   // - Refresh (true -> true): não interfere.
   useEffect(() => {
-    if (!ready) return;
+    if (!authReady) return;
 
-    const nowAuthed = !!jwt;
+    const nowAuthed = isAuthenticated;
     const wasAuthed = wasAuthedRef.current;
 
     if (!nowAuthed) {
@@ -70,12 +72,12 @@ export default function TextItemPage() {
     }
 
     wasAuthedRef.current = nowAuthed;
-  }, [ready, jwt, reading]);
+  }, [authReady, isAuthenticated, reading]);
 
   // 2) Sincroniza com visibilidade da aba (auto-pause quando a aba fica oculta).
   // Não sobrescreve pausa manual.
   useEffect(() => {
-    if (!ready || !jwt) return;
+    if (!authReady || !isAuthenticated) return;
 
     const applyVisibility = () => {
       if (manualPausedRef.current) return;
@@ -98,7 +100,7 @@ export default function TextItemPage() {
       window.removeEventListener("focus", onFocus);
       window.removeEventListener("blur", onBlur);
     };
-  }, [ready, jwt]);
+  }, [authReady, isAuthenticated]);
 
   return (
     <div
@@ -116,7 +118,7 @@ export default function TextItemPage() {
         ))}
       </div>
 
-      {!jwt && ready && (
+      {authReady && !isAuthenticated && (
         <div data-testid="text-auth-warning" style={{ fontSize: 14 }}>
           Faça login para registrar leitura.
         </div>

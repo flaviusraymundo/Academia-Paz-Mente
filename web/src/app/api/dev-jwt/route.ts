@@ -1,6 +1,8 @@
-// Rota Next para emitir um JWT de desenvolvimento.
-// GATED: somente se DEV_JWT_ENABLED=1 e NODE_ENV !== 'production'.
-// sub é um UUID válido (obtido via upsert opcional em DB ou gerado determinístico v5).
+// Rota Next para emitir um JWT de desenvolvimento (HS256, sub=UUID).
+// GATES:
+//   - DEV_JWT_ENABLED=1 (obriga habilitação explícita)
+//   - Bloqueio forte em produção: se CONTEXT='production' (Netlify) OU NODE_ENV='production',
+//     então só libera se DEV_JWT_ALLOW_IN_PRODUCTION=1 (opt-in consciente).
 export const runtime = "nodejs";
 
 import crypto from "crypto";
@@ -16,7 +18,6 @@ function uuidV5(name: string, namespace: string): string {
   sha1.update(nsBytes);
   sha1.update(nameBytes);
   const hash = sha1.digest(); // 20 bytes
-  // Converte para UUID, ajusta versão (5) e variant.
   const bytes = Buffer.from(hash.slice(0, 16));
   bytes[6] = (bytes[6] & 0x0f) | 0x50; // version 5
   bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant RFC 4122
@@ -44,9 +45,6 @@ function b64url(input: Buffer | string) {
  * Tenta criar/obter userId (UUID) no banco quando DEV_JWT_UPSERT_DB=1.
  * Caso contrário (ou se falhar), gera UUID v5 determinístico a partir do e‑mail.
  * FECHA a conexão no finally, evitando leak mesmo em erro.
- *
- * Importante: não referenciar tipos de "pg" e não usar require direto,
- * para não forçar o TypeScript a resolver o módulo em build.
  */
 async function createOrFetchUserId(email: string): Promise<string> {
   const wantDb =
@@ -88,7 +86,7 @@ async function createOrFetchUserId(email: string): Promise<string> {
     client = new Client(config);
     await client.connect();
 
-    // Adapte ao seu schema real.
+    // Adapte ao seu schema real (este é um exemplo genérico).
     const sql = `
       INSERT INTO users (id, email)
       VALUES (gen_random_uuid(), $1)
@@ -119,11 +117,22 @@ async function createOrFetchUserId(email: string): Promise<string> {
   }
 }
 
+function isProductionContext() {
+  const ctx = process.env.CONTEXT || ""; // Netlify: 'production' | 'deploy-preview' | 'branch-deploy'
+  const vercel = process.env.VERCEL_ENV || ""; // Vercel: 'production' | 'preview' | 'development'
+  const node = process.env.NODE_ENV || "";
+  // Considera "produção" se CONTEXT='production' OU VERCEL_ENV='production' OU NODE_ENV='production'
+  return ctx === "production" || vercel === "production" || node === "production";
+}
+
 export async function GET(req: Request) {
-  const enabled = process.env.DEV_JWT_ENABLED === "1";
-  const isProd = process.env.NODE_ENV === "production";
-  if (!enabled || isProd) {
-    // Esconde a existência do endpoint em produção/desabilitado
+  // Gate principal
+  if (process.env.DEV_JWT_ENABLED !== "1") {
+    return new Response("Not Found", { status: 404 });
+  }
+
+  // Safety net em produção (só libera com override explícito)
+  if (isProductionContext() && process.env.DEV_JWT_ALLOW_IN_PRODUCTION !== "1") {
     return new Response("Not Found", { status: 404 });
   }
 
@@ -146,6 +155,7 @@ export async function GET(req: Request) {
     aud: "web",
     dev: true,
   };
+
   // Assina com JWT_SECRET para alinhar com middleware
   const secret =
     process.env.JWT_SECRET || process.env.DEV_JWT_SECRET || "insecure-dev-secret";
