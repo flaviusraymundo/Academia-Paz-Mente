@@ -4,19 +4,22 @@ import { decodeJwt, msUntilExpiry } from "../lib/jwt";
 import { buildDevJwt } from "../lib/devJwt";
 import { USE_COOKIE_MODE, DEV_FAKE } from "../lib/config";
 
+export type Toast = { id: string; text: string; kind: "info" | "error" | "success" };
+
 type AuthState = {
-  jwt: string | null; // null em cookie mode
+  jwt: string | null;
   decoded: ReturnType<typeof decodeJwt>;
   ready: boolean;
+  authReady: boolean;
   login: (email: string) => Promise<boolean>;
   logout: () => Promise<void> | void;
   refreshing: boolean;
   lastError: string | null;
-  toasts: { id: string; text: string; kind: "info" | "error" | "success" }[];
+  toasts: Toast[];
   dismissToast: (id: string) => void;
-  // Em cookie mode expomos authenticated boolean
   authenticated?: boolean;
   email?: string | null;
+  isAuthenticated: boolean;
 };
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -28,12 +31,8 @@ export const useAuth = () => {
 
 const LS_KEY = "lms_jwt";
 
-function addToastSetter(
-  setToasts: React.Dispatch<
-    React.SetStateAction<{ id: string; text: string; kind: "info" | "error" | "success" }[]>
-  >
-) {
-  return (text: string, kind: "info" | "error" | "success" = "info") =>
+function addToastSetter(setToasts: React.Dispatch<React.SetStateAction<Toast[]>>) {
+  return (text: string, kind: Toast["kind"] = "info") =>
     setToasts((prev) => [
       ...prev,
       {
@@ -51,9 +50,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [jwt, setJwt] = useState<string | null>(null);
   const [decoded, setDecoded] = useState<ReturnType<typeof decodeJwt>>(null);
   const [ready, setReady] = useState(false);
+  const [authReady, setAuthReady] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
-  const [toasts, setToasts] = useState<{ id: string; text: string; kind: "info" | "error" | "success" }[]>([]);
+  const [toasts, setToasts] = useState<Toast[]>([]);
   const [authenticated, setAuthenticated] = useState<boolean | undefined>(undefined);
   const [email, setEmail] = useState<string | null>(null);
   const addToast = addToastSetter(setToasts);
@@ -70,9 +70,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setAuthenticated(false);
         setEmail(null);
       }
-    } catch (e) {
+    } catch {
       setAuthenticated(false);
       setEmail(null);
+    } finally {
+      setAuthReady(true);
     }
   }, []);
 
@@ -98,9 +100,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Inicialização
   useEffect(() => {
     if (USE_COOKIE_MODE) {
-      // Carrega sessão via cookie
-      void refreshSession();
-      setReady(true);
+      setAuthReady(false);
+      void refreshSession().finally(() => {
+        setReady(true);
+      });
       return;
     }
     const initial = window.localStorage.getItem(LS_KEY);
@@ -109,6 +112,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setDecoded(decodeJwt(initial));
     }
     setReady(true);
+    setAuthReady(true);
   }, [refreshSession]);
 
   useEffect(() => {
@@ -148,6 +152,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         if (USE_COOKIE_MODE) {
+          setAuthReady(false);
           const r = await fetch("/api/auth/login", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -157,6 +162,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (!r.ok) {
             setLastError(`Login falhou (${r.status})`);
             addToast("Login falhou", "error");
+            setAuthReady(true);
             return false;
           }
           await refreshSession();
@@ -227,6 +233,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = useCallback(async () => {
     if (USE_COOKIE_MODE) {
+      setAuthReady(false);
       await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
       await refreshSession();
       addToast("Logout via cookie efetuado", "info");
@@ -246,12 +253,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setToasts((ts) => ts.filter((t) => t.id !== id));
   };
 
+  const isAuthenticated = USE_COOKIE_MODE ? !!authenticated : !!jwt;
+  const exposedEmail = USE_COOKIE_MODE
+    ? email
+    : ((decoded?.payload?.email as string | undefined) || null);
+
   return (
     <AuthContext.Provider
       value={{
         jwt,
         decoded,
         ready,
+        authReady,
         login,
         logout,
         refreshing,
@@ -259,7 +272,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         toasts,
         dismissToast,
         authenticated: USE_COOKIE_MODE ? !!authenticated : undefined,
-        email: USE_COOKIE_MODE ? email : undefined,
+        email: USE_COOKIE_MODE ? exposedEmail : undefined,
+        isAuthenticated,
       }}
     >
       {children}

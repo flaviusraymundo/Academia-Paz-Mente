@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { USE_COOKIE_MODE, DEV_FAKE } from "../../lib/config";
 
 function LoginPageInner() {
-  const { login, ready, jwt, lastError, logout, authenticated, email } = useAuth();
+  const { login, authReady, jwt, lastError, logout, email, isAuthenticated } = useAuth();
   const [inputEmail, setInputEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
@@ -14,14 +14,14 @@ function LoginPageInner() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!ready) return;
+    if (!authReady) return;
     setLoading(true);
     const ok = await login(inputEmail.trim());
     setLoading(false);
     if (ok) router.replace(from);
   }
 
-  const hasSession = USE_COOKIE_MODE ? authenticated : !!jwt;
+  const hasSession = isAuthenticated;
 
   return (
     <div style={{ maxWidth: 420, margin: "40px auto", padding: "24px", border: "1px solid #eee", borderRadius: 12 }}>
@@ -53,7 +53,7 @@ function LoginPageInner() {
         </label>
         <button
           type="submit"
-          disabled={loading || !ready}
+          disabled={loading || !authReady}
           style={{
             padding: "10px 14px",
             borderRadius: 8,

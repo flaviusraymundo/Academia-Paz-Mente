@@ -4,17 +4,19 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "../contexts/AuthContext";
 
 /**
- * Redireciona para /login se falta JWT (modo header) ou se cookie mode não tiver sessão.
- * Retorna { jwt, ready } para condicional de render.
+ * Redireciona para /login quando a sessão não está autenticada.
+ * Exponibiliza jwt (modo header), authReady e isAuthenticated para o consumidor.
  */
 export function useRequireAuth() {
-  const { jwt, ready } = useAuth();
+  const { jwt, authReady, isAuthenticated } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
-    if (!ready) return;
-    if (!jwt) router.replace("/login");
-  }, [ready, jwt, router]);
+    if (!authReady) return;
+    if (!isAuthenticated) {
+      router.replace("/login");
+    }
+  }, [authReady, isAuthenticated, router]);
 
-  return { jwt, ready } as const;
+  return { jwt, authReady, isAuthenticated } as const;
 }
