@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import { api } from "../../../lib/api";
+import api from "../../../lib/api";
 import { useRequireAuth } from "../../../hooks/useRequireAuth";
 import { useAuth } from "../../../contexts/AuthContext";
 import { Card } from "../../../components/ui/Card";

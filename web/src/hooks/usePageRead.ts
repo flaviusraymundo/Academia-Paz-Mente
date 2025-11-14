@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { api } from "../lib/api";
+import api from "../lib/api";
 import { USE_COOKIE_MODE } from "../lib/config";
 
 type PageReadOpts = {
