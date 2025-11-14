@@ -1,13 +1,27 @@
 "use client";
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { useRouter, useSearchParams } from "next/navigation";
-import { USE_COOKIE_MODE, DEV_FAKE } from "../../lib/config";
+import { DEV_FAKE } from "../../lib/config";
 
 function LoginPageInner() {
-  const { login, authReady, lastError, logout, email, isAuthenticated, flags } = useAuth();
+  const {
+    login,
+    authReady,
+    lastError,
+    logout,
+    email,
+    isAuthenticated,
+    cookieMode,
+    flags,
+  } = useAuth();
   const [inputEmail, setInputEmail] = useState("");
   const [loading, setLoading] = useState(false);
+  const [diag, setDiag] = useState<{
+    cookieLogin?: number;
+    devJwtApi?: number;
+    devJwtFn?: number;
+  } | null>(null);
   const router = useRouter();
   const qs = useSearchParams();
   const from = qs.get("from") || "/";
@@ -15,6 +29,43 @@ function LoginPageInner() {
     () => process.env.NEXT_PUBLIC_DEBUG === "1" || process.env.NEXT_PUBLIC_DEBUG === "true",
     []
   );
+
+  useEffect(() => {
+    if (!DEBUG) return;
+    let alive = true;
+
+    const probe = async (url: string, init?: RequestInit) => {
+      try {
+        const r = await fetch(url, init);
+        return r.status;
+      } catch {
+        return -1;
+      }
+    };
+
+    (async () => {
+      const cookieLogin = await probe("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "" }),
+        credentials: "include",
+      });
+
+      let devJwtApi: number | undefined;
+      let devJwtFn: number | undefined;
+      if (DEV_FAKE) {
+        devJwtApi = await probe("/api/dev-jwt");
+        devJwtFn = await probe("/.netlify/functions/dev-jwt");
+      }
+
+      if (!alive) return;
+      setDiag({ cookieLogin, devJwtApi, devJwtFn });
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [DEBUG, DEV_FAKE]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -33,33 +84,56 @@ function LoginPageInner() {
 
       {hasSession && (
         <div style={{ marginBottom: 12, fontSize: 13, color: "#0a6" }}>
-          Sessão ativa {USE_COOKIE_MODE ? (email ? `(${email})` : "") : ""}.
+          Sessão ativa {cookieMode ? (email ? `(${email})` : "") : ""}.
           <button onClick={() => void logout()} style={{ marginLeft: 8 }}>Logout</button>
         </div>
       )}
 
-      {DEBUG && flags && (
-        <div
-          style={{
-            background: "#fafafa",
-            border: "1px solid #ddd",
-            padding: "8px 10px",
-            borderRadius: 8,
-            fontSize: 11,
-            marginBottom: 12,
-            lineHeight: 1.4,
-            maxHeight: 220,
-            overflow: "auto",
-          }}
-        >
-          <strong>Server Flags</strong>
-          <pre
-            style={{
-              margin: "6px 0 0",
-              fontSize: 11,
-              whiteSpace: "pre-wrap",
-            }}
-          >{JSON.stringify(flags, null, 2)}</pre>
+      {DEBUG && (
+        <div style={{ fontSize: 12, color: "#444", marginBottom: 12 }} data-e2e="login-debug">
+          <div>
+            <strong>Flags (client):</strong> cookieMode={String(cookieMode)} devFake={String(DEV_FAKE)}
+          </div>
+          {diag && (
+            <div style={{ marginTop: 6, lineHeight: 1.5 }}>
+              <div>/api/auth/login status: {diag.cookieLogin}</div>
+              {DEV_FAKE && (
+                <>
+                  <div>/api/dev-jwt status: {diag.devJwtApi}</div>
+                  <div>/.netlify/functions/dev-jwt status: {diag.devJwtFn}</div>
+                </>
+              )}
+              <div style={{ color: "#666" }}>
+                404 indica endpoint desligado; -1 indica erro de rede.
+              </div>
+            </div>
+          )}
+          {flags && (
+            <div
+              style={{
+                background: "#fafafa",
+                border: "1px solid #ddd",
+                padding: "8px 10px",
+                borderRadius: 8,
+                fontSize: 11,
+                marginTop: 8,
+                lineHeight: 1.4,
+                maxHeight: 220,
+                overflow: "auto",
+              }}
+            >
+              <strong>Server Flags</strong>
+              <pre
+                style={{
+                  margin: "6px 0 0",
+                  fontSize: 11,
+                  whiteSpace: "pre-wrap",
+                }}
+              >
+                {JSON.stringify(flags, null, 2)}
+              </pre>
+            </div>
+          )}
         </div>
       )}
 
@@ -102,7 +176,7 @@ function LoginPageInner() {
         )}
 
         <div style={{ fontSize: 12, color: "#555" }}>
-          {USE_COOKIE_MODE
+          {cookieMode
             ? "Modo cookie: o servidor emite um cookie HttpOnly 'session'."
             : DEV_FAKE
             ? "Modo DEV_FAKE: usa dev-jwt (servidor ou fallback local)."

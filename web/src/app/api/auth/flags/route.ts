@@ -1,8 +1,17 @@
 export const runtime = "nodejs";
 
 // Endpoint de diagnóstico para inspecionar flags server-side
-// NÃO use em produção aberta (pode ser restrito por NODE_ENV se quiser)
+// GATED: só responde em ambientes não produção ou quando AUTH_FLAGS_ENABLED=1.
 export async function GET() {
+  const isProd =
+    process.env.NODE_ENV === "production" ||
+    process.env.CONTEXT === "production" ||
+    process.env.VERCEL_ENV === "production";
+  const allow = process.env.AUTH_FLAGS_ENABLED === "1";
+  if (isProd && !allow) {
+    return new Response("Not Found", { status: 404 });
+  }
+
   const ctx = process.env.CONTEXT || null; // Netlify
   const nodeEnv = process.env.NODE_ENV || null;
   const cookieMode = process.env.COOKIE_MODE === "1";

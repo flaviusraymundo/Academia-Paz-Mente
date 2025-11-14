@@ -28,6 +28,7 @@ type AuthState = {
   authenticated?: boolean; // só populado em cookie mode
   email?: string | null;
   isAuthenticated: boolean; // unificado para consumidores
+  cookieMode: boolean;
 };
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -392,6 +393,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         email: USE_COOKIE_MODE ? email : undefined,
         isAuthenticated,
         flags,
+        cookieMode: USE_COOKIE_MODE,
       }}
     >
       {children}
