@@ -5,7 +5,7 @@ export function getApiBase(): string {
 }
 
 // Lê cookie mode da env pública
-function getUseCookieMode(): boolean {
+export function getUseCookieMode(): boolean {
   const v = String(process.env.NEXT_PUBLIC_USE_COOKIE_MODE || "").toLowerCase();
   return v === "1" || v === "true";
 }
@@ -67,5 +67,10 @@ export async function apiPost<T = any>(path: string, data?: any, jwt?: string | 
   return api<T>(path, { method: "POST", body: data ? JSON.stringify(data) : undefined, jwt });
 }
 
-const apiDefault = Object.assign(api, { get: apiGet, post: apiPost, base: getApiBase });
+const apiDefault = Object.assign(api, {
+  get: apiGet,
+  post: apiPost,
+  base: getApiBase,
+  useCookieMode: getUseCookieMode,
+});
 export default apiDefault;

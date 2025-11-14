@@ -168,6 +168,6 @@ export async function GET(req: Request) {
 
   return new Response(token, {
     status: 200,
-    headers: { "Content-Type": "text/plain" },
+    headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" },
   });
 }

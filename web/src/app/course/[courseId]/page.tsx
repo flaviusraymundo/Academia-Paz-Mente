@@ -18,7 +18,7 @@ export default function CoursePage() {
   const [mods, setMods] = useState<Module[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const { authReady, isAuthenticated } = useRequireAuth();
+  const { authReady, isAuthenticated, cookieMode } = useRequireAuth();
   const { jwt } = useAuth();
 
   useEffect(() => {
@@ -72,7 +72,11 @@ export default function CoursePage() {
   const title = useMemo(() => `Curso`, []);
 
   return (
-    <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+    <div
+      className="fade-in"
+      data-testid="course-page"
+      style={{ display: "flex", flexDirection: "column", gap: 20 }}
+    >
       <CourseHeader
         title={
           <>
@@ -86,13 +90,16 @@ export default function CoursePage() {
           DEBUG ? (
             <div style={{ display: "flex", gap: 8 }}>
               <span style={{ fontSize: 12, color: "#777" }}>DEBUG on</span>
+              <span style={{ fontSize: 11, color: "#666" }}>
+                cookieMode={String(cookieMode)}
+              </span>
             </div>
           ) : null
         }
       />
 
       {!authReady && (
-        <div style={{ display: "grid", gap: 10 }}>
+        <div data-testid="course-loading" style={{ display: "grid", gap: 10 }}>
           <Card>
             <Skeleton h={16} w="40%" />
             <Skeleton h={12} w="90%" />
@@ -105,7 +112,7 @@ export default function CoursePage() {
       )}
 
       {authReady && !isAuthenticated && (
-        <Card>
+        <Card data-testid="course-auth-warning">
           <strong>Não autenticado</strong>
           <p style={{ margin: 0, fontSize: 13, color: "var(--color-text-soft)" }}>
             Clique em “Entrar” (topo) para visualizar o conteúdo do curso.
@@ -114,7 +121,7 @@ export default function CoursePage() {
       )}
 
       {authReady && isAuthenticated && loading && (
-        <div style={{ display: "grid", gap: 12 }}>
+        <div data-testid="course-modules-loading" style={{ display: "grid", gap: 12 }}>
           {Array.from({ length: 3 }).map((_, i) => (
             <Card key={i}>
               <Skeleton h={18} w="50%" />
@@ -126,18 +133,26 @@ export default function CoursePage() {
       )}
 
       {authReady && isAuthenticated && err && !loading && (
-        <Card style={{ borderColor: "#f2c2c2", background: "#fff6f6", color: "#842029" }}>
+        <Card
+          data-testid="course-error"
+          style={{ borderColor: "#f2c2c2", background: "#fff6f6", color: "#842029" }}
+        >
           <strong>Erro ao carregar módulos</strong>
           <pre style={{ margin: 0, whiteSpace: "pre-wrap", fontSize: 12 }}>{err}</pre>
         </Card>
       )}
 
       {authReady && isAuthenticated && !err && !loading && mods.length === 0 && (
-        <p style={{ fontSize: 14, color: "#555" }}>Nenhum módulo disponível.</p>
+        <p data-testid="course-empty" style={{ fontSize: 14, color: "#555" }}>
+          Nenhum módulo disponível.
+        </p>
       )}
 
       {authReady && isAuthenticated && !err && !loading && mods.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <div
+          data-testid="course-modules"
+          style={{ display: "flex", flexDirection: "column", gap: 16 }}
+        >
           {mods
             .slice()
             .sort((a, b) => a.order - b.order)

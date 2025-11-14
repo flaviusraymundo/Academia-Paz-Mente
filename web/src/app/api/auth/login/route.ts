@@ -1,6 +1,11 @@
 export const runtime = "nodejs";
 
-import { buildSessionCookie, getUserIdFromEmail, signHS256 } from "../_utils";
+import {
+  buildSessionCookie,
+  getUserIdFromEmail,
+  normalizeEmail,
+  signHS256,
+} from "../_utils";
 
 export async function POST(req: Request) {
   // Gate explícito com mensagem clara (não 404 silencioso)
@@ -18,7 +23,7 @@ export async function POST(req: Request) {
   const secret = process.env.JWT_SECRET || process.env.DEV_JWT_SECRET || "insecure-dev-secret";
   try {
     const body = await req.json().catch(() => ({}));
-    const email = String(body?.email || "").trim().toLowerCase();
+    const email = normalizeEmail(String(body?.email || ""));
     if (!email || !/\S+@\S+\.\S+/.test(email)) {
       return new Response(JSON.stringify({ error: "invalid email" }), { status: 400 });
     }
@@ -42,6 +47,7 @@ export async function POST(req: Request) {
     const headers = new Headers();
     headers.append("Set-Cookie", buildSessionCookie(token, day));
     headers.append("Content-Type", "application/json");
+    headers.append("Cache-Control", "no-store");
 
     return new Response(JSON.stringify({ ok: true }), { status: 200, headers });
   } catch (e: any) {

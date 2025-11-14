@@ -8,7 +8,7 @@ import { useAuth } from "../contexts/AuthContext";
  * Usa authReady para evitar redirect prematuro em cookie mode.
  */
 export function useRequireAuth() {
-  const { authReady, isAuthenticated } = useAuth();
+  const { authReady, isAuthenticated, cookieMode } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
@@ -18,5 +18,5 @@ export function useRequireAuth() {
     }
   }, [authReady, isAuthenticated, router]);
 
-  return { authReady, isAuthenticated } as const;
+  return { authReady, isAuthenticated, cookieMode } as const;
 }

@@ -10,6 +10,10 @@ export function b64url(input: Buffer | string) {
     .replace(/=+$/g, "");
 }
 
+export function normalizeEmail(input: string): string {
+  return input.trim().toLowerCase();
+}
+
 /** UUID v5 determinístico a partir de (name, namespace) */
 export function uuidV5(name: string, namespace: string): string {
   const ns = /^[0-9a-fA-F-]{36}$/.test(namespace)

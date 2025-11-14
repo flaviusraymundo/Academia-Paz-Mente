@@ -2,6 +2,11 @@ export const runtime = "nodejs";
 
 import { verifyHS256 } from "../_utils";
 
+const JSON_HEADERS = Object.freeze({
+  "Content-Type": "application/json",
+  "Cache-Control": "no-store",
+});
+
 export async function GET(req: Request) {
   if (process.env.COOKIE_MODE !== "1") {
     return new Response(JSON.stringify({ authenticated: false, reason: "COOKIE_MODE_DISABLED" }), {
@@ -17,7 +22,7 @@ export async function GET(req: Request) {
   if (!token) {
     return new Response(JSON.stringify({ authenticated: false }), {
       status: 200,
-      headers: { "Content-Type": "application/json" },
+      headers: JSON_HEADERS,
     });
   }
 
@@ -25,13 +30,13 @@ export async function GET(req: Request) {
   if (!payload) {
     return new Response(JSON.stringify({ authenticated: false }), {
       status: 200,
-      headers: { "Content-Type": "application/json" },
+      headers: JSON_HEADERS,
     });
   }
 
   const { sub, email, exp } = payload;
   return new Response(JSON.stringify({ authenticated: true, sub, email, exp }), {
     status: 200,
-    headers: { "Content-Type": "application/json" },
+    headers: JSON_HEADERS,
   });
 }
