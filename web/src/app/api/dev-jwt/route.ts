@@ -1,6 +1,8 @@
-// Rota Next para emitir um JWT de desenvolvimento.
-// GATED: habilitada somente quando DEV_JWT_ENABLED=1.
-// sub é um UUID válido (via upsert opcional em DB ou UUID v5 determinístico).
+// Rota Next para emitir um JWT de desenvolvimento (HS256, sub=UUID).
+// GATES:
+//   - DEV_JWT_ENABLED=1 (obriga habilitação explícita)
+//   - Bloqueio forte em produção: se CONTEXT='production' (Netlify) OU NODE_ENV='production',
+//     então só libera se DEV_JWT_ALLOW_IN_PRODUCTION=1 (opt-in consciente).
 export const runtime = "nodejs";
 
 import crypto from "crypto";
@@ -115,10 +117,22 @@ async function createOrFetchUserId(email: string): Promise<string> {
   }
 }
 
+function isProductionContext() {
+  const ctx = process.env.CONTEXT || ""; // Netlify: 'production' | 'deploy-preview' | 'branch-deploy'
+  const vercel = process.env.VERCEL_ENV || ""; // Vercel: 'production' | 'preview' | 'development'
+  const node = process.env.NODE_ENV || "";
+  // Considera "produção" se CONTEXT='production' OU VERCEL_ENV='production' OU NODE_ENV='production'
+  return ctx === "production" || vercel === "production" || node === "production";
+}
+
 export async function GET(req: Request) {
-  const enabled = process.env.DEV_JWT_ENABLED === "1";
-  if (!enabled) {
-    // Esconde a existência do endpoint quando desabilitado
+  // Gate principal
+  if (process.env.DEV_JWT_ENABLED !== "1") {
+    return new Response("Not Found", { status: 404 });
+  }
+
+  // Safety net em produção (só libera com override explícito)
+  if (isProductionContext() && process.env.DEV_JWT_ALLOW_IN_PRODUCTION !== "1") {
     return new Response("Not Found", { status: 404 });
   }
 

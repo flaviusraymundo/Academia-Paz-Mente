@@ -3,8 +3,8 @@ export const runtime = "nodejs";
 import { buildSessionCookie, getUserIdFromEmail, signHS256 } from "../_utils";
 
 export async function POST(req: Request) {
-  // Gate: só habilita login via cookie quando DEV_JWT_ENABLED=1 (pode trocar depois para uma flag própria)
-  if (process.env.DEV_JWT_ENABLED !== "1") {
+  // Cookie mode precisa estar habilitado no servidor
+  if (process.env.COOKIE_MODE !== "1") {
     return new Response(JSON.stringify({ error: "Auth cookie disabled" }), { status: 404 });
   }
 

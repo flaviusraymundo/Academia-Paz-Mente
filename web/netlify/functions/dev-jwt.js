@@ -1,5 +1,7 @@
 // Função Netlify para emitir JWT DEV assinado (HS256) com sub = UUID válido.
-// GATED: habilitada apenas quando DEV_JWT_ENABLED=1.
+// GATES:
+//   - DEV_JWT_ENABLED=1
+//   - Bloqueio forte em produção (CONTEXT='production'), salvo se DEV_JWT_ALLOW_IN_PRODUCTION=1 (opt-in explícito).
 const crypto = require("crypto");
 
 // UUID v5 determinístico (sem dependência externa)
@@ -35,9 +37,18 @@ function b64url(input) {
     .replace(/=+$/g, "");
 }
 
+function isProductionContext() {
+  const ctx = process.env.CONTEXT || ""; // Netlify
+  const vercel = process.env.VERCEL_ENV || ""; // compat com Vercel
+  const node = process.env.NODE_ENV || "";
+  return ctx === "production" || vercel === "production" || node === "production";
+}
+
 exports.handler = async (event) => {
-  const enabled = process.env.DEV_JWT_ENABLED === "1";
-  if (!enabled) {
+  if (process.env.DEV_JWT_ENABLED !== "1") {
+    return { statusCode: 404, body: "Not Found" };
+  }
+  if (isProductionContext() && process.env.DEV_JWT_ALLOW_IN_PRODUCTION !== "1") {
     return { statusCode: 404, body: "Not Found" };
   }
 
@@ -49,7 +60,7 @@ exports.handler = async (event) => {
     const day = 24 * 60 * 60;
 
     const ns = process.env.DEV_USER_NAMESPACE_UUID || "11111111-2222-3333-4444-555555555555";
-    const userId = uuidV5(email.toLowerCase(), ns);
+    const userId = uuidV5(String(email || "").toLowerCase(), ns);
 
     const header = { alg: "HS256", typ: "JWT" };
     const payload = {
