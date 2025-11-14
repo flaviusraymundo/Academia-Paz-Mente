@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { useAuth } from "../../../contexts/AuthContext";
 import { usePageRead } from "../../../hooks/usePageRead";
@@ -14,6 +14,14 @@ export default function TextItemPage() {
 
   const [reading, setReading] = useState(true);
   const [lastBeat, setLastBeat] = useState<string | null>(null);
+
+  // Flags para sincronização inteligente:
+  // - wasAuthedRef: detectar transição real de login (false -> true)
+  // - authPausedRef: lembrar se a última pausa foi automática por falta de auth
+  // - manualPausedRef: o usuário pausou manualmente (apenas em DEBUG)
+  const wasAuthedRef = useRef<boolean>(!!jwt);
+  const authPausedRef = useRef<boolean>(false);
+  const manualPausedRef = useRef<boolean>(false);
 
   const DEBUG = process.env.NEXT_PUBLIC_DEBUG === "1";
 
@@ -38,13 +46,58 @@ export default function TextItemPage() {
     [itemId, courseId, moduleId]
   );
 
+  // 1) Sincroniza com transições de autenticação:
+  // - Perdeu JWT: pausa e marca pausa por auth.
+  // - Ganhou JWT (transição real de login): retoma apenas se a pausa anterior foi por auth
+  //   e não houver pausa manual.
+  // - Refresh (true -> true): não interfere.
   useEffect(() => {
     if (!ready) return;
-    if (!jwt) {
-      setReading(false);
-    } else {
-      setReading(true);
+
+    const nowAuthed = !!jwt;
+    const wasAuthed = wasAuthedRef.current;
+
+    if (!nowAuthed) {
+      if (reading) {
+        setReading(false);
+        authPausedRef.current = true;
+      }
+    } else if (!wasAuthed && nowAuthed) {
+      if (!reading && authPausedRef.current && !manualPausedRef.current) {
+        setReading(true);
+      }
+      authPausedRef.current = false;
     }
+
+    wasAuthedRef.current = nowAuthed;
+  }, [ready, jwt, reading]);
+
+  // 2) Sincroniza com visibilidade da aba (auto-pause quando a aba fica oculta).
+  // Não sobrescreve pausa manual.
+  useEffect(() => {
+    if (!ready || !jwt) return;
+
+    const applyVisibility = () => {
+      if (manualPausedRef.current) return;
+      const visible = !document.hidden;
+      setReading(visible);
+    };
+
+    // Ajuste imediato ao montar
+    applyVisibility();
+
+    const onVis = () => applyVisibility();
+    const onFocus = () => applyVisibility();
+    const onBlur = () => applyVisibility();
+
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("blur", onBlur);
+    };
   }, [ready, jwt]);
 
   return (
@@ -74,37 +127,54 @@ export default function TextItemPage() {
       >
         <h3>Documento</h3>
         <p style={{ color: "#555", marginTop: 0 }}>
-          Exemplo de página de texto. O tempo de leitura é enviado a cada 15s para analytics
-          enquanto a leitura estiver ativa.
+          O tempo de leitura é registrado automaticamente enquanto você estiver autenticado e com
+          esta aba visível.
         </p>
-        <p>
-          Você pode pausar/retomar a leitura usando o botão abaixo. Se entrar sem login e depois
-          autenticar, a leitura retoma automaticamente.
-        </p>
+        {!DEBUG && (
+          <p style={{ color: "#555", marginTop: 0 }}>
+            Mantenha a aba ativa para que a telemetria contabilize o tempo corretamente.
+          </p>
+        )}
+        {DEBUG && (
+          <p style={{ color: "#555", marginTop: 0 }}>
+            Debug ativo: você pode pausar/retomar manualmente usando o botão abaixo.
+          </p>
+        )}
       </article>
 
-      <div style={{ display: "flex", gap: 8 }}>
-        <button
-          type="button"
-          onClick={() => setReading((v) => !v)}
-          data-testid="toggle-reading"
-          style={{
-            padding: "8px 12px",
-            borderRadius: 8,
-            background: reading ? "var(--color-primary,#3758f9)" : "#ccc",
-            color: "#fff",
-            border: "none",
-            cursor: "pointer",
-          }}
-        >
-          {reading ? "Pausar leitura" : "Retomar leitura"}
-        </button>
-        {DEBUG && lastBeat && (
-          <span data-testid="text-last-beat" style={{ fontSize: 12, color: "#666" }}>
-            lastBeat: {lastBeat}
-          </span>
-        )}
-      </div>
+      {DEBUG && (
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            type="button"
+            onClick={() =>
+              setReading((prev) => {
+                const next = !prev;
+                manualPausedRef.current = !next;
+                if (next) {
+                  authPausedRef.current = false;
+                }
+                return next;
+              })
+            }
+            data-testid="toggle-reading"
+            style={{
+              padding: "8px 12px",
+              borderRadius: 8,
+              background: reading ? "var(--color-primary,#3758f9)" : "#ccc",
+              color: "#fff",
+              border: "none",
+              cursor: "pointer",
+            }}
+          >
+            {reading ? "Pausar leitura" : "Retomar leitura"}
+          </button>
+          {lastBeat && (
+            <span data-testid="text-last-beat" style={{ fontSize: 12, color: "#666" }}>
+              lastBeat: {lastBeat}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
