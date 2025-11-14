@@ -193,9 +193,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }
           }
           if (!token) {
-            token = buildDevJwt(email); // último fallback (cliente)
-            addToast("Usando dev-jwt local (fallback)", "info");
-            setLastError(`Dev endpoints indisponíveis (${errors.join(" ; ")})`);
+            const rawAllow =
+              typeof process !== "undefined"
+                ? (process as any).env?.NEXT_PUBLIC_ALLOW_CLIENT_FAKE_JWT
+                : undefined;
+            const allowClientFake = rawAllow === "1" || rawAllow === "true";
+
+            if (allowClientFake) {
+              token = await buildDevJwt(email);
+              addToast("Usando dev-jwt local (fallback)", "info");
+              setLastError(
+                `Dev endpoints indisponíveis (${errors.join(" ; ")}); usando fallback client.`
+              );
+            } else {
+              setLastError(`Dev endpoints indisponíveis (${errors.join(" ; ")})`);
+              addToast("Dev-jwt indisponível", "error");
+              return false;
+            }
           }
         } else {
           const r = await fetch("/api/auth/login", {
