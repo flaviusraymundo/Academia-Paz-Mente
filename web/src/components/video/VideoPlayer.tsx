@@ -1,8 +1,5 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-// Mantemos a importação do pacote React para cenários onde o bundle já registra o elemento.
-// Em ambientes com falha de carregamento, faremos fallback via ensureMuxDefined() abaixo.
-import "@mux/mux-player-react";
 
 type Props = {
   playbackId?: string | null;
@@ -18,8 +15,7 @@ const MUX_SCRIPT_ID = "mux-player-loader";
  * Garante que o custom element <mux-player> esteja registrado.
  * Estratégia:
  * 1) Se já estiver definido em customElements, resolve imediatamente.
- * 2) Tenta dynamic import("@mux/mux-player") — não depende de CDN.
- * 3) Como fallback, injeta <script type="module" src="https://unpkg.com/@mux/mux-player@1">.
+ * 2) Injeta <script type="module" src="https://unpkg.com/@mux/mux-player@1"> como fallback.
  *    - Se existir um script #mux-player-loader "stale" (sem data-loaded), remove e cria um novo.
  *    - Marca data-loaded/data-error para evitar listeners "perdidos" após erro.
  */
@@ -29,15 +25,7 @@ async function ensureMuxDefined(): Promise<void> {
 
   if (w?.customElements?.get?.("mux-player")) return;
 
-  // 1) Tentar dynamic import do web component (não React), evitando CDN
-  try {
-    await import("@mux/mux-player");
-    if (w?.customElements?.get?.("mux-player")) return;
-  } catch {
-    // segue para fallback CDN
-  }
-
-  // 2) Fallback por CDN com remoção de script "stale"
+  // Fallback por CDN com remoção de script "stale"
   const prev = document.getElementById(MUX_SCRIPT_ID) as HTMLScriptElement | null;
   if (prev) {
     const loaded = prev.dataset.loaded === "1";
