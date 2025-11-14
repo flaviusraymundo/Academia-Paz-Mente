@@ -63,6 +63,11 @@ export function VideoPlayer({ playbackId, playbackToken, poster, onPlayChange, d
   const [ready, setReady] = useState(false);
   const [playing, setPlaying] = useState(false);
 
+  const onPlayChangeRef = useRef<typeof onPlayChange>();
+  useEffect(() => {
+    onPlayChangeRef.current = onPlayChange;
+  }, [onPlayChange]);
+
   useEffect(() => {
     if (!ref.current) return;
     ref.current.innerHTML = "";
@@ -82,13 +87,13 @@ export function VideoPlayer({ playbackId, playbackToken, poster, onPlayChange, d
     const onPlay = () => {
       if (!disposed) {
         setPlaying(true);
-        onPlayChange?.(true);
+        onPlayChangeRef.current?.(true);
       }
     };
     const onPause = () => {
       if (!disposed) {
         setPlaying(false);
-        onPlayChange?.(false);
+        onPlayChangeRef.current?.(false);
       }
     };
     const onError = (e: Event) => {
@@ -142,7 +147,8 @@ export function VideoPlayer({ playbackId, playbackToken, poster, onPlayChange, d
         el.removeEventListener("error", onError);
       }
     };
-  }, [playbackId, playbackToken, poster, onPlayChange]);
+    // Importante: o callback vive no ref onPlayChangeRef; manter deps restritas evita reinstanciar o player.
+  }, [playbackId, playbackToken, poster]);
 
   return (
     <div data-testid="video-player-wrapper" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
