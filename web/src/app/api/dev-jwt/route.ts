@@ -3,42 +3,7 @@
 // sub é um UUID válido (obtido via upsert opcional em DB ou gerado determinístico v5).
 export const runtime = "nodejs";
 
-import crypto from "crypto";
-
-/** UUID v5 (determinístico a partir do e-mail + namespace) */
-function uuidV5(name: string, namespace: string): string {
-  const ns = /^[0-9a-fA-F-]{36}$/.test(namespace)
-    ? namespace
-    : "00000000-0000-0000-0000-000000000000";
-  const nsBytes = Buffer.from(ns.replace(/-/g, ""), "hex");
-  const nameBytes = Buffer.from(name, "utf8");
-  const sha1 = crypto.createHash("sha1");
-  sha1.update(nsBytes);
-  sha1.update(nameBytes);
-  const hash = sha1.digest(); // 20 bytes
-  // Converte para UUID, ajusta versão (5) e variant.
-  const bytes = Buffer.from(hash.slice(0, 16));
-  bytes[6] = (bytes[6] & 0x0f) | 0x50; // version 5
-  bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant RFC 4122
-  const hex = bytes.toString("hex");
-  return [
-    hex.slice(0, 8),
-    hex.slice(8, 12),
-    hex.slice(12, 16),
-    hex.slice(16, 20),
-    hex.slice(20),
-  ].join("-");
-}
-
-/** Base64url helper */
-function b64url(input: Buffer | string) {
-  const base = (input instanceof Buffer ? input : Buffer.from(input))
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/g, "");
-  return base;
-}
+import { signHS256, uuidV5 } from "../../../lib/server/jwt";
 
 /**
  * Tenta criar/obter userId (UUID) no banco quando DEV_JWT_UPSERT_DB=1.
@@ -135,7 +100,6 @@ export async function GET(req: Request) {
   // sub: UUID válido (compatível com middleware que espera uuid)
   const userId = await createOrFetchUserId(email);
 
-  const header = { alg: "HS256", typ: "JWT" };
   const payload = {
     sub: userId,
     email,
@@ -149,12 +113,7 @@ export async function GET(req: Request) {
   // Assina com JWT_SECRET para alinhar com middleware
   const secret =
     process.env.JWT_SECRET || process.env.DEV_JWT_SECRET || "insecure-dev-secret";
-
-  const headerPart = b64url(JSON.stringify(header));
-  const payloadPart = b64url(JSON.stringify(payload));
-  const toSign = `${headerPart}.${payloadPart}`;
-  const signature = b64url(crypto.createHmac("sha256", secret).update(toSign).digest());
-  const token = `${toSign}.${signature}`;
+  const token = signHS256(payload, secret);
 
   return new Response(token, {
     status: 200,
