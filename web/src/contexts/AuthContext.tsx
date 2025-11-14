@@ -46,29 +46,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const refreshTimerRef = useRef<number | null>(null);
 
-  const addToast = useCallback((text: string, kind: Toast["kind"] = "info") => {
-    const id = makeToastId();
-    setToasts((prev) => [...prev, { id, text, kind }]);
-  }, []);
+  const addToast = useCallback(
+    (text: string, kind: Toast["kind"] = "info") => {
+      const id = makeToastId();
+      setToasts((prev) => [...prev, { id, text, kind }]);
+    },
+    [setToasts]
+  );
 
-  const dismissToast = useCallback((id: string) => {
-    setToasts((current) => current.filter((t) => t.id !== id));
-  }, []);
+  const dismissToast = useCallback(
+    (id: string) => {
+      setToasts((current) => current.filter((t) => t.id !== id));
+    },
+    [setToasts]
+  );
 
-  const applyJwt = useCallback((token: string | null) => {
-    setJwtState(token);
-    setDecoded(token ? decodeJwt(token) : null);
-    if (USE_COOKIE_MODE) return;
-    try {
-      if (token) {
-        window.localStorage.setItem(LS_KEY, token);
-      } else {
-        window.localStorage.removeItem(LS_KEY);
+  const applyJwt = useCallback(
+    (token: string | null) => {
+      setJwtState(token);
+      setDecoded(token ? decodeJwt(token) : null);
+      if (USE_COOKIE_MODE) return;
+      try {
+        if (token) {
+          window.localStorage.setItem(LS_KEY, token);
+        } else {
+          window.localStorage.removeItem(LS_KEY);
+        }
+      } catch {
+        // noop
       }
-    } catch {
-      // noop
-    }
-  }, []);
+    },
+    [setDecoded, setJwtState]
+  );
 
   const scheduleRefresh = useCallback(async () => {
     if (!jwt) return;
@@ -87,7 +96,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setRefreshing(false);
     }
-  }, [addToast, jwt]);
+  }, [addToast, jwt, setLastError, setRefreshing]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -193,7 +202,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return false;
       }
     },
-    [addToast, applyJwt]
+    [addToast, applyJwt, setLastError]
   );
 
   const logout = useCallback(() => {
