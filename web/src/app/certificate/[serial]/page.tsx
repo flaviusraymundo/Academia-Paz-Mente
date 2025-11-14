@@ -21,10 +21,15 @@ export default function CertificateVerifyPage() {
       setLoading(true);
       setErr(null);
       try {
-        const qs = new URLSearchParams({ serial });
-        const { status, body } = await api(`/api/certificates/verify?${qs.toString()}`);
+        const s = String(serial ?? "").trim();
+        if (!s) {
+          setErr(JSON.stringify({ error: "serial_required" }));
+          setLoading(false);
+          return;
+        }
+        const { status, body } = await api(`/api/certificates/verify/${encodeURIComponent(s)}`);
         if (!alive) return;
-        if (status === 200 && typeof body === "object") {
+        if (status === 200 && body && typeof body === "object") {
           const parsed = CertificateVerifyRawSchema.safeParse(body);
           if (parsed.success) {
             const normalized = parsed.data as any;
@@ -61,7 +66,7 @@ export default function CertificateVerifyPage() {
       </div>
 
       {loading && (
-        <div style={{ display: "grid", gap: 12 }}>
+        <div style={{ display: "grid", gap: 12 }} data-testid="certificate-verify-loading">
           <Card>
             <Skeleton h={16} w="50%" />
             <Skeleton h={12} w="90%" />
@@ -70,14 +75,17 @@ export default function CertificateVerifyPage() {
       )}
 
       {err && !loading && (
-        <Card style={{ borderColor: "#f2c2c2", background: "#fff6f6", color: "#842029" }}>
+        <Card
+          style={{ borderColor: "#f2c2c2", background: "#fff6f6", color: "#842029" }}
+          data-testid="certificate-verify-error"
+        >
           <strong>Erro na verificação</strong>
           <pre style={{ margin: 0, whiteSpace: "pre-wrap", fontSize: 12 }}>{err}</pre>
         </Card>
       )}
 
       {!err && !loading && data && (
-        <Card style={{ gap: 8 }}>
+        <Card style={{ gap: 8 }} data-testid="certificate-verify-result">
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <strong>Resultado</strong>
             {"valid" in data && (
