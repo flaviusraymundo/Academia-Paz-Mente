@@ -1,49 +1,8 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-
-let muxPlayerLoader: Promise<void> | null = null;
-
-function ensureMuxPlayerElement(): Promise<void> {
-  if (typeof window === "undefined") {
-    return Promise.resolve();
-  }
-  if (window.customElements?.get("mux-player")) {
-    return Promise.resolve();
-  }
-  if (!muxPlayerLoader) {
-    const loader = new Promise<void>((resolve, reject) => {
-      const existing = document.getElementById("mux-player-loader");
-      if (existing) {
-        if (existing.getAttribute("data-loaded") === "1") {
-          resolve();
-          return;
-        }
-        existing.addEventListener("load", () => resolve(), { once: true });
-        existing.addEventListener("error", () => reject(new Error("mux-player loader error")), { once: true });
-        return;
-      }
-      const script = document.createElement("script");
-      script.id = "mux-player-loader";
-      script.src = "https://cdn.jsdelivr.net/npm/@mux/mux-player@2/dist/mux-player.umd.min.js";
-      script.async = true;
-      script.addEventListener(
-        "load",
-        () => {
-          script.setAttribute("data-loaded", "1");
-          resolve();
-        },
-        { once: true }
-      );
-      script.addEventListener("error", () => reject(new Error("mux-player loader error")), { once: true });
-      document.head.appendChild(script);
-    });
-    muxPlayerLoader = loader.catch((err) => {
-      muxPlayerLoader = null;
-      throw err;
-    });
-  }
-  return muxPlayerLoader;
-}
+// Mantemos a importação do pacote React para cenários onde o bundle já registra o elemento.
+// Em ambientes com falha de carregamento, faremos fallback via ensureMuxDefined() abaixo.
+import "@mux/mux-player-react";
 
 type Props = {
   playbackId?: string | null;
@@ -53,60 +12,107 @@ type Props = {
   debug?: boolean;
 };
 
+const MUX_SCRIPT_ID = "mux-player-loader";
+
+/**
+ * Garante que o custom element <mux-player> esteja registrado.
+ * Estratégia:
+ * 1) Se já estiver definido em customElements, resolve imediatamente.
+ * 2) Tenta dynamic import("@mux/mux-player") — não depende de CDN.
+ * 3) Como fallback, injeta <script type="module" src="https://unpkg.com/@mux/mux-player@1">.
+ *    - Se existir um script #mux-player-loader "stale" (sem data-loaded), remove e cria um novo.
+ *    - Marca data-loaded/data-error para evitar listeners "perdidos" após erro.
+ */
+async function ensureMuxDefined(): Promise<void> {
+  if (typeof window === "undefined") return;
+  const w = window as any;
+
+  if (w?.customElements?.get?.("mux-player")) return;
+
+  // 1) Tentar dynamic import do web component (não React), evitando CDN
+  try {
+    await import("@mux/mux-player");
+    if (w?.customElements?.get?.("mux-player")) return;
+  } catch {
+    // segue para fallback CDN
+  }
+
+  // 2) Fallback por CDN com remoção de script "stale"
+  const prev = document.getElementById(MUX_SCRIPT_ID) as HTMLScriptElement | null;
+  if (prev) {
+    const loaded = prev.dataset.loaded === "1";
+    if (!loaded) {
+      // Script anterior falhou ou ficou pendurado: remove para permitir novo load
+      prev.remove();
+    } else {
+      // Já "loaded", mas por algum motivo o custom element não está definido.
+      // Deixamos seguir adiante sem duplicar script; nada a fazer aqui.
+      return;
+    }
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    const s = document.createElement("script");
+    s.id = MUX_SCRIPT_ID;
+    s.type = "module";
+    s.src = "https://unpkg.com/@mux/mux-player@1";
+    const onLoad = () => {
+      s.dataset.loaded = "1";
+      resolve();
+    };
+    const onError = () => {
+      s.dataset.error = "1";
+      // Evita script "stale" que impediria novas tentativas
+      s.remove();
+      reject(new Error("mux-player script failed to load"));
+    };
+    s.addEventListener("load", onLoad, { once: true });
+    s.addEventListener("error", onError, { once: true });
+    document.head.appendChild(s);
+  });
+}
+
 /**
  * Wrapper para o web component <mux-player>.
  * Aceita playbackId e (opcional) playbackToken (signed).
  */
 export function VideoPlayer({ playbackId, playbackToken, poster, onPlayChange, debug }: Props) {
-  const ref = useRef<HTMLDivElement | null>(null);
+  const hostRef = useRef<HTMLDivElement | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [playing, setPlaying] = useState(false);
 
-  const onPlayChangeRef = useRef<typeof onPlayChange>();
+  // Guarda o callback em um ref para evitar recriar o player quando a identidade muda
+  const cbRef = useRef<typeof onPlayChange>();
   useEffect(() => {
-    onPlayChangeRef.current = onPlayChange;
+    cbRef.current = onPlayChange;
   }, [onPlayChange]);
 
+  // Instancia o player somente quando playbackId/token/poster mudam
   useEffect(() => {
-    if (!ref.current) return;
-    ref.current.innerHTML = "";
+    const container = hostRef.current;
+    if (!container) return;
+
+    let cancelled = false;
+    let cleanup: (() => void) | undefined;
+
+    // Reinicia estado local
+    container.innerHTML = "";
     setError(null);
     setReady(false);
     setPlaying(false);
+
     if (!playbackId) {
       setError("playbackId ausente");
       return;
     }
-    let disposed = false;
-    let el: HTMLElement | null = null;
 
-    const onLoaded = () => {
-      if (!disposed) setReady(true);
-    };
-    const onPlay = () => {
-      if (!disposed) {
-        setPlaying(true);
-        onPlayChangeRef.current?.(true);
-      }
-    };
-    const onPause = () => {
-      if (!disposed) {
-        setPlaying(false);
-        onPlayChangeRef.current?.(false);
-      }
-    };
-    const onError = (e: Event) => {
-      if (!disposed) {
-        setError("erro no player");
-        console.warn("mux-player error", e);
-      }
-    };
+    (async () => {
+      try {
+        await ensureMuxDefined();
+        if (cancelled) return;
 
-    ensureMuxPlayerElement()
-      .then(() => {
-        if (!ref.current || disposed) return;
-        el = document.createElement("mux-player");
+        const el = document.createElement("mux-player") as any;
         el.setAttribute("stream-type", "on-demand");
         el.setAttribute("playback-id", playbackId);
         el.setAttribute("data-testid", "mux-player");
@@ -118,51 +124,66 @@ export function VideoPlayer({ playbackId, playbackToken, poster, onPlayChange, d
           "width:100%;max-width:960px;aspect-ratio:16/9;background:#000;border-radius:12px;overflow:hidden"
         );
         el.setAttribute("prefer-mse", "true");
+        // NÃO usar atributo booleano 'muted' com valor "false" (presença => true)
         el.setAttribute("playsinline", "true");
         if (poster) {
           el.setAttribute("poster", poster);
         }
-        // Garantir áudio ativo (atributos booleanos em web components usam propriedades)
-        (el as any).muted = false;
-        (el as any).volume = 1;
+        // Garantir áudio ligado por padrão
+        el.muted = false;
+        el.volume = 1;
+
+        const onLoaded = () => setReady(true);
+        const onPlay = () => {
+          setPlaying(true);
+          cbRef.current?.(true);
+        };
+        const onPause = () => {
+          setPlaying(false);
+          cbRef.current?.(false);
+        };
+        const onError = () => {
+          setError("erro no player");
+        };
+
         el.addEventListener("loadeddata", onLoaded);
         el.addEventListener("play", onPlay);
         el.addEventListener("pause", onPause);
         el.addEventListener("error", onError);
-        ref.current.appendChild(el);
-        if (!ref.current.contains(el)) {
-          setError("mux-player não foi inicializado");
-        }
-      })
-      .catch((e) => {
-        if (disposed) return;
-        console.warn(e);
-        setError("falha ao carregar mux-player");
-      });
+
+        container.appendChild(el);
+
+        cleanup = () => {
+          el.removeEventListener("loadeddata", onLoaded);
+          el.removeEventListener("play", onPlay);
+          el.removeEventListener("pause", onPause);
+          el.removeEventListener("error", onError);
+        };
+      } catch (e: any) {
+        if (cancelled) return;
+        setError("falha ao carregar o player (tente recarregar a página)");
+      }
+    })();
 
     return () => {
-      disposed = true;
-      if (el) {
-        el.removeEventListener("loadeddata", onLoaded);
-        el.removeEventListener("play", onPlay);
-        el.removeEventListener("pause", onPause);
-        el.removeEventListener("error", onError);
-      }
+      cancelled = true;
+      cleanup?.();
     };
-    // Importante: o callback vive no ref onPlayChangeRef; manter deps restritas evita reinstanciar o player.
+    // Importante: o callback vive no ref cbRef; manter deps restritas evita reinstanciar o player.
   }, [playbackId, playbackToken, poster]);
 
   return (
     <div data-testid="video-player-wrapper" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      <div ref={ref} />
+      <div ref={hostRef} />
       {debug && (
         <div style={{ fontSize: 12, color: "#666" }}>
-          estado: {ready ? "ready" : "loading"} · playing: {playing ? "yes" : "no"} · playbackId: <code>{playbackId || "-"}</code> · token: <code>{playbackToken ? "•••" : "-"}</code>
+          estado: {ready ? "ready" : "loading"} · playing: {playing ? "yes" : "no"} · playbackId: <code>{playbackId || "-"}</code> ·
+          token: <code>{playbackToken ? "•••" : "-"}</code>
         </div>
       )}
       {error && (
         <div style={{ fontSize: 12, color: "#a00" }}>
-          {error} (verifique entitlement ou playbackId inválido)
+          {error} (verifique entitlement, playbackId ou conexão de rede)
         </div>
       )}
     </div>
