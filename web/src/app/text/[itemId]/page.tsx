@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
-import { useAuth } from "../../../contexts/AuthContext";
+import { useRequireAuth } from "../../../hooks/useRequireAuth";
 import { usePageRead } from "../../../hooks/usePageRead";
 
 export default function TextItemPage() {
@@ -10,7 +10,7 @@ export default function TextItemPage() {
   const qs = useSearchParams();
   const courseId = qs.get("courseId") || "";
   const moduleId = qs.get("moduleId") || "";
-  const { jwt, ready } = useAuth();
+  const { jwt, ready } = useRequireAuth();
 
   const [reading, setReading] = useState(true);
   const [lastBeat, setLastBeat] = useState<string | null>(null);

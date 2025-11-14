@@ -4,14 +4,14 @@ import type React from "react";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api } from "../../lib/api";
-import { useAuth } from "../../contexts/AuthContext";
+import { useRequireAuth } from "../../hooks/useRequireAuth";
 import { Card } from "../../components/ui/Card";
 import { Badge } from "../../components/ui/Badge";
 import { Skeleton } from "../../components/ui/Skeleton";
 import { CertificateListSchema, type Certificate } from "../../schemas/certificates";
 
 export default function CertificatesPage() {
-  const { jwt, ready } = useAuth();
+  const { jwt, ready } = useRequireAuth();
   const [items, setItems] = useState<Certificate[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
