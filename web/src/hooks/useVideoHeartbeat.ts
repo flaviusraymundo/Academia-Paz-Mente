@@ -21,6 +21,11 @@ type HeartbeatOpts = {
 export function useVideoHeartbeat(opts: HeartbeatOpts) {
   const timerRef = useRef<number | null>(null);
   const lastBeatRef = useRef<number>(Date.now());
+  const onBeatRef = useRef<typeof opts.onBeat>();
+
+  useEffect(() => {
+    onBeatRef.current = opts.onBeat;
+  }, [opts.onBeat]);
 
   useEffect(() => {
     const { enabled, jwt, courseId, moduleId, itemId, intervalMs = 15000 } = opts;
@@ -41,7 +46,7 @@ export function useVideoHeartbeat(opts: HeartbeatOpts) {
           body: JSON.stringify({ courseId, moduleId, itemId, secs: Math.round(intervalMs / 1000) }),
           jwt,
         });
-        opts.onBeat?.({ at: lastBeatRef.current });
+        onBeatRef.current?.({ at: lastBeatRef.current });
       } catch {
         // Silencioso por ora
       }
@@ -60,6 +65,6 @@ export function useVideoHeartbeat(opts: HeartbeatOpts) {
         timerRef.current = null;
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [opts.enabled, opts.jwt, opts.courseId, opts.moduleId, opts.itemId, opts.intervalMs, opts.onBeat]);
+    // Importante: não incluir opts.onBeat nas dependências para evitar recriar o intervalo
+  }, [opts.enabled, opts.jwt, opts.courseId, opts.moduleId, opts.itemId, opts.intervalMs]);
 }

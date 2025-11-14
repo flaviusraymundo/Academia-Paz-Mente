@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { api } from "../../../lib/api";
 import { useAuth } from "../../../contexts/AuthContext";
@@ -131,6 +131,15 @@ export default function VideoItemPage() {
 
   const DEBUG = process.env.NEXT_PUBLIC_DEBUG === "1";
 
+  const onBeatCb = useCallback(
+    (b: { at: number }) => {
+      if (DEBUG) {
+        setStatus({ lastBeatAt: new Date(b.at).toISOString() });
+      }
+    },
+    [DEBUG]
+  );
+
   useVideoHeartbeat({
     enabled: !!(DEBUG && playing && jwt && itemId),
     jwt: jwt || "",
@@ -138,11 +147,7 @@ export default function VideoItemPage() {
     moduleId,
     itemId,
     intervalMs: 15000,
-    onBeat: (b) => {
-      if (DEBUG) {
-        setStatus({ lastBeatAt: new Date(b.at).toISOString() });
-      }
-    },
+    onBeat: onBeatCb,
   });
 
   function onPlay() {
