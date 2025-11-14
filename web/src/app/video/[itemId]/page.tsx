@@ -77,9 +77,13 @@ export default function VideoItemPage() {
           }
         } else {
           setToken(null);
-          if (tokenRes.status) {
-            setErr(JSON.stringify({ status: tokenRes.status, body: tokenRes.body }));
-          }
+          setErr(
+            JSON.stringify({
+              status: tokenRes.status ?? 0,
+              body: tokenRes.body,
+              hint: tokenRes.status === 0 ? "network_error_or_aborted" : undefined,
+            })
+          );
         }
 
         if (courseId && metaRes.status === 200 && typeof metaRes.body === "object") {
@@ -109,21 +113,23 @@ export default function VideoItemPage() {
             }
           } else {
             setPlaybackId(null);
-            setMetaErr("falha validação módulos");
+            setMetaErr(JSON.stringify({ status: 200, validationError: parsedMeta.error.flatten() }));
           }
-        } else if (courseId && metaRes.status) {
+        } else if (courseId && metaRes.status !== 200) {
           setPlaybackId(null);
-          setMetaErr("falha ao obter módulos");
+          setMetaErr(
+            JSON.stringify({
+              status: metaRes.status ?? 0,
+              body: metaRes.body,
+              hint: metaRes.status === 0 ? "network_error_or_aborted" : undefined,
+            })
+          );
         } else if (!courseId) {
           setPlaybackId(null);
         }
       } catch (e: any) {
         if (!alive) return;
-        const message = JSON.stringify({ error: String(e) });
-        setErr(message);
-        if (courseId) {
-          setMetaErr(String(e));
-        }
+        setErr(JSON.stringify({ error: String(e) }));
         setPlaybackId(null);
       } finally {
         if (!alive) return;
