@@ -12,7 +12,7 @@ import { Skeleton } from "../../components/ui/Skeleton";
 import { CertificateListSchema, type Certificate } from "../../schemas/certificates";
 
 export default function CertificatesPage() {
-  const { authReady, isAuthenticated } = useRequireAuth();
+  const { authReady, isAuthenticated, cookieMode } = useRequireAuth();
   const { jwt } = useAuth();
   const [items, setItems] = useState<Certificate[]>([]);
   const [err, setErr] = useState<string | null>(null);
@@ -55,11 +55,20 @@ export default function CertificatesPage() {
   }, [jwt, authReady, isAuthenticated]);
 
   return (
-    <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <div
+      className="fade-in"
+      data-testid="certificates-page"
+      style={{ display: "flex", flexDirection: "column", gap: 16 }}
+    >
       <h1 style={{ margin: 0, fontSize: 22 }}>Certificados</h1>
+      {process.env.NEXT_PUBLIC_DEBUG === "1" && (
+        <span data-testid="certificates-mode-flag" style={{ fontSize: 12, color: "#666" }}>
+          cookieMode={String(cookieMode)}
+        </span>
+      )}
 
       {!authReady && (
-        <div style={{ display: "grid", gap: 12 }}>
+        <div data-testid="certificates-loading" style={{ display: "grid", gap: 12 }}>
           <Card>
             <Skeleton h={18} w="40%" />
             <Skeleton h={12} w="80%" />
@@ -72,7 +81,7 @@ export default function CertificatesPage() {
       )}
 
       {authReady && !isAuthenticated && (
-        <Card>
+        <Card data-testid="certificates-auth-warning">
           <strong>Não autenticado</strong>
           <p style={{ margin: 0, fontSize: 13, color: "var(--color-text-soft)" }}>
             Clique em “Entrar” (topo) para visualizar seus certificados.
@@ -81,7 +90,7 @@ export default function CertificatesPage() {
       )}
 
       {authReady && isAuthenticated && loading && (
-        <div style={{ display: "grid", gap: 12 }}>
+        <div data-testid="certificates-list-loading" style={{ display: "grid", gap: 12 }}>
           {Array.from({ length: 3 }).map((_, i) => (
             <Card key={i}>
               <Skeleton h={16} w="60%" />
@@ -92,18 +101,26 @@ export default function CertificatesPage() {
       )}
 
       {authReady && isAuthenticated && err && !loading && (
-        <Card style={{ borderColor: "#f2c2c2", background: "#fff6f6", color: "#842029" }}>
+        <Card
+          data-testid="certificates-error"
+          style={{ borderColor: "#f2c2c2", background: "#fff6f6", color: "#842029" }}
+        >
           <strong>Erro ao carregar certificados</strong>
           <pre style={{ margin: 0, whiteSpace: "pre-wrap", fontSize: 12 }}>{err}</pre>
         </Card>
       )}
 
       {authReady && isAuthenticated && !err && !loading && items.length === 0 && (
-        <p style={{ fontSize: 14, color: "#555" }}>Nenhum certificado encontrado.</p>
+        <p data-testid="certificates-empty" style={{ fontSize: 14, color: "#555" }}>
+          Nenhum certificado encontrado.
+        </p>
       )}
 
       {authReady && isAuthenticated && !err && !loading && items.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div
+          data-testid="certificates-list"
+          style={{ display: "flex", flexDirection: "column", gap: 12 }}
+        >
           {items.map((c, index) => (
             <Card key={c.serial ?? c.id ?? `${c.courseId ?? "unknown"}-${index}`} style={{ gap: 8 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between" }}>

@@ -15,5 +15,6 @@ export async function POST() {
     ].join("; ")
   );
   headers.append("Content-Type", "application/json");
+  headers.append("Cache-Control", "no-store");
   return new Response(JSON.stringify({ ok: true }), { status: 200, headers });
 }

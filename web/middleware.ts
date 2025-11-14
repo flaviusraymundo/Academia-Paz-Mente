@@ -22,7 +22,8 @@ function isCookieMode() {
 }
 
 // Rotas de páginas que exigem autenticação (quando cookie mode está ativo)
-const protectedPrefixes = ["/course", "/video", "/text", "/quiz"];
+const protectedPrefixes = ["/course", "/video", "/text", "/quiz"] as const;
+const LOGIN_PATH = "/login";
 
 export async function middleware(req: NextRequest) {
   const cookieMode = isCookieMode();
@@ -32,7 +33,7 @@ export async function middleware(req: NextRequest) {
 
   const { pathname } = req.nextUrl;
 
-  if (pathname === "/login") {
+  if (pathname === LOGIN_PATH) {
     return NextResponse.next();
   }
 
@@ -44,7 +45,7 @@ export async function middleware(req: NextRequest) {
   const hasSession = !!req.cookies.get("session")?.value;
   if (!hasSession) {
     const url = req.nextUrl.clone();
-    url.pathname = "/login";
+    url.pathname = LOGIN_PATH;
     url.searchParams.set("from", pathname);
     return NextResponse.redirect(url);
   }
@@ -72,7 +73,7 @@ export async function middleware(req: NextRequest) {
   }
 
   const url = req.nextUrl.clone();
-  url.pathname = "/login";
+  url.pathname = LOGIN_PATH;
   url.searchParams.set("from", pathname);
   const resp = NextResponse.redirect(url);
 

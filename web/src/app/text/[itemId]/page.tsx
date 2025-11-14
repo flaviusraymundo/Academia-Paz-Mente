@@ -11,7 +11,7 @@ export default function TextItemPage() {
   const qs = useSearchParams();
   const courseId = qs.get("courseId") || "";
   const moduleId = qs.get("moduleId") || "";
-  const { authReady, isAuthenticated } = useRequireAuth();
+  const { authReady, isAuthenticated, cookieMode } = useRequireAuth();
   const { jwt } = useAuth();
 
   const [reading, setReading] = useState(true);
@@ -145,7 +145,10 @@ export default function TextItemPage() {
       </article>
 
       {DEBUG && (
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <span data-testid="text-cookie-mode" style={{ fontSize: 12, color: "#666" }}>
+            cookieMode: <code>{String(cookieMode)}</code>
+          </span>
           <button
             type="button"
             onClick={() =>

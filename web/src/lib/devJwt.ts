@@ -3,6 +3,8 @@
 // Use apenas quando NEXT_PUBLIC_ALLOW_CLIENT_FAKE_JWT=1 em DEV.
 // Agora o sub é um UUID v5 (SHA-1) consistente com o servidor.
 
+const DEFAULT_NAMESPACE = "11111111-2222-3333-4444-555555555555";
+
 function b64urlFromJSON(obj: any): string {
   const json = JSON.stringify(obj);
   // encodeURIComponent -> unescape -> btoa para lidar com UTF-8
@@ -141,7 +143,7 @@ export async function buildDevJwt(email: string): Promise<string> {
   const ns =
     (typeof process !== "undefined"
       ? (process as any).env?.NEXT_PUBLIC_DEV_USER_NAMESPACE_UUID
-      : undefined) || "11111111-2222-3333-4444-555555555555";
+      : undefined) || DEFAULT_NAMESPACE;
 
   // sub consistente com o servidor (SHA-1 UUID v5 do e-mail em lower-case)
   const userId = await uuidV5Sha1(String(email || "").toLowerCase(), ns);

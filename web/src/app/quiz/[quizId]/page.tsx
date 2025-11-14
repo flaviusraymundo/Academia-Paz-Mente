@@ -13,7 +13,7 @@ import { QuizSchema, Question } from "../../../schemas/quiz";
 
 export default function QuizPage() {
   const { quizId } = useParams<{ quizId: string }>();
-  const { authReady, isAuthenticated } = useRequireAuth();
+  const { authReady, isAuthenticated, cookieMode } = useRequireAuth();
   const { jwt } = useAuth();
 
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -121,6 +121,11 @@ export default function QuizPage() {
         <span style={{ fontSize: 12, color: "#777" }}>
           <code>{quizId}</code>
         </span>
+        {process.env.NEXT_PUBLIC_DEBUG === "1" && (
+          <span data-testid="quiz-mode-flag" style={{ fontSize: 11, color: "#666" }}>
+            cookieMode={String(cookieMode)}
+          </span>
+        )}
       </div>
 
       {!authReady && (
@@ -210,7 +215,11 @@ export default function QuizPage() {
         </div>
       )}
 
-      {authReady && isAuthenticated && submitOut && <ResultPanel result={submitOut} />}
+      {authReady && isAuthenticated && submitOut && (
+        <div data-testid="quiz-result">
+          <ResultPanel result={submitOut} />
+        </div>
+      )}
     </div>
   );
 }
