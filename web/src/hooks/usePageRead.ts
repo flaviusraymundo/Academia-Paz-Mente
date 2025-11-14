@@ -21,6 +21,7 @@ type PageReadOpts = {
 export function usePageRead(opts: PageReadOpts) {
   const timerRef = useRef<number | null>(null);
   const onBeatRef = useRef<typeof opts.onBeat>();
+  const lastAtRef = useRef<number | null>(null);
 
   useEffect(() => {
     onBeatRef.current = opts.onBeat;
@@ -38,21 +39,29 @@ export function usePageRead(opts: PageReadOpts) {
       return;
     }
 
-    async function send(ms: number) {
+    lastAtRef.current = Date.now();
+
+    async function sendDelta() {
+      const now = Date.now();
+      const prev = lastAtRef.current ?? now;
+      const delta = Math.max(0, now - prev);
+
       try {
         await api("/api/events/page-read", {
           method: "POST",
-          body: JSON.stringify({ courseId, moduleId, itemId, ms }),
+          body: JSON.stringify({ courseId, moduleId, itemId, ms: delta }),
           jwt,
         });
-        onBeatRef.current?.(Date.now());
+        lastAtRef.current = now;
+        onBeatRef.current?.(now);
       } catch {
         // silencioso em produção
+        lastAtRef.current = now;
       }
     }
 
-    send(1000);
-    const id = window.setInterval(() => send(intervalMs), intervalMs);
+    sendDelta();
+    const id = window.setInterval(sendDelta, intervalMs);
     timerRef.current = id;
 
     return () => {
