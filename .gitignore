@@ -7,5 +7,6 @@ build/
 out/
 coverage/
 .DS_Store
+*.tsbuildinfo
 # se NÃO quiser versionar o lockfile:
 # package-lock.json
