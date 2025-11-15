@@ -8,6 +8,12 @@ const JSON_HEADERS = Object.freeze({
 });
 
 export async function GET(req: Request) {
+  if (process.env.COOKIE_MODE !== "1") {
+    return new Response(JSON.stringify({ authenticated: false, reason: "COOKIE_MODE_DISABLED" }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
   const secret = process.env.JWT_SECRET || process.env.DEV_JWT_SECRET || "insecure-dev-secret";
   const cookie = req.headers.get("cookie") || "";
   const match = /(?:^|;\s*)session=([^;]+)/.exec(cookie);

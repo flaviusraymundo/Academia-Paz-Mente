@@ -1,11 +1,22 @@
 "use client";
-import { Suspense, useEffect, useState } from "react";
+
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { useRouter, useSearchParams } from "next/navigation";
 import { DEV_FAKE } from "../../lib/config";
 
 function LoginPageInner() {
-  const { login, authReady, lastError, logout, email, isAuthenticated, cookieMode } = useAuth();
+  const {
+    login,
+    authReady,
+    lastError,
+    logout,
+    email,
+    isAuthenticated,
+    cookieMode,
+    flags,
+  } = useAuth();
+
   const [inputEmail, setInputEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [diag, setDiag] = useState<{
@@ -16,6 +27,7 @@ function LoginPageInner() {
   const router = useRouter();
   const qs = useSearchParams();
   const from = qs.get("from") || "/";
+
   const DEBUG =
     process.env.NEXT_PUBLIC_DEBUG === "1" || process.env.NEXT_PUBLIC_DEBUG === "true";
 
@@ -83,7 +95,7 @@ function LoginPageInner() {
       )}
 
       {DEBUG && (
-        <div style={{ fontSize: 12, color: "#444", marginBottom: 12 }}>
+        <div style={{ fontSize: 12, color: "#444", marginBottom: 12 }} data-e2e="login-debug">
           <div>
             <strong>Flags (client):</strong> cookieMode={String(cookieMode)} devFake={String(DEV_FAKE)}
           </div>
@@ -96,7 +108,35 @@ function LoginPageInner() {
                   <div>/.netlify/functions/dev-jwt status: {diag.devJwtFn}</div>
                 </>
               )}
-              <div style={{ color: "#666" }}>404 indica endpoint desligado; -1 indica erro de rede.</div>
+              <div style={{ color: "#666" }}>
+                404 indica endpoint desligado; -1 indica erro de rede.
+              </div>
+            </div>
+          )}
+          {flags && (
+            <div
+              style={{
+                background: "#fafafa",
+                border: "1px solid #ddd",
+                padding: "8px 10px",
+                borderRadius: 8,
+                fontSize: 11,
+                marginTop: 8,
+                lineHeight: 1.4,
+                maxHeight: 220,
+                overflow: "auto",
+              }}
+            >
+              <strong>Server Flags</strong>
+              <pre
+                style={{
+                  margin: "6px 0 0",
+                  fontSize: 11,
+                  whiteSpace: "pre-wrap",
+                }}
+              >
+                {JSON.stringify(flags, null, 2)}
+              </pre>
             </div>
           )}
         </div>

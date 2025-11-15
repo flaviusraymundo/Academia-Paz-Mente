@@ -16,6 +16,7 @@ export type Toast = { id: string; text: string; kind: "info" | "error" | "succes
 type AuthState = {
   jwt: string | null;
   decoded: ReturnType<typeof decodeJwt>;
+  flags?: Record<string, any>;
   ready: boolean; // contexto inicializado
   authReady: boolean; // sessão carregada (cookie mode) ou igual a ready (header mode)
   cookieMode: boolean;
@@ -27,7 +28,7 @@ type AuthState = {
   dismissToast: (id: string) => void;
   authenticated?: boolean; // só populado em cookie mode
   email?: string | null;
-  isAuthenticated: boolean; // unificado para consumidores
+  isAuthenticated: boolean; // unificado para consumidores  
 };
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -65,6 +66,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [authenticated, setAuthenticated] = useState<boolean | undefined>(undefined);
   const [email, setEmail] = useState<string | null>(null);
+  const [flags, setFlags] = useState<Record<string, any> | undefined>(undefined);
   const addToast = addToastSetter(setToasts);
 
   const refreshTimerRef = useRef<number | null>(null);
@@ -152,6 +154,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         refreshTimerRef.current = null;
       }
     };
+  }, []);
+
+  // Carrega flags de diagnóstico do servidor (opcional)
+  useEffect(() => {
+    const debug =
+      process.env.NEXT_PUBLIC_DEBUG === "1" || process.env.NEXT_PUBLIC_DEBUG === "true";
+    if (!debug) return;
+    (async () => {
+      const r = await fetch("/api/auth/flags").catch(() => null);
+      if (r?.ok) setFlags(await r.json());
+    })();
   }, []);
 
   // Cross-tab sync via BroadcastChannel (cookie e header mode)
@@ -315,7 +328,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         if (!token) {
-          addToast("Token ausente", "error");
+          addToast("Token ausente ou rota desabilitada", "error");
           return false;
         }
 
@@ -325,6 +338,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         addToast("Login efetuado", "success");
         return true;
       } catch (e: any) {
+        // Diagnóstico adicional para cookie mode + 404/403
+        if (USE_COOKIE_MODE) {
+          addToast("Falha login cookie (ver flags)", "error");
+          await refreshSession();
+        }
         const msg = String(e?.message || e);
         setLastError(msg);
         addToast(`Erro de rede: ${msg}`, "error");
@@ -377,6 +395,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         email: cookieMode ? email : undefined,
         isAuthenticated,
         cookieMode,
+        flags,    
       }}
     >
       {children}
