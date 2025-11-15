@@ -28,8 +28,7 @@ type AuthState = {
   dismissToast: (id: string) => void;
   authenticated?: boolean; // só populado em cookie mode
   email?: string | null;
-  isAuthenticated: boolean; // unificado para consumidores
-  cookieMode: boolean;
+  isAuthenticated: boolean; // unificado para consumidores  
 };
 
 const AuthContext = createContext<AuthState | null>(null);
