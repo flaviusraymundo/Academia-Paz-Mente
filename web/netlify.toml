@@ -1,28 +1,16 @@
 [build]
-  base = "web"
-  command = "npm run build"
-  # publish é relativo ao base; como base=web, deve ser ".next" (e não "web/.next")
-  publish = ".next"
+base = "web"
+command = "npm run build"
+publish = ".next"
 
 [build.environment]
-  NEXT_PUBLIC_API_BASE = # "https://lifeflourishconsulting.netlify.app"
+NEXT_PUBLIC_API_BASE = ""
 
 [[plugins]]
-  package = "@netlify/plugin-nextjs"
+package = "@netlify/plugin-nextjs"
 
-# Garante que /api/dev-jwt funcione via Function existente enquanto depura.
 [[redirects]]
-  from = "/api/dev-jwt"
-  to   = "/.netlify/functions/dev-jwt"
-  status = 200
-  force = true
-
-[build]
-  base = "web"
-  command = "npm run build"
-  publish = ".next"
-
-[build.environment]
-  NEXT_PUBLIC_API_BASE = ""   # ver seção 3
-
-
+from = "/api/dev-jwt"
+to = "https://lifeflourishconsulting.netlify.app/.netlify/functions/dev-jwt"
+status = 200
+force = true
