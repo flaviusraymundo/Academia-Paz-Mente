@@ -2,19 +2,34 @@
 import type { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 
-// Anexa req.auth se houver Bearer. Nunca lança erro nem exige token.
-export function attachAuthIfPresent(req: Request, _res: Response, next: NextFunction) {
-  const h = req.get("authorization") || req.get("Authorization");
-  const m = h && h.match(/^Bearer\s+(.+)$/i);
-  if (!m) return next();
+function readBearer(req: Request): string | null {
+  const h = (req.get("authorization") || req.get("Authorization")) ?? "";
+  const m = h.match(/^Bearer\s+(.+)$/i);
+  return m ? m[1] : null;
+}
 
-  const secret = process.env.JWT_SECRET || process.env.JWT_TOKEN_SECRET || "";
+function readSessionCookie(req: Request): string | null {
+  const raw = req.headers.cookie || "";
+  if (!raw) return null;
+  const m = raw.match(/(?:^|;\s*)session=([^;]+)/);
+  return m?.[1] ? decodeURIComponent(m[1]) : null;
+}
+
+// Anexa req.auth se houver token (header ou cookie). Nunca lança erro.
+export function attachAuthIfPresent(req: Request, _res: Response, next: NextFunction) {
+  const secret =
+    process.env.JWT_SECRET ||
+    process.env.DEV_JWT_SECRET ||
+    "";
   if (!secret) return next();
 
+  const token = readBearer(req) || readSessionCookie(req);
+  if (!token) return next();
+
   try {
-    const payload = jwt.verify(m[1], secret) as any;
+    const payload = jwt.verify(token, secret) as any;
     (req as any).auth = {
-      userId: payload.userId || payload.sub || payload.uid,
+      userId: payload.sub || payload.userId || payload.uid,
       email: payload.email,
       isAdmin: Boolean(payload.isAdmin),
     };
