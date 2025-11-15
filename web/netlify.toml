@@ -1,86 +1,15 @@
 [build]
-  base = "web"
+  base    = "web"
   command = "npm run build"
+  # publish é relativo ao base
   publish = ".next"
 
 [build.environment]
-  # Same-origin no /web (cliente chama /api/* no próprio host)
-  NEXT_PUBLIC_API_BASE = ""
-  COOKIE_MODE = "1"
+  # Fala com a API do site da raiz (root)
+  NEXT_PUBLIC_API_BASE   = "https://lifeflourishconsulting.netlify.app"
+  # Modo TOKEN (sem cookies cross-site). O front salva/envia Authorization: Bearer.
+  NEXT_PUBLIC_COOKIE_MODE = "0"
+  COOKIE_MODE             = "0"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
-
-# ========== Redirects: /web → root(Functions) ==========
-# NUNCA capture /api/auth/* (são rotas Next locais do /web)
-
-# Dev helper
-[[redirects]]
-  from = "/api/dev-jwt"
-  to   = "https://lifeflourishconsulting.netlify.app/.netlify/functions/dev-jwt"
-  status = 200
-  force = true
-
-# Catálogo
-[[redirects]]
-  from = "/api/catalog"
-  to   = "https://lifeflourishconsulting.netlify.app/.netlify/functions/api/catalog"
-  status = 200
-  force = true
-
-# Certificados
-[[redirects]]
-  from = "/api/certificates"
-  to   = "https://lifeflourishconsulting.netlify.app/.netlify/functions/api/certificates"
-  status = 200
-  force = true
-
-# Itens do usuário / módulos
-[[redirects]]
-  from = "/api/me/*"
-  to   = "https://lifeflourishconsulting.netlify.app/.netlify/functions/api/me/:splat"
-  status = 200
-  force = true
-
-# Vídeo / eventos / quizzes / entitlements / progress / admin / checkout
-[[redirects]]
-  from = "/api/video/*"
-  to   = "https://lifeflourishconsulting.netlify.app/.netlify/functions/api/video/:splat"
-  status = 200
-  force = true
-
-[[redirects]]
-  from = "/api/events/*"
-  to   = "https://lifeflourishconsulting.netlify.app/.netlify/functions/api/events/:splat"
-  status = 200
-  force = true
-
-[[redirects]]
-  from = "/api/quizzes/*"
-  to   = "https://lifeflourishconsulting.netlify.app/.netlify/functions/api/quizzes/:splat"
-  status = 200
-  force = true
-
-[[redirects]]
-  from = "/api/entitlements*"
-  to   = "https://lifeflourishconsulting.netlify.app/.netlify/functions/api/entitlements:~splat"
-  status = 200
-  force = true
-
-[[redirects]]
-  from = "/api/progress*"
-  to   = "https://lifeflourishconsulting.netlify.app/.netlify/functions/api/progress:~splat"
-  status = 200
-  force = true
-
-[[redirects]]
-  from = "/api/admin*"
-  to   = "https://lifeflourishconsulting.netlify.app/.netlify/functions/api/admin:~splat"
-  status = 200
-  force = true
-
-[[redirects]]
-  from = "/api/checkout"
-  to   = "https://lifeflourishconsulting.netlify.app/.netlify/functions/api/checkout"
-  status = 200
-  force = true
