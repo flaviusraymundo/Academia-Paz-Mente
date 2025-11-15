@@ -1,94 +1,11 @@
 [build]
   base = "web"
   command = "npm run build"
+  # publish é relativo ao base; como base=web, deve ser ".next" (e não "web/.next")
   publish = ".next"
 
 [build.environment]
-  # Em cookie mode same-origin, deixe vazio (o client chama /api/* no próprio host).
-  # Defina isto apenas se quiser apontar o frontend para OUTRO host de backend.
-  # NEXT_PUBLIC_API_BASE = ""
+  NEXT_PUBLIC_API_BASE = "https://lifeflourishconsulting.netlify.app"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
-
-# --- Funções Next API devem permanecer no Next ---
-# NÃO crie catch-all para /api/*.
-
-# --- Exceções: endpoints de Function que você quer expor no site web ---
-
-# dev-jwt da Function do site web
-[[redirects]]
-  from = "/api/dev-jwt"
-  to   = "/.netlify/functions/dev-jwt"
-  status = 200
-  force = true
-
-# Agora mapeie SOMENTE as rotas que pertencem ao backend Express (Function "api")
-# Catálogo (GET)
-[[redirects]]
-  from = "/api/catalog"
-  to   = "/.netlify/functions/api/catalog"
-  status = 200
-  force = true
-
-# Eventos (POST /api/events/*)
-[[redirects]]
-  from = "/api/events/*"
-  to   = "/.netlify/functions/api/events/:splat"
-  status = 200
-  force = true
-
-# Área autenticada do aluno (/api/me/*)
-[[redirects]]
-  from = "/api/me/*"
-  to   = "/.netlify/functions/api/:splat"
-  status = 200
-  force = true
-
-# Vídeo e heartbeat
-[[redirects]]
-  from = "/api/video/*"
-  to   = "/.netlify/functions/api/video/:splat"
-  status = 200
-  force = true
-
-# Quizzes
-[[redirects]]
-  from = "/api/quizzes/*"
-  to   = "/.netlify/functions/api/quizzes/:splat"
-  status = 200
-  force = true
-
-# Checkout
-[[redirects]]
-  from = "/api/checkout/*"
-  to   = "/.netlify/functions/api/checkout/:splat"
-  status = 200
-  force = true
-
-# Certificados (privados e PDF)
-[[redirects]]
-  from = "/api/certificates*"
-  to   = "/.netlify/functions/api/certificates:_splat"
-  status = 200
-  force = true
-
-# Entitlements
-[[redirects]]
-  from = "/api/entitlements*"
-  to   = "/.netlify/functions/api/entitlements:_splat"
-  status = 200
-  force = true
-
-# Admin e Analytics
-[[redirects]]
-  from = "/api/admin/*"
-  to   = "/.netlify/functions/api/admin/:splat"
-  status = 200
-  force = true
-
-[[redirects]]
-  from = "/api/admin/analytics*"
-  to   = "/.netlify/functions/api/admin/analytics:_splat"
-  status = 200
-  force = true
