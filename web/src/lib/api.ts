@@ -1,4 +1,5 @@
 // Utilidades centralizadas para chamadas à API do backend.
+import { readTokenFromStorage } from "./tokenStorage";
 
 export function getApiBase(): string {
   return (process.env.NEXT_PUBLIC_API_BASE || "").replace(/\/+$/, "");
@@ -23,9 +24,10 @@ export async function api<T = any>(
   const h = new Headers(headers);
 
   const USE_COOKIE_MODE = getUseCookieMode();
+  const resolvedJwt = USE_COOKIE_MODE ? null : jwt ?? readTokenFromStorage();
   // Em cookie mode, a sessão vai via cookie HttpOnly; não envie Authorization
-  if (jwt && !USE_COOKIE_MODE) {
-    h.set("Authorization", `Bearer ${jwt}`);
+  if (resolvedJwt) {
+    h.set("Authorization", `Bearer ${resolvedJwt}`);
   }
 
   if (typeof body === "string" && !h.has("Content-Type")) {

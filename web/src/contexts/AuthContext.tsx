@@ -10,6 +10,12 @@ import React, {
 import { decodeJwt, msUntilExpiry } from "../lib/jwt";
 import { buildDevJwt } from "../lib/devJwt";
 import { USE_COOKIE_MODE, DEV_FAKE } from "../lib/config";
+import {
+  TOKEN_STORAGE_KEYS,
+  readTokenFromStorage,
+  writeTokenToStorage,
+  clearStoredToken,
+} from "../lib/tokenStorage";
 
 export type Toast = { id: string; text: string; kind: "info" | "error" | "success" };
 
@@ -37,7 +43,6 @@ export const useAuth = () => {
   return ctx;
 };
 
-const LS_KEY = "lms_jwt";
 const BC_NAME = "auth";
 
 function addToastSetter(setToasts: React.Dispatch<React.SetStateAction<Toast[]>>) {
@@ -117,7 +122,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
       return;
     }
-    const initial = window.localStorage.getItem(LS_KEY);
+    const initial = readTokenFromStorage();
     if (initial) {
       setJwt(initial);
       setDecoded(decodeJwt(initial));
@@ -177,7 +182,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (cookieMode) {
           void refreshSession();
         } else {
-          const tok = window.localStorage.getItem(LS_KEY);
+          const tok = readTokenFromStorage();
           if (tok) {
             setJwt(tok);
             setDecoded(decodeJwt(tok));
@@ -202,18 +207,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (typeof window === "undefined") return;
 
     const onStorage = (ev: StorageEvent) => {
-      if (ev.key !== LS_KEY) return;
-      const next = ev.newValue;
+      const key = ev.key;
+      if (key && !TOKEN_STORAGE_KEYS.includes(key)) return;
+      const next = readTokenFromStorage();
       if (next) {
         setJwt(next);
         setDecoded(decodeJwt(next));
-      } else {
-        setJwt(null);
-        setDecoded(null);
-        if (refreshTimerRef.current) {
-          window.clearTimeout(refreshTimerRef.current);
-          refreshTimerRef.current = null;
-        }
+        return;
+      }
+      setJwt(null);
+      setDecoded(null);
+      if (refreshTimerRef.current) {
+        window.clearTimeout(refreshTimerRef.current);
+        refreshTimerRef.current = null;
       }
     };
 
@@ -320,7 +326,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         setJwt(token);
-        window.localStorage.setItem(LS_KEY, token);
+        writeTokenToStorage(token);
         bcRef.current?.postMessage({ type: "login" });
         addToast("Login efetuado", "success");
         return true;
@@ -345,7 +351,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     setJwt(null);
     setDecoded(null);
-    window.localStorage.removeItem(LS_KEY);
+    clearStoredToken();
     if (refreshTimerRef.current) {
       window.clearTimeout(refreshTimerRef.current);
       refreshTimerRef.current = null;

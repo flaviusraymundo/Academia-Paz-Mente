@@ -5,6 +5,7 @@
     token = function token(){ // sobrescreve a existente, se houver no escopo global
       try {
         return (
+          localStorage.getItem("apm_token") ||
           localStorage.getItem("lms_jwt") ||
           localStorage.getItem("jwt") ||
           localStorage.getItem("apm_jwt") ||
@@ -17,6 +18,7 @@
     window.apmReadToken = function apmReadToken(){
       try {
         return (
+          localStorage.getItem("apm_token") ||
           localStorage.getItem("lms_jwt") ||
           localStorage.getItem("jwt") ||
           localStorage.getItem("apm_jwt") ||
@@ -49,6 +51,7 @@
       const v = String($("#apm-jwt-input")?.value || "").trim();
       if (!v) return;
       try {
+        localStorage.setItem("apm_token", v);
         localStorage.setItem("lms_jwt", v);
         localStorage.setItem("jwt", v);
         localStorage.setItem("apm_jwt", v);
@@ -92,7 +95,7 @@
 
   function ensureToken(){
     if (!readJwt()){
-      show({status:401, body:{error:'no_token', hint:'Defina localStorage.lms_jwt (ou preencha o campo #jwt) e recarregue'}});
+      show({status:401, body:{error:'no_token', hint:'Defina localStorage.apm_token (ou preencha o campo #jwt) e recarregue'}});
       btnLoad.disabled = true;
       btnSave.disabled = true;
       return false;
