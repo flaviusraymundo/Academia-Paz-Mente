@@ -1,25 +1,95 @@
 [build]
-base = "web"
-command = "npm run build"
-publish = ".next"
+  base    = "web"
+  command = "npm run build"
+  publish = ".next"
 
 [build.environment]
-# same-origin no fetch; tudo que for /api/* será proxied
-NEXT_PUBLIC_API_BASE = ""
+  # Mantém chamadas same-origin no web; deixe em branco para usar o host atual:
+  NEXT_PUBLIC_API_BASE = ""
 
 [[plugins]]
-package = "@netlify/plugin-nextjs"
+  package = "@netlify/plugin-nextjs"
 
-# Proxy TUDO de /api/* para o backend Express (site raiz)
-[[redirects]]
-from = "/api/*"
-to = "https://lifeflourishconsulting.netlify.app/:splat"
-status = 200
-force = true
+# ===========
+# PROXY PARA FUNCTION (apenas o que AINDA não foi migrado ao Next)
+# ===========
 
-# Opcional: rota curta para dev-jwt (se você ainda precisa usá-la)
+# Dev JWT helper (Function dedicada)
 [[redirects]]
-from = "/api/dev-jwt"
-to = "https://lifeflourishconsulting.netlify.app/.netlify/functions/dev-jwt"
-status = 200
-force = true
+  from = "/api/dev-jwt"
+  to   = "/.netlify/functions/dev-jwt"
+  status = 200
+  force  = true
+
+# Health do backend Express (se estiver usando o /api/health da Function)
+[[redirects]]
+  from = "/api/health"
+  to   = "/.netlify/functions/api/health"
+  status = 200
+  force  = true
+
+# Catálogo
+[[redirects]]
+  from = "/api/catalog"
+  to   = "/.netlify/functions/api/catalog"
+  status = 200
+  force  = true
+
+# Itens do aluno (me/*)
+[[redirects]]
+  from = "/api/me/*"
+  to   = "/.netlify/functions/api/me/:splat"
+  status = 200
+  force  = true
+
+# Vídeo
+[[redirects]]
+  from = "/api/video/*"
+  to   = "/.netlify/functions/api/video/:splat"
+  status = 200
+  force  = true
+
+# Quizzes
+[[redirects]]
+  from = "/api/quizzes/*"
+  to   = "/.netlify/functions/api/quizzes/:splat"
+  status = 200
+  force  = true
+
+# Certificados
+[[redirects]]
+  from = "/api/certificates*"
+  to   = "/.netlify/functions/api/certificates:match"
+  status = 200
+  force  = true
+
+# Entitlements
+[[redirects]]
+  from = "/api/entitlements*"
+  to   = "/.netlify/functions/api/entitlements:match"
+  status = 200
+  force  = true
+
+# Checkout
+[[redirects]]
+  from = "/api/checkout*"
+  to   = "/.netlify/functions/api/checkout:match"
+  status = 200
+  force  = true
+
+# Admin/Analytics
+[[redirects]]
+  from = "/api/admin/*"
+  to   = "/.netlify/functions/api/admin/:splat"
+  status = 200
+  force  = true
+
+# Webhooks (se ainda estiverem na Function)
+[[redirects]]
+  from = "/api/webhooks/*"
+  to   = "/.netlify/functions/api/webhooks/:splat"
+  status = 200
+  force  = true
+
+# IMPORTANTE: NÃO coloque um catch-all /api/* aqui.
+# Assim, /api/auth/* (Next API) fica com o Next — e /api/auth/login volta a responder 200.
