@@ -4,11 +4,20 @@ command = "npm run build"
 publish = ".next"
 
 [build.environment]
+# same-origin no fetch; tudo que for /api/* será proxied
 NEXT_PUBLIC_API_BASE = ""
 
 [[plugins]]
 package = "@netlify/plugin-nextjs"
 
+# Proxy TUDO de /api/* para o backend Express (site raiz)
+[[redirects]]
+from = "/api/*"
+to = "https://lifeflourishconsulting.netlify.app/:splat"
+status = 200
+force = true
+
+# Opcional: rota curta para dev-jwt (se você ainda precisa usá-la)
 [[redirects]]
 from = "/api/dev-jwt"
 to = "https://lifeflourishconsulting.netlify.app/.netlify/functions/dev-jwt"
