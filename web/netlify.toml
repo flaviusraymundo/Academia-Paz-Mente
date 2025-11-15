@@ -10,3 +10,17 @@
 [[plugins]]
   package = "@netlify/plugin-nextjs"
 
+# Se você ainda usa a Function Express (/.netlify/functions/api),
+# este fallback manda /api/* para a Function quando não existir rota Next API.
+[[redirects]]
+  from = "/api/*"
+  to   = "/.netlify/functions/api/:splat"
+  status = 200
+  force = true
+
+# Garante que /api/dev-jwt funcione via Function existente enquanto depura.
+[[redirects]]
+  from = "/api/dev-jwt"
+  to   = "/.netlify/functions/dev-jwt"
+  status = 200
+  force = true
