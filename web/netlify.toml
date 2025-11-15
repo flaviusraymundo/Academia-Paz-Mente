@@ -5,18 +5,10 @@
   publish = ".next"
 
 [build.environment]
-  NEXT_PUBLIC_API_BASE = "https://lifeflourishconsulting.netlify.app"
+  NEXT_PUBLIC_API_BASE = # "https://lifeflourishconsulting.netlify.app"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
-
-# Se você ainda usa a Function Express (/.netlify/functions/api),
-# este fallback manda /api/* para a Function quando não existir rota Next API.
-[[redirects]]
-  from = "/api/*"
-  to   = "/.netlify/functions/api/:splat"
-  status = 200
-  force = true
 
 # Garante que /api/dev-jwt funcione via Function existente enquanto depura.
 [[redirects]]
@@ -24,3 +16,13 @@
   to   = "/.netlify/functions/dev-jwt"
   status = 200
   force = true
+
+[build]
+  base = "web"
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  NEXT_PUBLIC_API_BASE = ""   # ver seção 3
+
+
