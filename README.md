@@ -25,9 +25,9 @@ Projeto em Netlify Functions + Express com Postgres (Neon) para um LMS simples c
 ## Arquitetura
 
 - **Hosting**: Netlify
-  - Frontend estático em `public/`
+  - Frontend Next 14 (App Router) em `web/`, servido pelo próprio Express (SSR) dentro da Function `api`
   - Functions em `netlify/functions/` (Node 22, bundler esbuild)
-  - Redirect: `/api/* → /.netlify/functions/api/:splat`
+  - Redirects: `/api/* → /.netlify/functions/api/:splat` + fallback `/* → /.netlify/functions/api/:splat`
 - **Backend**: Express dentro de uma única Function (`api`)
 - **Banco**: Postgres **Neon**
 - **Vídeo/Stripe**: desativados no DEV_FAKE
@@ -97,6 +97,7 @@ api/
 - **publish**: `public`
 - **functions**: `netlify/functions`
 - **build.command**: `npm run build`
+- **fallback 200**: `/* → /.netlify/functions/api/:splat` (Next/React renderizado pelo Express)
 
 Passos:
 1. Conecte o repo ao Netlify.
