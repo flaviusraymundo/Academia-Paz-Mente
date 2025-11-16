@@ -3,6 +3,8 @@ import express, { Request, Response, NextFunction } from "express";
 import helmet from "helmet";
 import morgan from "morgan";
 import { json } from "express";
+import path from "node:path";
+import next from "next";
 import { pool } from "./lib/db.js";
 
 import videoRouter from "./routes/video.js";
@@ -26,15 +28,27 @@ import { requireRole } from "./middleware/roles.js";
 const app = express();
 app.set("trust proxy", true); // faz req.protocol/hostname respeitarem x-forwarded-*
 
+const isDev = process.env.NODE_ENV !== "production";
+const nextDir = path.join(process.cwd(), "web");
+const nextServer = next({ dev: isDev, dir: nextDir });
+const nextHandlerPromise = nextServer.prepare().then(() => nextServer.getRequestHandler());
+const shouldBypassNext = (pathname: string) => pathname.startsWith("/api") || pathname.startsWith("/.netlify/");
+
 app.use(helmet());
 app.use(morgan("combined"));
 app.use(json({ limit: "1mb" }));
 
+const allowedOrigins = [
+  /^https:\/\/lifeflourishconsulting\.com$/,
+  /^https:\/\/www\.lifeflourishconsulting\.com$/,
+  /^https:\/\/lifeflourishconsulting\.netlify\.app$/,
+  /^https:\/\/staging--lifeflourishconsulting\.netlify\.app$/,
+  /^https:\/\/deploy-preview-\d+--lifeflourishconsulting\.netlify\.app$/,
+];
+
 const allowOrigin = (origin?: string) => {
   if (!origin) return "";
-  const ok = /^https:\/\/(lifeflourishconsulting|staging--profound-seahorse-147612|deploy-preview-\d+--profound-seahorse-147612)\.netlify\.app$/.test(
-    origin
-  );
+  const ok = allowedOrigins.some((pattern) => pattern.test(origin));
   return ok ? origin : "";
 };
 
@@ -92,5 +106,12 @@ app.use("/api/admin", requireAuth, requireAdmin, adminRouter);
 // Exemplo futuro (Studio para instrutores):
 // import studioRouter from "./routes/studio.js";
 // app.use("/api/studio", requireAuth, requireRole('instructor','admin'), studioRouter);
+
+app.all("*", (req: Request, res: Response, nextHandler: NextFunction) => {
+  if (shouldBypassNext(req.path || "/")) return nextHandler();
+  nextHandlerPromise
+    .then((handler) => handler(req, res))
+    .catch((err) => nextHandler(err));
+});
 
 export default app;

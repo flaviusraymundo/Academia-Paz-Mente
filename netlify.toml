@@ -3,12 +3,22 @@
   publish = "public"
 
 [functions]
-  node_bundler = "esbuild"
+  node_bundler = "nft"
   external_node_modules = ["pg", "puppeteer-core", "@sparticuz/chromium", "qrcode"]
-  included_files = ["public/cert-templates/**", "public/images/**"]
+  included_files = [
+    "public/cert-templates/**",
+    "public/images/**",
+    "web/.next/**",
+    "web/public/**"
+  ]
 
 [functions."*"]
-  included_files = ["public/cert-templates/**", "public/images/**"]
+  included_files = [
+    "public/cert-templates/**",
+    "public/images/**",
+    "web/.next/**",
+    "web/public/**"
+  ]
 
 [build.environment]
   NODE_VERSION = "20"
@@ -23,28 +33,8 @@
   to = "/.netlify/functions/stripe-webhook"
   status = 200
 
-############################################
-# Contexto da branch ‘next-static’ (site aluno)
-############################################
-[context.next-static.build]
-  base = "web"
-  command = "npm run build"
-  publish = "out"
-
-# Fallback SPA para rotas do App Router exportado
-[[context.next-static.redirects]]
+[[redirects]]
   from = "/*"
-  to = "/index.html"
+  to = "/.netlify/functions/api/:splat"
   status = 200
-
-[context.next-static.build.environment]
-  NEXT_PUBLIC_MARKER = "ALUNO_EXPORT"
-###########################################
-
-[context.next-plugin.build]
-  base = "web"
-  command = "npm run build"
-  publish = "web/.next"
-
-[[context.next-plugin.plugins]]
-  package = "@netlify/plugin-nextjs"
+  force = true
