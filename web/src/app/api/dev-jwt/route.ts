@@ -125,24 +125,82 @@ function isProductionContext() {
   return ctx === "production" || vercel === "production" || node === "production";
 }
 
+const truthy = (value?: string | null) => {
+  if (!value) return false;
+  const normalized = value.toLowerCase();
+  return normalized === "1" || normalized === "true";
+};
+
+function getExternalApiBase() {
+  return (process.env.API_BASE || process.env.NEXT_PUBLIC_API_BASE || "").replace(/\/$/, "");
+}
+
+function allowClientFallback() {
+  return truthy(process.env.NEXT_PUBLIC_ALLOW_CLIENT_FAKE_JWT) || truthy(process.env.ALLOW_CLIENT_FAKE_JWT);
+}
+
+async function fetchUpstreamToken(search: string) {
+  const base = getExternalApiBase();
+  if (!base) return null;
+  const upstreamUrl = `${base}/.netlify/functions/dev-jwt${search}`;
+  const upstream = await fetch(upstreamUrl, { headers: { Accept: "text/plain" }, cache: "no-store" });
+  const text = await upstream.text();
+  if (!upstream.ok) {
+    throw new Error(`upstream_${upstream.status}`);
+  }
+  const trimmed = text.trim();
+  if (!trimmed) throw new Error("upstream_empty_body");
+  return { token: trimmed, contentType: upstream.headers.get("content-type") };
+}
+
+function getSigningSecret() {
+  const secret = process.env.JWT_SECRET || process.env.DEV_JWT_SECRET;
+  if (secret) return secret;
+  if (allowClientFallback()) return "insecure-dev-secret";
+  return null;
+}
+
 export async function GET(req: Request) {
-  // Gate principal
   if (process.env.DEV_JWT_ENABLED !== "1") {
     return new Response("Not Found", { status: 404 });
   }
-
-  // Safety net em produção (só libera com override explícito)
   if (isProductionContext() && process.env.DEV_JWT_ALLOW_IN_PRODUCTION !== "1") {
     return new Response("Not Found", { status: 404 });
   }
 
   const url = new URL(req.url);
+  const upstreamErrors: string[] = [];
+  try {
+    const upstream = await fetchUpstreamToken(url.search);
+    if (upstream?.token) {
+      return new Response(upstream.token, {
+        status: 200,
+        headers: {
+          "Content-Type": upstream.contentType || "text/plain",
+          "Cache-Control": "no-store",
+          "X-Dev-Jwt-Source": "upstream",
+        },
+      });
+    }
+  } catch (err: any) {
+    upstreamErrors.push(String(err?.message || err));
+  }
+
   const email = url.searchParams.get("email") || "dev@example.com";
   const now = Math.floor(Date.now() / 1000);
   const day = 24 * 60 * 60;
-
-  // sub: UUID válido (compatível com middleware que espera uuid)
   const userId = await createOrFetchUserId(email);
+
+  const secret = getSigningSecret();
+  if (!secret) {
+    return new Response(
+      JSON.stringify({ error: "jwt_secret_missing", upstreamErrors }),
+      {
+        status: 502,
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+      }
+    );
+  }
 
   const header = { alg: "HS256", typ: "JWT" };
   const payload = {
@@ -151,14 +209,10 @@ export async function GET(req: Request) {
     role: "dev",
     iat: now,
     exp: now + day,
-    iss: "dev-jwt-local",
+    iss: upstreamErrors.length ? "dev-jwt-local-fallback" : "dev-jwt-local",
     aud: "web",
     dev: true,
   };
-
-  // Assina com JWT_SECRET para alinhar com middleware
-  const secret =
-    process.env.JWT_SECRET || process.env.DEV_JWT_SECRET || "insecure-dev-secret";
 
   const headerPart = b64url(JSON.stringify(header));
   const payloadPart = b64url(JSON.stringify(payload));
@@ -166,8 +220,14 @@ export async function GET(req: Request) {
   const signature = b64url(crypto.createHmac("sha256", secret).update(toSign).digest());
   const token = `${toSign}.${signature}`;
 
-  return new Response(token, {
-    status: 200,
-    headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" },
-  });
+  const extraHeaders: Record<string, string> = {
+    "Content-Type": "text/plain",
+    "Cache-Control": "no-store",
+    "X-Dev-Jwt-Source": "local",
+  };
+  if (upstreamErrors.length) {
+    extraHeaders["X-Dev-Jwt-Upstream"] = upstreamErrors.join(";");
+  }
+
+  return new Response(token, { status: 200, headers: extraHeaders });
 }
