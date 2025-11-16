@@ -12,10 +12,11 @@ import { NextResponse, type NextRequest } from "next/server";
  */
 function isCookieMode() {
   if (process.env.COOKIE_MODE === "1") return true;
-  if (
+  const envCookie =
+    process.env.NEXT_PUBLIC_COOKIE_MODE === "1" ||
     process.env.NEXT_PUBLIC_USE_COOKIE_MODE === "1" ||
-    process.env.NEXT_PUBLIC_USE_COOKIE_MODE === "true"
-  ) {
+    process.env.NEXT_PUBLIC_USE_COOKIE_MODE === "true";
+  if (envCookie) {
     return true;
   }
   return false;

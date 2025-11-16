@@ -1,9 +1,7 @@
+import { readTokenFromStorage } from "../lib/token";
+
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "";
 const COOKIE_MODE = (process.env.NEXT_PUBLIC_COOKIE_MODE ?? "0") === "1"; // header-mode por padrão
-
-function getToken(): string | null {
-  try { return localStorage.getItem("apm_token"); } catch { return null; }
-}
 
 type ApiResponse<T = any> = { status: number; body: T | any; error?: boolean };
 type ApiOptions = RequestInit & { jwt?: string | null };
@@ -15,14 +13,19 @@ export async function apiFetch<T = any>(path: string, init: ApiOptions = {}): Pr
   const { jwt, ...rest } = init;
   const headers = new Headers(rest.headers || {});
   if (!COOKIE_MODE) {
-    const t = jwt ?? getToken();
-    if (t && !headers.has("Authorization")) headers.set("Authorization", `Bearer ${t}`);
+    const storedToken = typeof window !== "undefined" ? readTokenFromStorage() : null;
+    const token = jwt ?? storedToken;
+    if (token && !headers.has("Authorization")) headers.set("Authorization", `Bearer ${token}`);
   }
 
   const requestBody: any = (rest as any).body;
   if (!headers.has("Content-Type") && requestBody != null) {
     const hasURLSearchParams =
       typeof URLSearchParams !== "undefined" && requestBody instanceof URLSearchParams;
+    const hasFormData = typeof FormData !== "undefined" && requestBody instanceof FormData;
+    const hasBlob = typeof Blob !== "undefined" && requestBody instanceof Blob;
+    const hasArrayBuffer =
+      typeof ArrayBuffer !== "undefined" && requestBody instanceof ArrayBuffer;
 
     if (typeof requestBody === "string") {
       headers.set("Content-Type", "application/json");
