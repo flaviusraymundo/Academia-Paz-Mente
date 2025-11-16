@@ -22,6 +22,7 @@ import { requireAdmin } from "./middleware/admin.js";
 import entitlementsRouter from "./routes/entitlements.js";
 import { attachAuthIfPresent } from "./middleware/auth-optional.js";
 import { requireRole } from "./middleware/roles.js";
+import { allowOrigin } from "./lib/allow-origin.js";
 
 const app = express();
 app.set("trust proxy", true); // faz req.protocol/hostname respeitarem x-forwarded-*
@@ -29,16 +30,6 @@ app.set("trust proxy", true); // faz req.protocol/hostname respeitarem x-forward
 app.use(helmet());
 app.use(morgan("combined"));
 app.use(json({ limit: "1mb" }));
-
-const allowOrigin = (origin?: string) => {
-  if (!origin) return "";
-  const ok =
-    /^https:\/\/(lifeflourishconsulting|staging--profound-seahorse-147612|deploy-preview-\d+--profound-seahorse-147612)\.netlify\.app$/.test(
-      origin
-    ) ||
-    /^https:\/\/(www\.)?lifeflourishconsulting\.com$/.test(origin);
-  return ok ? origin : "";
-};
 
 app.use((req: Request, res: Response, next: NextFunction) => {
   const origin = allowOrigin(req.headers.origin as string | undefined);

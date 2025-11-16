@@ -1,14 +1,7 @@
 // netlify/functions/dev-jwt.ts
 import jwt from "jsonwebtoken";
 import { pool } from "../../src/server/lib/db.ts";
-
-const allowOrigin = (origin: string | undefined) => {
-  if (!origin) return "";
-  const ok = /^https:\/\/(lifeflourishconsulting|staging--profound-seahorse-147612|deploy-preview-\d+--profound-seahorse-147612)\.netlify\.app$/.test(
-    origin
-  );
-  return ok ? origin : "";
-};
+import { allowOrigin } from "../../src/server/lib/allow-origin.ts";
 
 const corsHeaders = (origin: string) => ({
   "Access-Control-Allow-Origin": origin,
