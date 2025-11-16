@@ -1,57 +1,186 @@
 "use client";
 
+import type React from "react";
 import { useEffect, useState } from "react";
-import { api } from "../../lib/api";
-
-type Cert = {
-  course_id: string;
-  pdf_url: string;
-  issued_at: string;
-  serial?: string | null;
-  hash?: string | null;
-};
+import Link from "next/link";
+import api from "../../lib/api";
+import { useAuth } from "../../contexts/AuthContext";
+import { Card } from "../../components/ui/Card";
+import { Badge } from "../../components/ui/Badge";
+import { Skeleton } from "../../components/ui/Skeleton";
+import { CertificateListSchema, type Certificate } from "../../schemas/certificates";
 
 export default function CertificatesPage() {
-  const [items, setItems] = useState<Cert[]>([]);
+  const { authReady, isAuthenticated, cookieMode, jwt } = useAuth();
+  const [items, setItems] = useState<Certificate[]>([]);
   const [err, setErr] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    if (!authReady) return;
+    if (!isAuthenticated) {
+      setItems([]);
+      setErr(null);
+      setLoading(false);
+      return;
+    }
+
     let alive = true;
     (async () => {
-      const { status, body } = await api(`/api/certificates?unique=1`);
+      setLoading(true);
+      setErr(null);
+      const { status, body } = await api(`/api/certificates?unique=1`, { jwt });
       if (!alive) return;
-      if (status === 200 && Array.isArray(body?.certificates)) {
-        setItems(body.certificates);
+      if (status === 200 && typeof body === "object") {
+        const parsed = CertificateListSchema.safeParse(body);
+        if (parsed.success) {
+          setItems(parsed.data.certificates ?? []);
+          setErr(null);
+        } else {
+          setItems([]);
+          setErr(JSON.stringify({ status, validationError: parsed.error.flatten() }));
+        }
       } else {
+        setItems([]);
         setErr(JSON.stringify({ status, body }));
       }
       setLoading(false);
     })();
-    return () => { alive = false; };
-  }, []);
+
+    return () => {
+      alive = false;
+    };
+  }, [jwt, authReady, isAuthenticated]);
 
   return (
-    <div>
-      <h1>Certificados</h1>
-      {loading && <p>Carregando...</p>}
-      {err && <pre style={{ color: "crimson" }}>{err}</pre>}
-      {!loading && items.length === 0 && <p>Nenhum certificado encontrado.</p>}
-      <ul style={{ paddingLeft: 16 }}>
-        {items.map((c, idx) => (
-          <li key={`${c.course_id}-${idx}`} style={{ marginBottom: 10 }}>
-            <div>Course ID: <code>{c.course_id}</code></div>
-            <div>Emitido em: {new Date(c.issued_at).toLocaleString()}</div>
-            <div>
-              PDF:{" "}
-              <a href={c.pdf_url} target="_blank" rel="noreferrer">
-                abrir
-              </a>
-            </div>
-            {c.serial ? <div>Serial: <code>{c.serial}</code></div> : null}
-          </li>
-        ))}
-      </ul>
+    <div
+      className="fade-in"
+      data-testid="certificates-page"
+      style={{ display: "flex", flexDirection: "column", gap: 16 }}
+    >
+      <h1 style={{ margin: 0, fontSize: 22 }}>Certificados</h1>
+      {process.env.NEXT_PUBLIC_DEBUG === "1" && (
+        <span data-testid="certificates-mode-flag" style={{ fontSize: 12, color: "#666" }}>
+          cookieMode={String(cookieMode)}
+        </span>
+      )}
+
+      {!authReady && (
+        <div data-testid="certificates-loading" style={{ display: "grid", gap: 12 }}>
+          <Card>
+            <Skeleton h={18} w="40%" />
+            <Skeleton h={12} w="80%" />
+          </Card>
+          <Card>
+            <Skeleton h={18} w="50%" />
+            <Skeleton h={12} w="70%" />
+          </Card>
+        </div>
+      )}
+
+      {authReady && !isAuthenticated && (
+        <Card data-testid="certificates-auth-warning">
+          <strong>Não autenticado</strong>
+          <p style={{ margin: 0, fontSize: 13, color: "var(--color-text-soft)" }}>
+            Clique em “Entrar” (topo) para visualizar seus certificados.
+          </p>
+        </Card>
+      )}
+
+      {authReady && isAuthenticated && loading && (
+        <div data-testid="certificates-list-loading" style={{ display: "grid", gap: 12 }}>
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Card key={i}>
+              <Skeleton h={16} w="60%" />
+              <Skeleton h={12} w="90%" />
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {authReady && isAuthenticated && err && !loading && (
+        <Card
+          data-testid="certificates-error"
+          style={{ borderColor: "#f2c2c2", background: "#fff6f6", color: "#842029" }}
+        >
+          <strong>Erro ao carregar certificados</strong>
+          <pre style={{ margin: 0, whiteSpace: "pre-wrap", fontSize: 12 }}>{err}</pre>
+        </Card>
+      )}
+
+      {authReady && isAuthenticated && !err && !loading && items.length === 0 && (
+        <p data-testid="certificates-empty" style={{ fontSize: 14, color: "#555" }}>
+          Nenhum certificado encontrado.
+        </p>
+      )}
+
+      {authReady && isAuthenticated && !err && !loading && items.length > 0 && (
+        <div
+          data-testid="certificates-list"
+          style={{ display: "flex", flexDirection: "column", gap: 12 }}
+        >
+          {items.map((c, index) => (
+            <Card key={c.serial ?? c.id ?? `${c.courseId ?? "unknown"}-${index}`} style={{ gap: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <strong>Serial:</strong> <code>{c.serial ?? "-"}</code>
+                  {c.status && <Badge tone={c.status === "valid" ? "success" : "neutral"}>{c.status}</Badge>}
+                  {c.issuedAt && <Badge tone="info">{new Date(c.issuedAt).toLocaleDateString()}</Badge>}
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  {c.serial ? (
+                    <Link
+                      href={`/certificate/${encodeURIComponent(c.serial)}`}
+                      style={linkBtn}
+                      data-testid={`certificate-verify-${c.serial}`}
+                    >
+                      Verificar
+                    </Link>
+                  ) : (
+                    <span style={{ ...linkBtn, opacity: 0.6, pointerEvents: "none" as const }}>Sem serial</span>
+                  )}
+                  {c.url ? (
+                    <a
+                      href={c.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={primaryBtn}
+                      data-testid={`certificate-download-${c.serial ?? index}`}
+                    >
+                      Baixar PDF
+                    </a>
+                  ) : (
+                    <span style={{ ...linkBtn, opacity: 0.6, pointerEvents: "none" as const }}>Sem PDF</span>
+                  )}
+                </div>
+              </div>
+              {c.courseId && (
+                <div style={{ fontSize: 12, color: "#666" }}>
+                  courseId: <code>{c.courseId}</code>
+                </div>
+              )}
+            </Card>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
+
+const linkBtn: React.CSSProperties = {
+  display: "inline-block",
+  padding: "6px 10px",
+  borderRadius: 6,
+  background: "#f5f5f7",
+  border: "1px solid #ccc",
+  textDecoration: "none",
+  color: "#222",
+  fontSize: 13,
+};
+
+const primaryBtn: React.CSSProperties = {
+  ...linkBtn,
+  background: "var(--color-primary)",
+  borderColor: "var(--color-primary)",
+  color: "#fff",
+};

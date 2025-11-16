@@ -74,6 +74,12 @@ qz as (
   select m.module_id, 70.0 from m
   returning id as quiz_id, module_id
 ),
+qi as (
+  -- cria o item 'quiz' para que o app exiba o botão "Abrir quiz"
+  insert into module_items(module_id, type, "order", payload_ref)
+  select qz.module_id, 'quiz', 3, jsonb_build_object('quiz_id', qz.quiz_id) from qz
+  returning id as quiz_item_id, module_id
+),
 q1 as (
   insert into questions(quiz_id, kind, body, choices, answer_key)
   select qz.quiz_id,'single','{"prompt":"O player usa qual protocolo de streaming?"}'::jsonb,

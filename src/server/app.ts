@@ -1,5 +1,5 @@
 // src/server/app.ts
-import express, { Request, Response } from "express";
+import express, { Request, Response, NextFunction } from "express";
 import helmet from "helmet";
 import morgan from "morgan";
 import { json } from "express";
@@ -30,17 +30,24 @@ app.use(helmet());
 app.use(morgan("combined"));
 app.use(json({ limit: "1mb" }));
 
-// CORS consistente para toda a API
-app.use((req, res, next) => {
-  const origin = (req.headers.origin as string | undefined) ?? "*";
-  res.header("Access-Control-Allow-Origin", origin);
-  res.header("Vary", "Origin");
-  res.header("Access-Control-Allow-Credentials", "true");
-  res.header("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,OPTIONS");
-  res.header("Access-Control-Allow-Headers", "Content-Type,Authorization");
-  if (req.method === "OPTIONS") {
-    return res.status(200).json({ ok: true });
+const allowOrigin = (origin?: string) => {
+  if (!origin) return "";
+  const ok = /^https:\/\/(lifeflourishconsulting|staging--profound-seahorse-147612|deploy-preview-\d+--profound-seahorse-147612)\.netlify\.app$/.test(
+    origin
+  );
+  return ok ? origin : "";
+};
+
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const origin = allowOrigin(req.headers.origin as string | undefined);
+  if (origin) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
   }
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization");
+  res.setHeader("Vary", "Origin");
+  if (req.method === "OPTIONS") return res.status(204).end();
   next();
 });
 

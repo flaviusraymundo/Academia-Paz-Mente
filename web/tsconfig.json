@@ -2,16 +2,39 @@
   "compilerOptions": {
     "baseUrl": ".",
     "target": "ES2020",
-    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2020",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "module": "ESNext",
-    "jsx": "react-jsx",
+    "jsx": "preserve",
     "moduleResolution": "Bundler",
     "resolveJsonModule": true,
     "noEmit": true,
     "allowJs": false,
     "strict": true,
     "skipLibCheck": true,
-    "types": ["node"]
+    "types": [
+      "node"
+    ],
+    "incremental": true,
+    "esModuleInterop": true,
+    "isolatedModules": true,
+    "paths": {
+      "@/*": ["./*"]
+    },
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ]
   },
-  "include": ["src"]
+  "include": [
+    "src",
+    ".next/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
 }

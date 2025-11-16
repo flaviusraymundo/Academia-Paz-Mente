@@ -1,56 +1,98 @@
-// Utilidades centralizadas para chamadas à API do backend.
+import { readTokenFromStorage } from "../lib/token";
+import { isCookieModeEnabled } from "./cookieMode";
 
-export function getApiBase(): string {
-  return (process.env.NEXT_PUBLIC_API_BASE || "").replace(/\/+$/, "");
+const COOKIE_MODE = isCookieModeEnabled();
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "";
+
+type ApiResponse<T = any> = { status: number; body: T | any; error?: boolean };
+type ApiOptions = RequestInit & { jwt?: string | null };
+
+export async function apiFetch<T = any>(path: string, init: ApiOptions = {}): Promise<ApiResponse<T>> {
+  const isAbsolute = /^https?:\/\//i.test(path);
+  const url = isAbsolute ? path : `${API_BASE}${path}`;
+
+  const { jwt, ...rest } = init;
+  const headers = new Headers(rest.headers || {});
+  const storedToken = typeof window !== "undefined" ? readTokenFromStorage() : null;
+  const token = jwt ?? storedToken;
+  if (token && !headers.has("Authorization")) headers.set("Authorization", `Bearer ${token}`);
+
+  const requestBody: any = (rest as any).body;
+  if (!headers.has("Content-Type") && requestBody != null) {
+    const hasURLSearchParams =
+      typeof URLSearchParams !== "undefined" && requestBody instanceof URLSearchParams;
+    const hasFormData = typeof FormData !== "undefined" && requestBody instanceof FormData;
+    const hasBlob = typeof Blob !== "undefined" && requestBody instanceof Blob;
+    const hasArrayBuffer =
+      typeof ArrayBuffer !== "undefined" && requestBody instanceof ArrayBuffer;
+
+    if (typeof requestBody === "string") {
+      headers.set("Content-Type", "application/json");
+    } else if (hasURLSearchParams) {
+      headers.set("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8");
+    }
+    // Para FormData/Blob/ArrayBuffer: deixar o browser definir automaticamente
+  }
+
+  const res = await fetch(url, {
+    ...rest,
+    // em header-mode NÃO precisamos de credentials
+    credentials: COOKIE_MODE ? "include" : "omit",
+    headers
+  });
+
+  // helper de erro legível
+  const bodyText = await res.text().catch(() => "");
+  let parsedBody: any = undefined;
+  try { parsedBody = bodyText ? JSON.parse(bodyText) : undefined; } catch { parsedBody = bodyText; }
+  if (!res.ok) {
+    const err = new Error(`HTTP ${res.status}`);
+    (err as any).status = res.status;
+    (err as any).body = parsedBody;
+    throw err;
+  }
+  return { status: res.status, body: parsedBody };
 }
 
-type ApiInit = (RequestInit & { jwt?: string }) | undefined;
+export function getApiBase() {
+  return API_BASE;
+}
 
-export async function api<T = any>(path: string, init?: ApiInit): Promise<{ status: number; body: T | any }> {
-  const base = getApiBase();
-  const url = base ? `${base}${path}` : path;
+export function getUseCookieMode() {
+  return COOKIE_MODE;
+}
 
-  // Headers (preserva os recebidos, adiciona Authorization se houver JWT)
-  const headers = new Headers(init?.headers);
-
-  // 1) prioridade: jwt explícito via init.jwt
-  if (init?.jwt) {
-    headers.set("Authorization", `Bearer ${init.jwt}`);
-  } else if (typeof window !== "undefined") {
-    // 2) fallback client-side: localStorage
-    try {
-      const t = localStorage.getItem("jwt");
-      if (t) headers.set("Authorization", `Bearer ${t}`);
-    } catch {}
-  }
-
-  // Define Content-Type quando body é string e header não veio
-  if (!headers.has("Content-Type") && typeof init?.body === "string") {
-    headers.set("Content-Type", "application/json");
-  }
-
-  let res: Response;
+async function api<T = any>(path: string, init: ApiOptions = {}): Promise<ApiResponse<T>> {
   try {
-    res = await fetch(url, { ...init, headers, cache: "no-store" });
-  } catch (e: any) {
-    return { status: 0, body: { error: "fetch_failed", detail: String(e) } };
+    return await apiFetch<T>(path, init);
+  } catch (err: any) {
+    return {
+      status: typeof err?.status === "number" ? err.status : 0,
+      body: err?.body ?? err?.message ?? null,
+      error: true,
+    };
   }
-
-  const text = await res.text();
-  let body: any = text;
-  try { body = JSON.parse(text); } catch {}
-
-  return { status: res.status, body };
 }
 
-// Helpers opcionais, caso queira usar estilo "api.get" / "api.post"
-export async function apiGet<T = any>(path: string, jwt?: string) {
-  return api<T>(path, { method: "GET", jwt });
-}
-export async function apiPost<T = any>(path: string, data?: any, jwt?: string) {
-  return api<T>(path, { method: "POST", body: data ? JSON.stringify(data) : undefined, jwt });
+export async function apiGet<T = any>(path: string, init: ApiOptions = {}) {
+  return api<T>(path, { ...init, method: init.method ?? "GET" });
 }
 
-// Default export (por conveniência)
-const apiDefault = Object.assign(api, { get: apiGet, post: apiPost, base: getApiBase });
+export async function apiPost<T = any>(path: string, body?: any, init: ApiOptions = {}) {
+  return api<T>(path, {
+    ...init,
+    method: init.method ?? "POST",
+    body: body ? JSON.stringify(body) : init.body,
+  });
+}
+
+const apiDefault = Object.assign(api, {
+  get: apiGet,
+  post: apiPost,
+  base: getApiBase,
+  useCookieMode: getUseCookieMode,
+  fetch: apiFetch,
+});
+
+export { api };
 export default apiDefault;

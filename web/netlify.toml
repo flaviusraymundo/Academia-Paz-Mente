@@ -1,12 +1,15 @@
 [build]
-  base = "web"
+  base    = "web"
   command = "npm run build"
-  # publish é relativo ao base; como base=web, deve ser ".next" (e não "web/.next")
+  # publish é relativo ao base
   publish = ".next"
 
 [build.environment]
-  NEXT_PUBLIC_API_BASE = "https://lifeflourishconsulting.netlify.app"
+  # Fala com a API do site da raiz (root)
+  NEXT_PUBLIC_API_BASE   = "https://lifeflourishconsulting.netlify.app"
+  # Modo TOKEN (sem cookies cross-site). O front salva/envia Authorization: Bearer.
+  NEXT_PUBLIC_COOKIE_MODE = "0"
+  COOKIE_MODE             = "0"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
-

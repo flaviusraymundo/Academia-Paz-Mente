@@ -1,83 +1,164 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import { api } from "../../../lib/api";
+import api from "../../../lib/api";
 import { useAuth } from "../../../contexts/AuthContext";
-
-type Item = { item_id: string; type: "video" | "text" | "quiz"; order: number; payload_ref: any };
-type Module = {
-  id: string;
-  title: string;
-  order: number;
-  unlocked: boolean;
-  itemCount: number;
-  items: Item[];
-  progress: { status: string; score: number; timeSpentSecs: number };
-};
+import { Module } from "../../../types/course";
+import { CourseHeader } from "../../../components/course/CourseHeader";
+import { ModuleCard } from "../../../components/course/ModuleCard";
+import { Card } from "../../../components/ui/Card";
+import { Skeleton } from "../../../components/ui/Skeleton";
+import { ModuleItemsResponseSchema } from "../../../schemas/modules";
 
 export default function CoursePage() {
   const params = useParams<{ courseId: string }>();
   const courseId = params.courseId;
   const [mods, setMods] = useState<Module[]>([]);
   const [err, setErr] = useState<string | null>(null);
-  const { jwt, ready } = useAuth();
+  const [loading, setLoading] = useState(false);
+  const { authReady, isAuthenticated, cookieMode, jwt } = useAuth();
 
   useEffect(() => {
-    if (!ready) return;
-    if (!jwt) {
+    if (!authReady) return;
+
+    if (!isAuthenticated) {
       setMods([]);
       setErr(null);
+      setLoading(false);
       return;
     }
 
     let alive = true;
     (async () => {
-      const qs = new URLSearchParams({ courseId });
-      const { status, body } = await api(`/api/me/items?${qs.toString()}`);
-      if (!alive) return;
-      if (status === 200) setMods(body.items || []);
-      else setErr(JSON.stringify({ status, body }));
+      setLoading(true);
+      setErr(null);
+      try {
+        const qs = new URLSearchParams({ courseId });
+        const { status, body } = await api(`/api/me/items?${qs.toString()}`, { jwt });
+        if (!alive) return;
+
+        if (status === 200) {
+          const parsed = ModuleItemsResponseSchema.safeParse(body);
+          if (parsed.success) {
+            setMods(parsed.data.items || []);
+            setErr(null);
+          } else {
+            setMods([]);
+            setErr(JSON.stringify({ status, validationError: parsed.error.flatten() }));
+          }
+        } else {
+          setMods([]);
+          setErr(JSON.stringify({ status, body }));
+        }
+      } catch (error) {
+        if (!alive) return;
+        setMods([]);
+        setErr(JSON.stringify({ error: String(error) }));
+      } finally {
+        if (!alive) return;
+        setLoading(false);
+      }
     })();
-    return () => { alive = false; };
-  }, [courseId, jwt, ready]);
+
+    return () => {
+      alive = false;
+    };
+  }, [courseId, jwt, authReady, isAuthenticated]);
+
+  const DEBUG = process.env.NEXT_PUBLIC_DEBUG === "1";
+  const title = useMemo(() => `Curso`, []);
 
   return (
-    <div>
-      <h1>Curso</h1>
-      {err && <pre style={{ color: "crimson" }}>{err}</pre>}
-      {mods.map(m => (
-        <div key={m.id} style={{ border: "1px solid #eee", marginBottom: 12, borderRadius: 8 }}>
-          <div style={{ padding: 12, background: "#fafafa", borderBottom: "1px solid #eee" }}>
-            <strong>{m.order}. {m.title}</strong>
-            <span style={{ marginLeft: 8, color: m.unlocked ? "green" : "#999" }}>
-              {m.unlocked ? "desbloqueado" : "bloqueado"}
+    <div
+      className="fade-in"
+      data-testid="course-page"
+      style={{ display: "flex", flexDirection: "column", gap: 20 }}
+    >
+      <CourseHeader
+        title={
+          <>
+            {title}{" "}
+            <span style={{ fontSize: 12, color: "#777", marginLeft: 8 }}>
+              <code>{courseId}</code>
             </span>
-            <span style={{ marginLeft: 8, color: "#555" }}>status: {m.progress.status}</span>
-          </div>
-          <ul style={{ margin: 0, padding: 12 }}>
-            {m.items.map(it => (
-              <li key={it.item_id} style={{ marginBottom: 6 }}>
-                {it.order}. {it.type}
-                {it.type === "quiz" && (
-                  <Link href={`/quiz/${encodeURIComponent(it.payload_ref?.quiz_id || "")}`}>- abrir quiz</Link>
-                )}
-                {it.type === "video" && (
-                  <> - <Link href={`/video/${encodeURIComponent(it.item_id)}?courseId=${encodeURIComponent(courseId)}&moduleId=${encodeURIComponent(m.id)}`}>
-                    abrir vídeo
-                  </Link></>
-                )}
-                {it.type === "text" && (
-                  <> - <Link href={`/text/${encodeURIComponent(it.item_id)}?courseId=${encodeURIComponent(courseId)}&moduleId=${encodeURIComponent(m.id)}`}>
-                    abrir texto
-                  </Link></>
-                )}
-              </li>
-            ))}
-          </ul>
+          </>
+        }
+        right={
+          DEBUG ? (
+            <div style={{ display: "flex", gap: 8 }}>
+              <span style={{ fontSize: 12, color: "#777" }}>DEBUG on</span>
+              <span style={{ fontSize: 11, color: "#666" }}>
+                cookieMode={String(cookieMode)}
+              </span>
+            </div>
+          ) : null
+        }
+      />
+
+      {!authReady && (
+        <div data-testid="course-loading" style={{ display: "grid", gap: 10 }}>
+          <Card>
+            <Skeleton h={16} w="40%" />
+            <Skeleton h={12} w="90%" />
+          </Card>
+          <Card>
+            <Skeleton h={16} w="60%" />
+            <Skeleton h={12} w="85%" />
+          </Card>
         </div>
-      ))}
+      )}
+
+      {authReady && !isAuthenticated && (
+        <Card data-testid="course-auth-warning">
+          <strong>Não autenticado</strong>
+          <p style={{ margin: 0, fontSize: 13, color: "var(--color-text-soft)" }}>
+            Clique em “Entrar” (topo) para visualizar o conteúdo do curso.
+          </p>
+        </Card>
+      )}
+
+      {authReady && isAuthenticated && loading && (
+        <div data-testid="course-modules-loading" style={{ display: "grid", gap: 12 }}>
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Card key={i}>
+              <Skeleton h={18} w="50%" />
+              <Skeleton h={12} w="90%" />
+              <Skeleton h={12} w="80%" />
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {authReady && isAuthenticated && err && !loading && (
+        <Card
+          data-testid="course-error"
+          style={{ borderColor: "#f2c2c2", background: "#fff6f6", color: "#842029" }}
+        >
+          <strong>Erro ao carregar módulos</strong>
+          <pre style={{ margin: 0, whiteSpace: "pre-wrap", fontSize: 12 }}>{err}</pre>
+        </Card>
+      )}
+
+      {authReady && isAuthenticated && !err && !loading && mods.length === 0 && (
+        <p data-testid="course-empty" style={{ fontSize: 14, color: "#555" }}>
+          Nenhum módulo disponível.
+        </p>
+      )}
+
+      {authReady && isAuthenticated && !err && !loading && mods.length > 0 && (
+        <div
+          data-testid="course-modules"
+          style={{ display: "flex", flexDirection: "column", gap: 16 }}
+        >
+          {mods
+            .slice()
+            .sort((a, b) => a.order - b.order)
+            .map((m) => (
+              <ModuleCard key={m.id} m={m} courseId={courseId} />
+            ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -1,13 +1,16 @@
 // public/admin.js
 const $ = (id) => document.getElementById(id);
+const TOKEN_KEYS = ["apm_token", "lms_jwt", "apm_jwt", "jwt"];
 const isUuid = (s) =>
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
     String(s || "")
   );
 function readToken() {
   try {
-    const t = localStorage.getItem("lms_jwt");
-    if (t) return t.trim();
+    for (const key of TOKEN_KEYS) {
+      const t = localStorage.getItem(key);
+      if (t) return t.trim();
+    }
   } catch {}
   return (
     (document.getElementById("jwt")?.value || "")

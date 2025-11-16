@@ -1,13 +1,11 @@
-// Augmenta o tipo Request para aceitar req.auth
-// Certifique-se de que "src/types/**/*.d.ts" está incluído no tsconfig
+// src/types/express.d.ts
 import "express-serve-static-core";
 
 declare module "express-serve-static-core" {
   interface Request {
-    auth?: { userId?: string; email?: string };
-    user?: { id?: string; email?: string };
+    auth?: { userId?: string; email?: string; isAdmin?: boolean };
+    user?: { id?: string; email?: string; isAdmin?: boolean };
   }
 }
 
 export {};
-
