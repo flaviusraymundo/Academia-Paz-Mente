@@ -1,4 +1,4 @@
-// src/types/express.d.ts
+// src/server/types/express.d.ts
 import "express-serve-static-core";
 
 export type AuthPayload = {
