@@ -42,10 +42,15 @@ const allowClientFallback = () =>
   truthy(process.env.NEXT_PUBLIC_ALLOW_CLIENT_FAKE_JWT) || truthy(process.env.ALLOW_CLIENT_FAKE_JWT);
 
 const isProductionContext = () => {
-  const ctx = process.env.CONTEXT || "";
-  const vercel = process.env.VERCEL_ENV || "";
-  const node = process.env.NODE_ENV || "";
-  return ctx === "production" || vercel === "production" || node === "production";
+  const ctx = (process.env.CONTEXT || process.env.VERCEL_ENV || "").toLowerCase();
+  if (ctx) return ctx === "production";
+  return (process.env.NODE_ENV || "").toLowerCase() === "production";
+};
+
+const isDevJwtEnabled = () => {
+  const flag = process.env.DEV_JWT_ENABLED;
+  if (flag === "1" || flag === "0") return flag === "1";
+  return !isProductionContext();
 };
 
 const fetchUpstreamToken = async (search: string) => {
@@ -63,7 +68,7 @@ const fetchUpstreamToken = async (search: string) => {
 const handler = async (event: any) => {
   const origin = allowOrigin(event.headers?.origin);
 
-  if (process.env.DEV_JWT_ENABLED !== "1") {
+  if (!isDevJwtEnabled()) {
     return { statusCode: 404, body: "Not Found" };
   }
   if (isProductionContext() && process.env.DEV_JWT_ALLOW_IN_PRODUCTION !== "1") {

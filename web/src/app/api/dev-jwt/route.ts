@@ -118,16 +118,22 @@ async function createOrFetchUserId(email: string): Promise<string> {
 }
 
 function isProductionContext() {
-  const ctx = process.env.CONTEXT || ""; // Netlify: 'production' | 'deploy-preview' | 'branch-deploy'
-  const vercel = process.env.VERCEL_ENV || ""; // Vercel: 'production' | 'preview' | 'development'
-  const node = process.env.NODE_ENV || "";
-  // Considera "produção" se CONTEXT='production' OU VERCEL_ENV='production' OU NODE_ENV='production'
-  return ctx === "production" || vercel === "production" || node === "production";
+  const ctx = (process.env.CONTEXT || process.env.VERCEL_ENV || "").toLowerCase();
+  if (ctx) return ctx === "production";
+  return (process.env.NODE_ENV || "").toLowerCase() === "production";
+}
+
+function isDevJwtEnabled() {
+  const flag = process.env.DEV_JWT_ENABLED;
+  if (flag === "1" || flag === "0") {
+    return flag === "1";
+  }
+  return !isProductionContext();
 }
 
 export async function GET(req: Request) {
   // Gate principal
-  if (process.env.DEV_JWT_ENABLED !== "1") {
+  if (!isDevJwtEnabled()) {
     return new Response("Not Found", { status: 404 });
   }
 
