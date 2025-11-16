@@ -265,16 +265,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const data = await r.json().catch(() => null);
           token = data?.token || null;
         } else if (DEV_FAKE) {
+          const apiBase = process.env.NEXT_PUBLIC_API_BASE || "";
+          const normalizedBase = apiBase.replace(/\/$/, "");
           const endpoints = [
+            normalizedBase
+              ? `${normalizedBase}/.netlify/functions/dev-jwt?email=${encodeURIComponent(email)}`
+              : null,
             `/api/dev-jwt?email=${encodeURIComponent(email)}`,
             `/.netlify/functions/dev-jwt?email=${encodeURIComponent(email)}`,
-          ];
+          ].filter((u): u is string => Boolean(u));
           const errors: string[] = [];
           for (const url of endpoints) {
             try {
               const r = await fetch(url);
               if (r.ok) {
-                token = await r.text();
+                const contentType = r.headers.get("content-type") || "";
+                if (contentType.includes("application/json")) {
+                  const data = await r.json().catch(() => null);
+                  token = typeof data?.token === "string" ? data.token : null;
+                } else {
+                  const text = await r.text();
+                  token = text ? text.trim() : null;
+                }
+                if (!token) {
+                  errors.push(`${url} -> empty_body`);
+                  continue;
+                }
                 break;
               } else {
                 errors.push(`${url} -> ${r.status}`);
