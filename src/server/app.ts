@@ -32,9 +32,11 @@ app.use(json({ limit: "1mb" }));
 
 const allowOrigin = (origin?: string) => {
   if (!origin) return "";
-  const ok = /^https:\/\/(lifeflourishconsulting|staging--profound-seahorse-147612|deploy-preview-\d+--profound-seahorse-147612)\.netlify\.app$/.test(
-    origin
-  );
+  const ok =
+    /^https:\/\/(lifeflourishconsulting|staging--profound-seahorse-147612|deploy-preview-\d+--profound-seahorse-147612)\.netlify\.app$/.test(
+      origin
+    ) ||
+    /^https:\/\/(www\.)?lifeflourishconsulting\.com$/.test(origin);
   return ok ? origin : "";
 };
 
