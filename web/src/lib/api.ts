@@ -2,7 +2,7 @@ import { readTokenFromStorage } from "../lib/token";
 import { isCookieModeEnabled } from "./cookieMode";
 
 const COOKIE_MODE = isCookieModeEnabled();
-const API_BASE = COOKIE_MODE ? "" : process.env.NEXT_PUBLIC_API_BASE || "";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "";
 
 type ApiResponse<T = any> = { status: number; body: T | any; error?: boolean };
 type ApiOptions = RequestInit & { jwt?: string | null };
@@ -13,11 +13,9 @@ export async function apiFetch<T = any>(path: string, init: ApiOptions = {}): Pr
 
   const { jwt, ...rest } = init;
   const headers = new Headers(rest.headers || {});
-  if (!COOKIE_MODE) {
-    const storedToken = typeof window !== "undefined" ? readTokenFromStorage() : null;
-    const token = jwt ?? storedToken;
-    if (token && !headers.has("Authorization")) headers.set("Authorization", `Bearer ${token}`);
-  }
+  const storedToken = typeof window !== "undefined" ? readTokenFromStorage() : null;
+  const token = jwt ?? storedToken;
+  if (token && !headers.has("Authorization")) headers.set("Authorization", `Bearer ${token}`);
 
   const requestBody: any = (rest as any).body;
   if (!headers.has("Content-Type") && requestBody != null) {

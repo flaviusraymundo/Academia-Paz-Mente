@@ -115,6 +115,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Inicialização
   useEffect(() => {
+    const initial = readTokenFromStorage();
+    if (initial) {
+      setJwt(initial);
+      setDecoded(decodeJwt(initial));
+    }
+
     if (cookieMode) {
       void refreshSession().finally(() => {
         setReady(true);
@@ -122,14 +128,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
       return;
     }
-    const initial = readTokenFromStorage();
-    if (initial) {
-      setJwt(initial);
-      setDecoded(decodeJwt(initial));
-    }
+
     setReady(true);
     setAuthReady(true);
-  }, [refreshSession]);
+  }, [cookieMode, refreshSession]);
 
   // Timer de refresh (apenas header/JWT mode)
   useEffect(() => {
@@ -203,7 +205,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Cross-tab sync via storage event (header/JWT mode)
   useEffect(() => {
-    if (cookieMode) return;
     if (typeof window === "undefined") return;
 
     const onStorage = (ev: StorageEvent) => {
@@ -217,7 +218,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       setJwt(null);
       setDecoded(null);
-      if (refreshTimerRef.current) {
+      if (!cookieMode && refreshTimerRef.current) {
         window.clearTimeout(refreshTimerRef.current);
         refreshTimerRef.current = null;
       }
@@ -225,7 +226,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
-  }, []);
+  }, [cookieMode]);
 
   // Revalida sessão quando aba volta a ficar visível (cookie mode)
   useEffect(() => {
@@ -247,6 +248,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return false;
         }
 
+        let token: string | null = null;
+
         if (cookieMode) {
           const r = await fetch("/api/auth/login", {
             method: "POST",
@@ -259,16 +262,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             addToast("Login falhou", "error");
             return false;
           }
-          await refreshSession();
-          addToast("Login via cookie efetuado", "success");
-          setAuthReady(true);
-          bcRef.current?.postMessage({ type: "session-refresh" });
-          return true;
-        }
-
-        let token: string | null = null;
-
-        if (DEV_FAKE) {
+          const data = await r.json().catch(() => null);
+          token = data?.token || null;
+        } else if (DEV_FAKE) {
           const endpoints = [
             `/api/dev-jwt?email=${encodeURIComponent(email)}`,
             `/.netlify/functions/dev-jwt?email=${encodeURIComponent(email)}`,
@@ -326,9 +322,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         setJwt(token);
+        setDecoded(decodeJwt(token));
         writeTokenToStorage(token);
         bcRef.current?.postMessage({ type: "login" });
-        addToast("Login efetuado", "success");
+
+        if (cookieMode) {
+          await refreshSession();
+          addToast("Login via cookie efetuado", "success");
+          setAuthReady(true);
+          bcRef.current?.postMessage({ type: "session-refresh" });
+        } else {
+          addToast("Login efetuado", "success");
+        }
+
         return true;
       } catch (e: any) {
         const msg = String(e?.message || e);
@@ -337,11 +343,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return false;
       }
     },
-    [refreshSession, addToast]
+    [refreshSession, addToast, cookieMode]
   );
 
   const logout = useCallback(async () => {
-        if (cookieMode) {
+    clearStoredToken();
+    setJwt(null);
+    setDecoded(null);
+
+    if (cookieMode) {
       await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
       await refreshSession();
       setAuthReady(true);
@@ -349,16 +359,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       bcRef.current?.postMessage({ type: "logout" });
       return;
     }
-    setJwt(null);
-    setDecoded(null);
-    clearStoredToken();
+
     if (refreshTimerRef.current) {
       window.clearTimeout(refreshTimerRef.current);
       refreshTimerRef.current = null;
     }
     addToast("Logout efetuado", "info");
     bcRef.current?.postMessage({ type: "logout" });
-  }, [refreshSession, addToast]);
+  }, [refreshSession, addToast, cookieMode]);
 
   const dismissToast = (id: string) => {
     setToasts((ts) => ts.filter((t) => t.id !== id));
