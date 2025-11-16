@@ -19,12 +19,12 @@ export async function apiFetch<T = any>(path: string, init: ApiOptions = {}): Pr
     if (t && !headers.has("Authorization")) headers.set("Authorization", `Bearer ${t}`);
   }
 
-  const body: any = (rest as any).body;
-  if (!headers.has("Content-Type") && body != null) {
+  const requestBody: any = (rest as any).body;
+  if (!headers.has("Content-Type") && requestBody != null) {
     const hasURLSearchParams =
-      typeof URLSearchParams !== "undefined" && body instanceof URLSearchParams;
+      typeof URLSearchParams !== "undefined" && requestBody instanceof URLSearchParams;
 
-    if (typeof body === "string") {
+    if (typeof requestBody === "string") {
       headers.set("Content-Type", "application/json");
     } else if (hasURLSearchParams) {
       headers.set("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8");
@@ -41,15 +41,15 @@ export async function apiFetch<T = any>(path: string, init: ApiOptions = {}): Pr
 
   // helper de erro legível
   const bodyText = await res.text().catch(() => "");
-  let body: any = undefined;
-  try { body = bodyText ? JSON.parse(bodyText) : undefined; } catch { body = bodyText; }
+  let parsedBody: any = undefined;
+  try { parsedBody = bodyText ? JSON.parse(bodyText) : undefined; } catch { parsedBody = bodyText; }
   if (!res.ok) {
     const err = new Error(`HTTP ${res.status}`);
     (err as any).status = res.status;
-    (err as any).body = body;
+    (err as any).body = parsedBody;
     throw err;
   }
-  return { status: res.status, body };
+  return { status: res.status, body: parsedBody };
 }
 
 export function getApiBase() {
