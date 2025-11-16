@@ -1,6 +1,10 @@
 // netlify/functions/api.ts
 import serverless from "serverless-http";
-import app from "../../dist/server/app.js";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+const compiledApp = require("../../dist/server/app.js");
+const app = compiledApp.default ?? compiledApp;
 
 // inclui PNG e PDF como tipos binários
 export const handler = serverless(app, {
