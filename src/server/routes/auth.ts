@@ -8,6 +8,12 @@ import { sendMagicLinkEmail } from "../lib/mail.js";
 
 const router = Router();
 
+const COOKIE_MODE = process.env.COOKIE_MODE === "1";
+
+const LoginReq = z.object({
+  email: z.string().email(),
+});
+
 const MagicReq = z.object({
   email: z.string().email(),
   redirectUrl: z.string().url().optional(), // opcional: front que receberá o token
@@ -18,6 +24,43 @@ const VerifyReq = z.object({
 
 const JWT_SECRET = process.env.JWT_SECRET!;
 const APP_BASE_URL = process.env.APP_BASE_URL || "http://localhost:3000";
+
+router.post("/auth/login", async (req: Request, res: Response) => {
+  const parsed = LoginReq.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const email = parsed.data.email.toLowerCase();
+
+  const client = await pool.connect();
+  try {
+    const { rows } = await client.query(
+      `insert into users(email) values ($1)
+       on conflict (email) do update set email = excluded.email
+       returning id, email`,
+      [email]
+    );
+    const user = rows[0];
+
+    const token = jwt.sign({ email: user.email }, JWT_SECRET, {
+      subject: String(user.id),
+      expiresIn: "7d",
+    });
+
+    if (COOKIE_MODE) {
+      res.cookie("session", token, {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: true,
+        maxAge: 86400_000,
+      });
+      return res.json({ ok: true });
+    }
+    return res.json({ token });
+  } catch (e) {
+    return res.status(500).json({ error: "login_failed" });
+  } finally {
+    client.release();
+  }
+});
 
 router.post("/auth/magic-link", async (req: Request, res: Response) => {
   const parsed = MagicReq.safeParse(req.body);

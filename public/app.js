@@ -1,6 +1,6 @@
 // ===== Config persistida =====
 const LS_KEYS = {
-  jwt: ["jwt","lms_jwt","apm_jwt"],
+  jwt: ["apm_token","lms_jwt","apm_jwt","jwt"],
   apiBase: "apm_api_base",
   muxKey: "apm_mux_data_env_key",
   lastCourse: "apm_last_course_id",
