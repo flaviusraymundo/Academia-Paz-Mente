@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "ts-node-dev --respawn --transpile-only src/server/index.ts",
+    "dev": "ts-node-dev --respawn --transpile-only --project tsconfig.dev.json src/server/index.ts",
     "build": "tsc -p . && next build web",
     "start": "NODE_ENV=production node dist/server/index.js",
     "web:dev": "next dev web",
