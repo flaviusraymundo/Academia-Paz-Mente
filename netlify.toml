@@ -3,7 +3,7 @@
   publish = "public"
 
 [functions]
-  node_bundler = "esbuild"
+  node_bundler = "nft"
   external_node_modules = ["pg", "puppeteer-core", "@sparticuz/chromium", "qrcode"]
   included_files = [
     "public/cert-templates/**",
