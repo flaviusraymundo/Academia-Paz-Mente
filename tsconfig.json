@@ -16,6 +16,6 @@
     "src/**/*.ts",
     "netlify/functions/**/*.ts",
     "scripts/**/*.ts",
-    "src/types/**/*.d.ts"
+    "src/server/types/**/*.d.ts"
   ]
 }

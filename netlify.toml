@@ -12,7 +12,8 @@
     "web/public/**",
     "dist/server/**",
     "node_modules/styled-jsx/**",
-    "node_modules/next/dist/compiled/**"
+    "node_modules/next/dist/compiled/**",
+    "node_modules/next/dist/server/**"
   ]
 
 [functions."*"]
@@ -23,7 +24,8 @@
     "web/public/**",
     "dist/server/**",
     "node_modules/styled-jsx/**",
-    "node_modules/next/dist/compiled/**"
+    "node_modules/next/dist/compiled/**",
+    "node_modules/next/dist/server/**"
   ]
 
 [build.environment]

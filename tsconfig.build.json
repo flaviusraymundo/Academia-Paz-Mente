@@ -11,10 +11,11 @@
     "allowImportingTsExtensions": false,
     "rootDir": "src/server",
     "outDir": "dist/server",
-    "typeRoots": ["./src/types", "./node_modules/@types"]
+    "typeRoots": ["./src/server/types", "./node_modules/@types"]
   },
   "include": [
-    "src/server/**/*.ts"
+    "src/server/**/*.ts",
+    "src/server/**/*.d.ts"
   ],
   "exclude": ["**/*.test.ts"]
 }

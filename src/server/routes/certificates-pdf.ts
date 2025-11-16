@@ -466,7 +466,11 @@ async function renderCertificatePdf(row: Row, req: Request, res: Response): Prom
         pngBuf = (await page.screenshot({ type: "png", fullPage: true })) as Buffer;
 
         if (!pngBuf || pngBuf.length === 0) {
-          await page.waitForTimeout(200);
+          if (typeof (page as any).waitForTimeout === "function") {
+            await (page as any).waitForTimeout(200);
+          } else {
+            await new Promise((resolve) => setTimeout(resolve, 200));
+          }
           pngBuf = (await page.screenshot({
             type: "png",
             fullPage: true,
