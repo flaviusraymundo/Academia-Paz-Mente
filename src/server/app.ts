@@ -30,11 +30,17 @@ app.use(helmet());
 app.use(morgan("combined"));
 app.use(json({ limit: "1mb" }));
 
+const allowedOrigins = [
+  /^https:\/\/lifeflourishconsulting\.com$/,
+  /^https:\/\/www\.lifeflourishconsulting\.com$/,
+  /^https:\/\/lifeflourishconsulting\.netlify\.app$/,
+  /^https:\/\/staging--profound-seahorse-147612\.netlify\.app$/,
+  /^https:\/\/deploy-preview-\d+--profound-seahorse-147612\.netlify\.app$/,
+];
+
 const allowOrigin = (origin?: string) => {
   if (!origin) return "";
-  const ok = /^https:\/\/(lifeflourishconsulting|staging--profound-seahorse-147612|deploy-preview-\d+--profound-seahorse-147612)\.netlify\.app$/.test(
-    origin
-  );
+  const ok = allowedOrigins.some((pattern) => pattern.test(origin));
   return ok ? origin : "";
 };
 

@@ -2,27 +2,16 @@
 
 ## Rodando local
 ```bash
-cd web
-npm i
+npm install
 npm run dev
-# http://localhost:4000
+# http://localhost:3000
 ```
-Cole seu JWT no topo (TokenBar). Se a API estiver em outra origem, defina:
+O comando único sobe o Express (API) e o Next (frontend) juntos. Cole seu JWT no topo (TokenBar) e use normalmente. Caso precise apontar o frontend para outra API (ex.: staging), crie `web/.env.local` com:
 ```
-NEXT_PUBLIC_API_BASE=https://SEU-BACKEND.NETLIFY.APP
+NEXT_PUBLIC_API_BASE=https://API-ALTERNATIVA.exemplo.com
 ```
-no arquivo `.env.local`.
 
-## Deploy no Netlify (site separado)
-- Base directory: `web`
-- Build command: `npm run build`
-- Publish directory: `.next`
-- Env:
-  - `NEXT_PUBLIC_API_BASE=https://SEU-BACKEND.NETLIFY.APP`
-
-Opcional — acessar via site principal:
-- No site principal (marketing), adicione em `_redirects`:
-```
-/app/*  https://SEU-APP-NEXT.netlify.app/:splat  200
-```
-Assim `https://seu-site.netlify.app/app/` serve o app Next.
+## Deploy integrado
+- O build único roda `npm run build`, que executa `tsc` + `next build web`.
+- `npm run start` serve a API e o Next na mesma origem (ex.: `https://lifeflourishconsulting.com`).
+- Variáveis `NEXT_PUBLIC_*` continuam sendo lidas do ambiente do servidor Node antes do build do Next.
