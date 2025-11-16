@@ -3,8 +3,8 @@ import { Router, Request, Response } from "express";
 import { z } from "zod";
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
-import { pool } from "../lib/db.js";
-import { sendMagicLinkEmail } from "../lib/mail.js";
+import { pool } from "../lib/db";
+import { sendMagicLinkEmail } from "../lib/mail";
 
 const router = Router();
 

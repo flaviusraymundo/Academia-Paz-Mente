@@ -1,9 +1,9 @@
 // src/server/routes/events.ts
 import { Router, Request, Response } from "express";
 import { z } from "zod";
-import { pool } from "../lib/db.js";
+import { pool } from "../lib/db";
 import { ulid } from "ulid";
-import { isUuid } from "../utils/ids.js";
+import { isUuid } from "../utils/ids";
 
 const router = Router();
 

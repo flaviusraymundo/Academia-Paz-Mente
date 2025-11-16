@@ -1,15 +1,15 @@
 // src/server/routes/progress.ts
 import { Router, Request, Response } from "express";
-import { pool, withClient } from "../lib/db.js";
+import { pool, withClient } from "../lib/db";
 import { z } from "zod";
 import { ulid } from "ulid";
-import { requireAuth } from "../middleware/auth.js";
-import { isUuid } from "../utils/ids.js";
+import { requireAuth } from "../middleware/auth";
+import { isUuid } from "../utils/ids";
 import {
   getActiveEntitlements,
   hasActiveCourseEntitlement,
-} from "../lib/entitlements.js";
-import { issueCertificate } from "../lib/certificates.js";
+} from "../lib/entitlements";
+import { issueCertificate } from "../lib/certificates";
 
 const router = Router();
 

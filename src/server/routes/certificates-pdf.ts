@@ -3,11 +3,11 @@ import fs from "fs";
 import path from "path";
 import { Buffer } from "buffer";
 import { Router, Request, Response } from "express";
-import { pool } from "../lib/db.js";
+import { pool } from "../lib/db";
 import chromium from "@sparticuz/chromium";
 import puppeteer from "puppeteer-core";
 import QRCode from "qrcode";
-import { isUuid } from "../utils/ids.js";
+import { isUuid } from "../utils/ids";
 
 const router = Router();
 

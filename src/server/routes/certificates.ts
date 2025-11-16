@@ -1,9 +1,9 @@
 // src/server/routes/certificates.ts
 import { Router, Response } from "express";
 import type { Request } from "express";
-import { pool, withClient } from "../lib/db.js";
-import { isUuid } from "../utils/ids.js";
-import { issueCertificate } from "../lib/certificates.js";
+import { pool, withClient } from "../lib/db";
+import { isUuid } from "../utils/ids";
+import { issueCertificate } from "../lib/certificates";
 
 // Base pública para montar links absolutos
 function publicBase(req: Request) {

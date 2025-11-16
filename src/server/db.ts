@@ -1,1 +1,1 @@
-export { pool, withClient, withTx } from "./lib/db.js";
+export { pool, withClient, withTx } from "./lib/db";

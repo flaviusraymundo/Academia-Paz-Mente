@@ -1,14 +1,14 @@
 // src/server/routes/admin.ts
 import { Router, Request, Response } from "express";
-import { pool, withClient } from "../lib/db.js";
+import { pool, withClient } from "../lib/db";
 import { z } from "zod";
-import { isUuid, paramUuid } from "../utils/ids.js";
-import { requireAuth } from "../middleware/auth.js";
-import { requireAdmin } from "../middleware/admin.js";
-import { issueCertificate } from "../lib/certificates.js";
-import { sanitizePayloadRef, resolveMode } from "../lib/sanitize.js";
-import { logAudit, ensureAuditTable } from "../lib/audit.js";
-import { allowRate } from "../lib/rate-limit.js";
+import { isUuid, paramUuid } from "../utils/ids";
+import { requireAuth } from "../middleware/auth";
+import { requireAdmin } from "../middleware/admin";
+import { issueCertificate } from "../lib/certificates";
+import { sanitizePayloadRef, resolveMode } from "../lib/sanitize";
+import { logAudit, ensureAuditTable } from "../lib/audit";
+import { allowRate } from "../lib/rate-limit";
 
 const router = Router();
 

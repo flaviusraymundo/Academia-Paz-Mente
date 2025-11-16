@@ -1,13 +1,13 @@
 // src/server/routes/entitlements.ts
 import { Router, Request, Response } from "express";
 import { withClient } from "../db";
-import { requireAuth } from "../middleware/auth.js";
-import { isUuid } from "../utils/ids.js";
+import { requireAuth } from "../middleware/auth";
+import { isUuid } from "../utils/ids";
 import {
   getActiveEntitlements,
   hasActiveCourseEntitlement,
   hasActiveTrackEntitlement,
-} from "../lib/entitlements.js";
+} from "../lib/entitlements";
 
 const router = Router();
 
