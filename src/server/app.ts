@@ -3,6 +3,7 @@ import express, { Request, Response, NextFunction } from "express";
 import helmet from "helmet";
 import morgan from "morgan";
 import { json } from "express";
+import fs from "node:fs";
 import path from "node:path";
 import next from "next";
 import { pool } from "./lib/db";
@@ -29,7 +30,26 @@ const app = express();
 app.set("trust proxy", true); // faz req.protocol/hostname respeitarem x-forwarded-*
 
 const isDev = process.env.NODE_ENV !== "production";
-const nextDir = path.join(process.cwd(), "web");
+function resolveNextDir() {
+  const configured = process.env.NEXT_DIR;
+  const candidates = [
+    configured && path.resolve(configured),
+    path.join(process.cwd(), "web"),
+    path.join(__dirname, "..", "..", "web"),
+    path.join(process.cwd(), "..", "web"),
+  ].filter(Boolean) as string[];
+
+  for (const dir of candidates) {
+    if (!dir) continue;
+    const buildDir = path.join(dir, ".next");
+    if (fs.existsSync(buildDir)) return dir;
+  }
+
+  const tried = candidates.map((dir) => `"${dir}"`).join(", ");
+  throw new Error(`Next build directory not found. Checked: ${tried}`);
+}
+
+const nextDir = resolveNextDir();
 const nextServer = next({ dev: isDev, dir: nextDir });
 const nextHandlerPromise = nextServer.prepare().then(() => nextServer.getRequestHandler());
 const shouldBypassNext = (pathname: string) => pathname.startsWith("/api") || pathname.startsWith("/.netlify/");
