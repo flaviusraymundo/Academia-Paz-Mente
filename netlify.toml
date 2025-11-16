@@ -10,7 +10,8 @@
     "public/images/**",
     "web/.next/**",
     "web/public/**",
-    "dist/server/**"
+    "dist/server/**",
+    "node_modules/styled-jsx/**"
   ]
 
 [functions."*"]
@@ -19,7 +20,8 @@
     "public/images/**",
     "web/.next/**",
     "web/public/**",
-    "dist/server/**"
+    "dist/server/**",
+    "node_modules/styled-jsx/**"
   ]
 
 [build.environment]
