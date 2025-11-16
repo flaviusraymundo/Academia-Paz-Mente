@@ -29,7 +29,11 @@ import { requireRole } from "./middleware/roles";
 const app = express();
 app.set("trust proxy", true); // faz req.protocol/hostname respeitarem x-forwarded-*
 
-const isDev = process.env.NODE_ENV !== "production";
+const nodeEnv = process.env.NODE_ENV ?? "production";
+if (!process.env.NODE_ENV) {
+  Reflect.set(process.env, "NODE_ENV", nodeEnv);
+}
+const isDev = nodeEnv !== "production";
 function resolveNextDir({ allowMissingBuild = false } = {}) {
   const configured = process.env.NEXT_DIR;
   const candidates = [
