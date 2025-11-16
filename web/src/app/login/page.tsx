@@ -27,7 +27,9 @@ export default function LoginPage() {
       localStorage.setItem("apm_token", data.token);
     }
 
-    window.location.assign("/");
+    const params = new URLSearchParams(window.location.search);
+    const from = params.get("from") || "/";
+    window.location.assign(from);
   }
 
   return (

@@ -19,7 +19,18 @@ export async function apiFetch<T = any>(path: string, init: ApiOptions = {}): Pr
     if (t && !headers.has("Authorization")) headers.set("Authorization", `Bearer ${t}`);
   }
 
-  if (!headers.has("Content-Type") && rest.body) headers.set("Content-Type", "application/json");
+  const body: any = (rest as any).body;
+  if (!headers.has("Content-Type") && body != null) {
+    const hasURLSearchParams =
+      typeof URLSearchParams !== "undefined" && body instanceof URLSearchParams;
+
+    if (typeof body === "string") {
+      headers.set("Content-Type", "application/json");
+    } else if (hasURLSearchParams) {
+      headers.set("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8");
+    }
+    // Para FormData/Blob/ArrayBuffer: deixar o browser definir automaticamente
+  }
 
   const res = await fetch(url, {
     ...rest,
