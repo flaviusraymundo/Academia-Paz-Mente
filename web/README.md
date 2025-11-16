@@ -15,3 +15,4 @@ NEXT_PUBLIC_API_BASE=https://API-ALTERNATIVA.exemplo.com
 - O build único roda `npm run build`, que executa `tsc` + `next build web`.
 - `npm run start` serve a API e o Next na mesma origem (ex.: `https://lifeflourishconsulting.com`).
 - Variáveis `NEXT_PUBLIC_*` continuam sendo lidas do ambiente do servidor Node antes do build do Next.
+- O site Netlify legatado (`profound-seahorse-147612.netlify.app`) agora só publica um redirect 301 para `https://lifeflourishconsulting.com`, portanto não há mais deploy independente para o frontend.
