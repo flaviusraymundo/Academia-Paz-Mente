@@ -30,7 +30,7 @@ const app = express();
 app.set("trust proxy", true); // faz req.protocol/hostname respeitarem x-forwarded-*
 
 const isDev = process.env.NODE_ENV !== "production";
-function resolveNextDir() {
+function resolveNextDir({ allowMissingBuild = false } = {}) {
   const configured = process.env.NEXT_DIR;
   const candidates = [
     configured && path.resolve(configured),
@@ -41,15 +41,18 @@ function resolveNextDir() {
 
   for (const dir of candidates) {
     if (!dir) continue;
+    if (!fs.existsSync(dir)) continue;
+    if (allowMissingBuild) return dir;
     const buildDir = path.join(dir, ".next");
     if (fs.existsSync(buildDir)) return dir;
   }
 
   const tried = candidates.map((dir) => `"${dir}"`).join(", ");
-  throw new Error(`Next build directory not found. Checked: ${tried}`);
+  const reason = allowMissingBuild ? "directory" : ".next build";
+  throw new Error(`Next ${reason} not found. Checked: ${tried}`);
 }
 
-const nextDir = resolveNextDir();
+const nextDir = resolveNextDir({ allowMissingBuild: isDev });
 const nextServer = next({ dev: isDev, dir: nextDir });
 const nextHandlerPromise = nextServer.prepare().then(() => nextServer.getRequestHandler());
 const shouldBypassNext = (pathname: string) => pathname.startsWith("/api") || pathname.startsWith("/.netlify/");
