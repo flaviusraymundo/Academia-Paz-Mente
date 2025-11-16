@@ -2,6 +2,7 @@
   "name": "apm-web",
   "private": true,
   "version": "0.1.0",
+  "type": "module",
   "scripts": {
     "dev": "npm run web:dev --prefix ..",
     "build": "npm run web:build --prefix ..",
