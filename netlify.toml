@@ -9,7 +9,8 @@
     "public/cert-templates/**",
     "public/images/**",
     "web/.next/**",
-    "web/public/**"
+    "web/public/**",
+    "dist/server/**"
   ]
 
 [functions."*"]
@@ -17,7 +18,8 @@
     "public/cert-templates/**",
     "public/images/**",
     "web/.next/**",
-    "web/public/**"
+    "web/public/**",
+    "dist/server/**"
   ]
 
 [build.environment]
