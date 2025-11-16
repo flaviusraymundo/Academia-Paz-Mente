@@ -4,7 +4,6 @@ import type React from "react";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import api from "../../lib/api";
-import { useRequireAuth } from "../../hooks/useRequireAuth";
 import { useAuth } from "../../contexts/AuthContext";
 import { Card } from "../../components/ui/Card";
 import { Badge } from "../../components/ui/Badge";
@@ -12,8 +11,7 @@ import { Skeleton } from "../../components/ui/Skeleton";
 import { CertificateListSchema, type Certificate } from "../../schemas/certificates";
 
 export default function CertificatesPage() {
-  const { authReady, isAuthenticated, cookieMode } = useRequireAuth();
-  const { jwt } = useAuth();
+  const { authReady, isAuthenticated, cookieMode, jwt } = useAuth();
   const [items, setItems] = useState<Certificate[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
