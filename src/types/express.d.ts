@@ -1,10 +1,24 @@
 // src/types/express.d.ts
 import "express-serve-static-core";
 
-declare module "express-serve-static-core" {
-  interface Request {
-    auth?: { userId?: string; email?: string; isAdmin?: boolean };
-    user?: { id?: string; email?: string; isAdmin?: boolean };
+export type AuthPayload = {
+  userId?: string | null;
+  email?: string | null;
+  isAdmin?: boolean;
+};
+
+export type RequestUser = {
+  id?: string | null;
+  email?: string | null;
+  isAdmin?: boolean;
+};
+
+declare global {
+  namespace Express {
+    interface Request {
+      auth?: AuthPayload;
+      user?: RequestUser;
+    }
   }
 }
 
