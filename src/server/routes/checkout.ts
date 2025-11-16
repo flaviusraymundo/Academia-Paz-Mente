@@ -1,7 +1,7 @@
 // src/server/routes/checkout.ts
 import { Router, Request, Response } from "express";
 import { z } from "zod";
-import { stripe } from "../lib/stripe.js";
+import { stripe } from "../lib/stripe";
 
 const router = Router();
 

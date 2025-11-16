@@ -1,7 +1,7 @@
 // src/server/routes/catalog.ts
 import { Router, Request, Response } from "express";
-import { pool } from "../lib/db.js";
-import { isUuid } from "../utils/ids.js";
+import { pool } from "../lib/db";
+import { isUuid } from "../utils/ids";
 
 const router = Router();
 

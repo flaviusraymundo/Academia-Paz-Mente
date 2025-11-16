@@ -1,10 +1,10 @@
 // src/server/routes/video.ts
 import { Router, Request, Response } from "express";
 import jwt, { JwtHeader } from "jsonwebtoken";
-import { pool, withClient } from "../lib/db.js";
-import { hasActiveCourseEntitlement } from "../lib/entitlements.js";
+import { pool, withClient } from "../lib/db";
+import { hasActiveCourseEntitlement } from "../lib/entitlements";
 import { ulid } from "ulid";
-import { isUuid } from "../utils/ids.js";
+import { isUuid } from "../utils/ids";
 
 const router = Router();
 

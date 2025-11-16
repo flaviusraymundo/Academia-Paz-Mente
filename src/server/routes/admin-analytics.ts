@@ -1,7 +1,7 @@
 // src/server/routes/admin-analytics.ts
 import { Router } from "express";
-import { withClient } from "../lib/db.js";
-import { isUuid } from "../utils/ids.js";
+import { withClient } from "../lib/db";
+import { isUuid } from "../utils/ids";
 import {
   getTimeByModule,
   getCourseFunnel,
@@ -11,7 +11,7 @@ import {
   getCourseWeekly,
   getCourseDropoff,
   getDurations
-} from "../lib/analytics.js";
+} from "../lib/analytics";
 
 const router = Router();
 

@@ -1,8 +1,8 @@
 // src/server/routes/quizzes.ts
 import { Router, Request, Response } from "express";
-import { pool } from "../lib/db.js";
+import { pool } from "../lib/db";
 import { ulid } from "ulid";
-import { isUuid } from "../utils/ids.js";
+import { isUuid } from "../utils/ids";
 
 const router = Router();
 

@@ -1,4 +1,4 @@
-import { withClient } from "../lib/db.js";
+import { withClient } from "../lib/db";
 import type { Request, Response, NextFunction } from "express";
 import type { QueryResult } from "pg";
 

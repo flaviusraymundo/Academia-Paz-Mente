@@ -5,25 +5,25 @@ import morgan from "morgan";
 import { json } from "express";
 import path from "node:path";
 import next from "next";
-import { pool } from "./lib/db.js";
+import { pool } from "./lib/db";
 
-import videoRouter from "./routes/video.js";
-import catalogRouter from "./routes/catalog.js";
-import checkoutRouter from "./routes/checkout.js";
-import quizzesRouter from "./routes/quizzes.js";
-import progressRouter from "./routes/progress.js";
-import authRouter from "./routes/auth.js";
-import certificatesPdf from "./routes/certificates-pdf.js";
-import { certificatesPublic, certificatesPrivate } from "./routes/certificates.js";
-import eventsRouter from "./routes/events.js";
-import adminRouter from "./routes/admin.js";
-import adminAnalyticsRouter from "./routes/admin-analytics.js";
-import adminAnalyticsExportRouter from "./routes/admin-analytics-export.js";
-import { requireAuth } from "./middleware/auth.js";
-import { requireAdmin } from "./middleware/admin.js";
-import entitlementsRouter from "./routes/entitlements.js";
-import { attachAuthIfPresent } from "./middleware/auth-optional.js";
-import { requireRole } from "./middleware/roles.js";
+import videoRouter from "./routes/video";
+import catalogRouter from "./routes/catalog";
+import checkoutRouter from "./routes/checkout";
+import quizzesRouter from "./routes/quizzes";
+import progressRouter from "./routes/progress";
+import authRouter from "./routes/auth";
+import certificatesPdf from "./routes/certificates-pdf";
+import { certificatesPublic, certificatesPrivate } from "./routes/certificates";
+import eventsRouter from "./routes/events";
+import adminRouter from "./routes/admin";
+import adminAnalyticsRouter from "./routes/admin-analytics";
+import adminAnalyticsExportRouter from "./routes/admin-analytics-export";
+import { requireAuth } from "./middleware/auth";
+import { requireAdmin } from "./middleware/admin";
+import entitlementsRouter from "./routes/entitlements";
+import { attachAuthIfPresent } from "./middleware/auth-optional";
+import { requireRole } from "./middleware/roles";
 
 const app = express();
 app.set("trust proxy", true); // faz req.protocol/hostname respeitarem x-forwarded-*
@@ -104,7 +104,7 @@ app.use("/api/admin/analytics", requireAuth, requireAdmin, adminAnalyticsExportR
 app.use("/api/admin", requireAuth, requireAdmin, adminRouter);
 
 // Exemplo futuro (Studio para instrutores):
-// import studioRouter from "./routes/studio.js";
+// import studioRouter from "./routes/studio";
 // app.use("/api/studio", requireAuth, requireRole('instructor','admin'), studioRouter);
 
 app.all("*", (req: Request, res: Response, nextHandler: NextFunction) => {

@@ -1,8 +1,8 @@
 // src/server/routes/webhooks/stripe.ts
 import express, { Request, Response } from "express";
 import Stripe from "stripe";
-import { pool, withTx } from "../../lib/db.js";
-import { beginIdempotent, finishIdempotent } from "../../lib/idempotency.js";
+import { pool, withTx } from "../../lib/db";
+import { beginIdempotent, finishIdempotent } from "../../lib/idempotency";
 import { ulid } from "ulid";
 
 // Router com raw body apenas aqui
