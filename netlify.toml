@@ -11,7 +11,8 @@
     "web/.next/**",
     "web/public/**",
     "dist/server/**",
-    "node_modules/styled-jsx/**"
+    "node_modules/styled-jsx/**",
+    "node_modules/next/dist/compiled/**"
   ]
 
 [functions."*"]
@@ -21,7 +22,8 @@
     "web/.next/**",
     "web/public/**",
     "dist/server/**",
-    "node_modules/styled-jsx/**"
+    "node_modules/styled-jsx/**",
+    "node_modules/next/dist/compiled/**"
   ]
 
 [build.environment]
