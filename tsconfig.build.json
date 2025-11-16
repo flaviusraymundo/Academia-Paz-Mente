@@ -9,7 +9,7 @@
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "allowImportingTsExtensions": false,
-    "outDir": "dist",
+    "outDir": "dist/server",
     "rootDir": "src/server",
     "typeRoots": ["./node_modules/@types"]
   },
