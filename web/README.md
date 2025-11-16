@@ -2,17 +2,24 @@
 
 ## Rodando local
 ```bash
-npm install
+cd web
+npm i
 npm run dev
-# http://localhost:3000
+# http://localhost:4000
 ```
-O comando único sobe o Express (API) e o Next (frontend) juntos. Cole seu JWT no topo (TokenBar) e use normalmente. Caso precise apontar o frontend para outra API (ex.: staging), crie `web/.env.local` com:
+Cole seu JWT no topo (TokenBar). Se a API estiver em outra origem, defina:
 ```
-NEXT_PUBLIC_API_BASE=https://API-ALTERNATIVA.exemplo.com
+NEXT_PUBLIC_API_BASE=https://SEU-BACKEND.NETLIFY.APP
 ```
+no arquivo `.env.local`.
 
-## Deploy integrado
-- O build único roda `npm run build`, que executa `tsc` + `next build web`.
-- `npm run start` serve a API e o Next na mesma origem (ex.: `https://lifeflourishconsulting.com`).
-- Variáveis `NEXT_PUBLIC_*` continuam sendo lidas do ambiente do servidor Node antes do build do Next.
-- O site Netlify legatado (`profound-seahorse-147612.netlify.app`) agora só publica um redirect 301 para `https://lifeflourishconsulting.com`, portanto não há mais deploy independente para o frontend.
+## Deploy no Netlify (site separado)
+- Base directory: `web`
+- Build command: `npm run build`
+- Publish directory: `.next`
+- Env:
+  - `NEXT_PUBLIC_API_BASE=https://lifeflourishconsulting.com`
+
+O site principal (`lifeflourishconsulting.com`) já reescreve todas as rotas que não começam com `/api`
+para `https://profound-seahorse-147612.netlify.app/:splat`, então o usuário sempre vê o Next
+no domínio final.

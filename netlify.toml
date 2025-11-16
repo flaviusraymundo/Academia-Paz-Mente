@@ -23,6 +23,12 @@
   to = "/.netlify/functions/stripe-webhook"
   status = 200
 
+[[redirects]]
+  from = "/*"
+  to = "https://profound-seahorse-147612.netlify.app/:splat"
+  status = 200
+  force = true
+
 ############################################
 # Contexto da branch ‘next-static’ (site aluno)
 ############################################

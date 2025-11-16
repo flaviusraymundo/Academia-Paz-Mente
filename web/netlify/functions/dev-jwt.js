@@ -44,59 +44,12 @@ function isProductionContext() {
   return ctx === "production" || vercel === "production" || node === "production";
 }
 
-const truthy = (value) => {
-  if (!value) return false;
-  const normalized = value.toLowerCase();
-  return normalized === "1" || normalized === "true";
-};
-
-const getExternalApiBase = () =>
-  (process.env.API_BASE || process.env.NEXT_PUBLIC_API_BASE || "").replace(/\/$/, "");
-
-const allowClientFallback = () =>
-  truthy(process.env.NEXT_PUBLIC_ALLOW_CLIENT_FAKE_JWT) || truthy(process.env.ALLOW_CLIENT_FAKE_JWT);
-
-async function fetchUpstreamToken(search) {
-  const base = getExternalApiBase();
-  if (!base) return null;
-  const upstreamUrl = `${base}/.netlify/functions/dev-jwt${search}`;
-  const upstream = await fetch(upstreamUrl, {
-    headers: { Accept: "text/plain" },
-    cache: "no-store",
-  });
-  const text = await upstream.text();
-  if (!upstream.ok) throw new Error(`upstream_${upstream.status}`);
-  const trimmed = text.trim();
-  if (!trimmed) throw new Error("upstream_empty_body");
-  return trimmed;
-}
-
 exports.handler = async (event) => {
   if (process.env.DEV_JWT_ENABLED !== "1") {
     return { statusCode: 404, body: "Not Found" };
   }
   if (isProductionContext() && process.env.DEV_JWT_ALLOW_IN_PRODUCTION !== "1") {
     return { statusCode: 404, body: "Not Found" };
-  }
-
-  const search = event?.rawQuery ? `?${event.rawQuery}` : "";
-  const upstreamErrors = [];
-
-  try {
-    const upstreamToken = await fetchUpstreamToken(search);
-    if (upstreamToken) {
-      return {
-        statusCode: 200,
-        headers: {
-          "Content-Type": "text/plain",
-          "Cache-Control": "no-store",
-          "X-Dev-Jwt-Source": "upstream",
-        },
-        body: upstreamToken,
-      };
-    }
-  } catch (err) {
-    upstreamErrors.push(String(err?.message || err));
   }
 
   try {
@@ -109,16 +62,6 @@ exports.handler = async (event) => {
     const ns = process.env.DEV_USER_NAMESPACE_UUID || "11111111-2222-3333-4444-555555555555";
     const userId = uuidV5(String(email || "").toLowerCase(), ns);
 
-    const secretBase = process.env.JWT_SECRET || process.env.DEV_JWT_SECRET;
-    const secret = secretBase || (allowClientFallback() ? "insecure-dev-secret" : null);
-    if (!secret) {
-      return {
-        statusCode: 502,
-        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
-        body: JSON.stringify({ error: "jwt_secret_missing", upstreamErrors }),
-      };
-    }
-
     const header = { alg: "HS256", typ: "JWT" };
     const payload = {
       sub: userId,
@@ -126,10 +69,13 @@ exports.handler = async (event) => {
       role: "dev",
       iat: now,
       exp: now + day,
-      iss: upstreamErrors.length ? "dev-jwt-local-fallback" : "dev-jwt-netlify",
+      iss: "dev-jwt-netlify",
       aud: "web",
       dev: true,
     };
+
+    const secret =
+      process.env.JWT_SECRET || process.env.DEV_JWT_SECRET || "insecure-dev-secret";
 
     const headerPart = b64url(JSON.stringify(header));
     const payloadPart = b64url(JSON.stringify(payload));
@@ -137,18 +83,9 @@ exports.handler = async (event) => {
     const signature = b64url(crypto.createHmac("sha256", secret).update(toSign).digest());
     const token = `${toSign}.${signature}`;
 
-    const headers = {
-      "Content-Type": "text/plain",
-      "Cache-Control": "no-store",
-      "X-Dev-Jwt-Source": "local",
-    };
-    if (upstreamErrors.length) {
-      headers["X-Dev-Jwt-Upstream"] = upstreamErrors.join(";");
-    }
-
     return {
       statusCode: 200,
-      headers,
+      headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" },
       body: token,
     };
   } catch (e) {
