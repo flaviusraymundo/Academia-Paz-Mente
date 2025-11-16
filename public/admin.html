@@ -895,9 +895,12 @@ ends_at: 2025-03-01T12:00:00Z
 
       // Export CSV helper (com Authorization e fallback para localStorage)
       function readToken() {
+        const keys = ["apm_token", "lms_jwt", "apm_jwt", "jwt"];
         try {
-          const t = localStorage.getItem("lms_jwt");
-          if (t) return t.trim();
+          for (const key of keys) {
+            const t = localStorage.getItem(key);
+            if (t) return t.trim();
+          }
         } catch {}
         return (document.getElementById("jwt")?.value || "").trim().replace(/^['"]+|['"]+$/g,"");
       }

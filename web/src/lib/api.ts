@@ -1,70 +1,90 @@
-// Utilidades centralizadas para chamadas à API do backend.
+import { readTokenFromStorage } from "../lib/token";
 
-export function getApiBase(): string {
-  return (process.env.NEXT_PUBLIC_API_BASE || "").replace(/\/+$/, "");
-}
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "";
+const COOKIE_MODE = (process.env.NEXT_PUBLIC_COOKIE_MODE ?? "0") === "1"; // header-mode por padrão
 
-// Lê cookie mode da env pública
-export function getUseCookieMode(): boolean {
-  const v = String(process.env.NEXT_PUBLIC_USE_COOKIE_MODE || "").toLowerCase();
-  return v === "1" || v === "true";
-}
+type ApiResponse<T = any> = { status: number; body: T | any; error?: boolean };
+type ApiOptions = RequestInit & { jwt?: string | null };
 
-type ApiOptions = (RequestInit & { jwt?: string | null }) | undefined;
+export async function apiFetch<T = any>(path: string, init: ApiOptions = {}): Promise<ApiResponse<T>> {
+  const isAbsolute = /^https?:\/\//i.test(path);
+  const url = isAbsolute ? path : `${API_BASE}${path}`;
 
-export async function api<T = any>(
-  path: string,
-  init?: ApiOptions
-): Promise<{ status: number; body: T | any }> {
-  const base = getApiBase();
-  const url = base ? `${base}${path}` : path;
-
-  const { jwt, headers, body, cache, ...rest } = init || {};
-  const h = new Headers(headers);
-
-  const USE_COOKIE_MODE = getUseCookieMode();
-  // Em cookie mode, a sessão vai via cookie HttpOnly; não envie Authorization
-  if (jwt && !USE_COOKIE_MODE) {
-    h.set("Authorization", `Bearer ${jwt}`);
+  const { jwt, ...rest } = init;
+  const headers = new Headers(rest.headers || {});
+  if (!COOKIE_MODE) {
+    const storedToken = typeof window !== "undefined" ? readTokenFromStorage() : null;
+    const token = jwt ?? storedToken;
+    if (token && !headers.has("Authorization")) headers.set("Authorization", `Bearer ${token}`);
   }
 
-  if (typeof body === "string" && !h.has("Content-Type")) {
-    h.set("Content-Type", "application/json");
-  }
+  const requestBody: any = (rest as any).body;
+  if (!headers.has("Content-Type") && requestBody != null) {
+    const hasURLSearchParams =
+      typeof URLSearchParams !== "undefined" && requestBody instanceof URLSearchParams;
+    const hasFormData = typeof FormData !== "undefined" && requestBody instanceof FormData;
+    const hasBlob = typeof Blob !== "undefined" && requestBody instanceof Blob;
+    const hasArrayBuffer =
+      typeof ArrayBuffer !== "undefined" && requestBody instanceof ArrayBuffer;
 
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      ...rest,
-      headers: h,
-      body,
-      credentials: USE_COOKIE_MODE ? "include" : "same-origin",
-      cache: cache ?? "no-store",
-    });
-  } catch (e: any) {
-    return { status: 0, body: { error: "fetch_failed", detail: String(e), path: url } };
-  }
-
-  let data: any = null;
-  try {
-    data = await res.json();
-  } catch {
-    try {
-      data = await res.text();
-    } catch {
-      data = null;
+    if (typeof requestBody === "string") {
+      headers.set("Content-Type", "application/json");
+    } else if (hasURLSearchParams) {
+      headers.set("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8");
     }
+    // Para FormData/Blob/ArrayBuffer: deixar o browser definir automaticamente
   }
 
-  return { status: res.status, body: data };
+  const res = await fetch(url, {
+    ...rest,
+    // em header-mode NÃO precisamos de credentials
+    credentials: COOKIE_MODE ? "include" : "omit",
+    headers
+  });
+
+  // helper de erro legível
+  const bodyText = await res.text().catch(() => "");
+  let parsedBody: any = undefined;
+  try { parsedBody = bodyText ? JSON.parse(bodyText) : undefined; } catch { parsedBody = bodyText; }
+  if (!res.ok) {
+    const err = new Error(`HTTP ${res.status}`);
+    (err as any).status = res.status;
+    (err as any).body = parsedBody;
+    throw err;
+  }
+  return { status: res.status, body: parsedBody };
 }
 
-export async function apiGet<T = any>(path: string, jwt?: string | null) {
-  return api<T>(path, { method: "GET", jwt });
+export function getApiBase() {
+  return API_BASE;
 }
 
-export async function apiPost<T = any>(path: string, data?: any, jwt?: string | null) {
-  return api<T>(path, { method: "POST", body: data ? JSON.stringify(data) : undefined, jwt });
+export function getUseCookieMode() {
+  return COOKIE_MODE;
+}
+
+async function api<T = any>(path: string, init: ApiOptions = {}): Promise<ApiResponse<T>> {
+  try {
+    return await apiFetch<T>(path, init);
+  } catch (err: any) {
+    return {
+      status: typeof err?.status === "number" ? err.status : 0,
+      body: err?.body ?? err?.message ?? null,
+      error: true,
+    };
+  }
+}
+
+export async function apiGet<T = any>(path: string, init: ApiOptions = {}) {
+  return api<T>(path, { ...init, method: init.method ?? "GET" });
+}
+
+export async function apiPost<T = any>(path: string, body?: any, init: ApiOptions = {}) {
+  return api<T>(path, {
+    ...init,
+    method: init.method ?? "POST",
+    body: body ? JSON.stringify(body) : init.body,
+  });
 }
 
 const apiDefault = Object.assign(api, {
@@ -72,5 +92,8 @@ const apiDefault = Object.assign(api, {
   post: apiPost,
   base: getApiBase,
   useCookieMode: getUseCookieMode,
+  fetch: apiFetch,
 });
+
+export { api };
 export default apiDefault;
