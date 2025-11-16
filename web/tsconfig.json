@@ -21,6 +21,9 @@
     "incremental": true,
     "esModuleInterop": true,
     "isolatedModules": true,
+    "paths": {
+      "@/*": ["./*"]
+    },
     "plugins": [
       {
         "name": "next"
