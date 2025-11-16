@@ -4,7 +4,7 @@
 
 [functions]
   node_bundler = "nft"
-  external_node_modules = ["pg", "puppeteer-core", "@sparticuz/chromium", "qrcode", "styled-jsx"]
+  external_node_modules = ["pg", "puppeteer-core", "@sparticuz/chromium", "qrcode", "styled-jsx", "next"]
   included_files = [
     "public/cert-templates/**",
     "public/images/**",
