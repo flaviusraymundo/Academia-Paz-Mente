@@ -1,8 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { isCookieModeEnabled } from "./src/lib/cookieMode";
 
 /**
  * Middleware de proteção condicional.
- * - Só ativo em "cookie mode" (COOKIE_MODE=1 ou NEXT_PUBLIC_USE_COOKIE_MODE=1).
+ * - Só ativo em "cookie mode" (env COOKIE_MODE/NEXT_PUBLIC_COOKIE_MODE = 1).
  * - Em header mode (JWT em localStorage) apenas retorna NextResponse.next().
  *
  * Notas:
@@ -10,24 +11,13 @@ import { NextResponse, type NextRequest } from "next/server";
  *   Validamos a sessão chamando /api/auth/session com o header Cookie original.
  * - Em falha de validação (ou erro), limpamos o cookie e redirecionamos para /login.
  */
-function isCookieMode() {
-  if (process.env.COOKIE_MODE === "1") return true;
-  const envCookie =
-    process.env.NEXT_PUBLIC_COOKIE_MODE === "1" ||
-    process.env.NEXT_PUBLIC_USE_COOKIE_MODE === "1" ||
-    process.env.NEXT_PUBLIC_USE_COOKIE_MODE === "true";
-  if (envCookie) {
-    return true;
-  }
-  return false;
-}
 
 // Rotas de páginas que exigem autenticação (quando cookie mode está ativo)
-const protectedPrefixes = ["/course", "/video", "/text", "/quiz"] as const;
+const protectedPrefixes = ["/video", "/text", "/quiz"] as const;
 const LOGIN_PATH = "/login";
 
 export async function middleware(req: NextRequest) {
-  const cookieMode = isCookieMode();
+  const cookieMode = isCookieModeEnabled();
   if (!cookieMode) {
     return NextResponse.next();
   }
