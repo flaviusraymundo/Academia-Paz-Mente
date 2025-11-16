@@ -5,4 +5,4 @@ const nextConfig = {
   // images: { domains: ["exemplo.com"] },
 };
 
-module.exports = nextConfig;
+export default nextConfig;

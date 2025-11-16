@@ -1,6 +1,7 @@
 [build]
   base    = "web"
-  command = "npm run build"
+  # Executa o build unificado na raiz, garantindo que dependências estejam instaladas lá.
+  command = "npm --prefix .. install && npm --prefix .. run build"
   # publish é relativo ao base
   publish = ".next"
 
