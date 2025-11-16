@@ -19,13 +19,6 @@ export default function CatalogPage() {
 
   useEffect(() => {
     if (!authReady) return;
-    if (!isAuthenticated) {
-      setCatalog(null);
-      setError(null);
-      setLoading(false);
-      return;
-    }
-
     let alive = true;
     (async () => {
       setLoading(true);

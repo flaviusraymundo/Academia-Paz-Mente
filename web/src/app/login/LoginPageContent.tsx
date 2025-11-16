@@ -2,48 +2,27 @@
 
 import { useSearchParams } from "next/navigation";
 import { useState } from "react";
-import { persistToken } from "@/src/lib/token";
+import { useAuth } from "../../contexts/AuthContext";
 
 export default function LoginPageContent() {
   const search = useSearchParams();
   const from = search.get("from") || "/";
-  const COOKIE_MODE = process.env.NEXT_PUBLIC_COOKIE_MODE === "1";
+  const { login, lastError, cookieMode, authReady, isAuthenticated } = useAuth();
 
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!email) return;
+    if (!email || loading) return;
     setLoading(true);
     try {
-      const r = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email })
-      });
-      if (!r.ok) {
-        alert("Falha no login. Tente novamente.");
-        setLoading(false);
+      const ok = await login(email);
+      if (ok) {
+        window.location.assign(from);
         return;
       }
-      if (!COOKIE_MODE) {
-        try {
-          const payload = await r.json().catch(() => ({}));
-          if (payload?.token) {
-            try {
-              persistToken(payload.token);
-            } catch {
-              // noop
-            }
-          }
-        } catch {
-          // noop
-        }
-      }
-      window.location.assign(from);
-    } catch {
-      alert("Erro de rede no login.");
+    } finally {
       setLoading(false);
     }
   }
@@ -51,7 +30,19 @@ export default function LoginPageContent() {
   return (
     <main style={{ maxWidth: 480, margin: "48px auto", padding: 24 }}>
       <h1>Login</h1>
-      <p>Flags (client): cookieMode={String(COOKIE_MODE)}</p>
+      <p>
+        Flags (client): cookieMode={String(cookieMode)} • authReady={String(authReady)}
+      </p>
+      {isAuthenticated && (
+        <p style={{ fontSize: 13, color: "#0a7d39" }} data-e2e="login-already-authed">
+          Você já está autenticado.
+        </p>
+      )}
+      {lastError && (
+        <p style={{ color: "#a00", fontSize: 13 }} data-e2e="login-error">
+          {lastError}
+        </p>
+      )}
       <form onSubmit={onSubmit}>
         <label htmlFor="email">Email</label>
         <input
@@ -63,7 +54,11 @@ export default function LoginPageContent() {
           onChange={(e) => setEmail(e.target.value)}
           style={{ display: "block", width: "100%", margin: "8px 0 16px" }}
         />
-        <button type="submit" disabled={loading} data-e2e="login-submit">
+        <button
+          type="submit"
+          disabled={loading || !authReady}
+          data-e2e="login-submit"
+        >
           {loading ? "Entrando..." : "Entrar"}
         </button>
       </form>

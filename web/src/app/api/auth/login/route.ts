@@ -6,10 +6,11 @@ import {
   normalizeEmail,
   signHS256,
 } from "../_utils";
+import { isCookieModeEnabled } from "../../../../lib/cookieMode";
 
 export async function POST(req: Request) {
   // Cookie mode precisa estar habilitado no servidor
-  if (process.env.COOKIE_MODE !== "1") {
+  if (!isCookieModeEnabled()) {
     return new Response(JSON.stringify({ error: "Auth cookie disabled" }), { status: 404 });
   }
 

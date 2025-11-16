@@ -1,7 +1,8 @@
 import { readTokenFromStorage } from "../lib/token";
+import { isCookieModeEnabled } from "./cookieMode";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "";
-const COOKIE_MODE = (process.env.NEXT_PUBLIC_COOKIE_MODE ?? "0") === "1"; // header-mode por padrão
+const COOKIE_MODE = isCookieModeEnabled();
 
 type ApiResponse<T = any> = { status: number; body: T | any; error?: boolean };
 type ApiOptions = RequestInit & { jwt?: string | null };
