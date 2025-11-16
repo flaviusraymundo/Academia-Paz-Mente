@@ -29,7 +29,10 @@ import { requireRole } from "./middleware/roles";
 const app = express();
 app.set("trust proxy", true); // faz req.protocol/hostname respeitarem x-forwarded-*
 
-const nodeEnv = process.env.NODE_ENV ?? "production";
+const isServerless = Boolean(
+  process.env.NETLIFY || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.LAMBDA_TASK_ROOT
+);
+const nodeEnv = process.env.NODE_ENV ?? (isServerless ? "production" : "development");
 if (!process.env.NODE_ENV) {
   Reflect.set(process.env, "NODE_ENV", nodeEnv);
 }
@@ -61,7 +64,12 @@ const nextServer = next({ dev: isDev, dir: nextDir });
 const nextHandlerPromise = nextServer.prepare().then(() => nextServer.getRequestHandler());
 const shouldBypassNext = (pathname: string) => pathname.startsWith("/api") || pathname.startsWith("/.netlify/");
 
-app.use(helmet());
+app.use(
+  helmet({
+    // A função Netlify precisa permitir scripts/styles do Next.
+    contentSecurityPolicy: false,
+  })
+);
 app.use(morgan("combined"));
 app.use(json({ limit: "1mb" }));
 
