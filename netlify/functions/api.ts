@@ -13,9 +13,19 @@ const binaryTypes = [
 
 let cachedHandler: ReturnType<typeof serverless> | null = null;
 
-async function getServer() {
+type ExpressApp = Parameters<typeof serverless>[0];
+
+function unwrapModule<T>(mod: T): T {
+  let current: any = mod;
+  while (current?.default && current.default !== current) {
+    current = current.default;
+  }
+  return current;
+}
+
+async function getServer(): Promise<ExpressApp> {
   const compiledApp = await import("../../dist/server/app.js");
-  return compiledApp.default ?? compiledApp;
+  return unwrapModule(compiledApp) as ExpressApp;
 }
 
 async function getHandler() {
