@@ -9,12 +9,12 @@
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "allowImportingTsExtensions": false,
-    "outDir": "dist",
-    "typeRoots": ["./node_modules/@types"]
+    "rootDir": "src/server",
+    "outDir": "dist/server",
+    "typeRoots": ["./src/types", "./node_modules/@types"]
   },
   "include": [
-    "src/server/**/*.ts",
-    "src/types/**/*.d.ts"
+    "src/server/**/*.ts"
   ],
   "exclude": ["**/*.test.ts"]
 }
