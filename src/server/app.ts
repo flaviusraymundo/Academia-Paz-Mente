@@ -62,29 +62,38 @@ function resolveNextDir({ allowMissingBuild = false } = {}) {
 const nextDir = resolveNextDir({ allowMissingBuild: isDev });
 const nextServer = next({ dev: isDev, dir: nextDir });
 const nextHandlerPromise = nextServer.prepare().then(() => nextServer.getRequestHandler());
-const devJwtPathname = "/api/dev-jwt";
-const nextApiAllowlist = new Set([devJwtPathname]);
+const devJwtCanonicalPath = "/api/dev-jwt";
+const devJwtServerlessPrefix = "/.netlify/functions/api";
+const devJwtServerlessVariant = `${devJwtServerlessPrefix}${devJwtCanonicalPath.replace(/^\/api/, "")}`;
+const normalizePathname = (pathname: string) => {
+  if (!pathname) return "/";
+  const withoutQuery = pathname.split("?")[0] || pathname;
+  const withoutHash = withoutQuery.split("#")[0] || withoutQuery;
+  if (withoutHash.length === 0) return "/";
+  if (withoutHash.length > 1 && withoutHash.endsWith("/")) {
+    let trimmed = withoutHash;
+    while (trimmed.length > 1 && trimmed.endsWith("/")) {
+      trimmed = trimmed.slice(0, -1);
+    }
+    return trimmed;
+  }
+  return withoutHash;
+};
+const isDevJwtPath = (pathname: string) => {
+  const normalized = normalizePathname(pathname);
+  if (normalized === devJwtCanonicalPath) return true;
+  if (normalized === devJwtServerlessVariant) return true;
+  return normalized.endsWith(devJwtCanonicalPath);
+};
 const debugNamespace = (process.env.DEBUG || process.env.LOG_LEVEL || "").toLowerCase();
 const devJwtDebugEnabled = debugNamespace.includes("dev-jwt");
 const devJwtLog = (...args: any[]) => {
   if (!devJwtDebugEnabled) return;
   console.debug("[dev-jwt][express]", ...args);
 };
-const normalizePathname = (pathname: string) => {
-  if (!pathname) return "/";
-  if (pathname.length > 1 && pathname.endsWith("/")) {
-    let trimmed = pathname;
-    while (trimmed.length > 1 && trimmed.endsWith("/")) {
-      trimmed = trimmed.slice(0, -1);
-    }
-    return trimmed;
-  }
-  return pathname;
-};
-const isDevJwtPath = (pathname: string) => normalizePathname(pathname) === devJwtPathname;
 const shouldBypassNext = (pathname: string) => {
   const normalized = normalizePathname(pathname);
-  if (nextApiAllowlist.has(normalized)) return false;
+  if (isDevJwtPath(normalized)) return false;
   return normalized.startsWith("/api") || normalized.startsWith("/.netlify/");
 };
 
