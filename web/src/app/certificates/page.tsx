@@ -126,9 +126,13 @@ export default function CertificatesPage() {
           style={{ display: "flex", flexDirection: "column", gap: 12 }}
         >
           {items.map((c, index) => {
-            const serial = c.serial;
+            const serial = c.serial == null ? null : String(c.serial);
+            const serialForTest = serial ?? String(index);
             return (
-              <Card key={serial ?? c.id ?? `${c.courseId ?? "unknown"}-${index}`} style={{ gap: 8 }}>
+              <Card
+                key={serial ?? c.id ?? `${c.courseId ?? "unknown"}-${index}`}
+                style={{ gap: 8 }}
+              >
                 <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                   <strong>Serial:</strong> <code>{serial ?? "-"}</code>
@@ -153,7 +157,7 @@ export default function CertificatesPage() {
                       target="_blank"
                       rel="noreferrer"
                       style={primaryBtn}
-                      data-testid={`certificate-download-${serial ?? index}`}
+                      data-testid={`certificate-download-${serialForTest}`}
                     >
                       Baixar PDF
                     </a>
