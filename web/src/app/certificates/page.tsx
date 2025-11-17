@@ -10,9 +10,11 @@ import { Badge } from "../../components/ui/Badge";
 import { Skeleton } from "../../components/ui/Skeleton";
 import { CertificateListSchema, type Certificate } from "../../schemas/certificates";
 
+type CertificateUI = Omit<Certificate, "serial"> & { serial: string | null };
+
 export default function CertificatesPage() {
   const { authReady, isAuthenticated, cookieMode, jwt } = useAuth();
-  const [items, setItems] = useState<Certificate[]>([]);
+  const [items, setItems] = useState<CertificateUI[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -34,7 +36,11 @@ export default function CertificatesPage() {
       if (status === 200 && typeof body === "object") {
         const parsed = CertificateListSchema.safeParse(body);
         if (parsed.success) {
-          setItems(parsed.data.certificates ?? []);
+          const normalized: CertificateUI[] = (parsed.data.certificates ?? []).map((cert) => ({
+            ...cert,
+            serial: cert.serial == null ? null : String(cert.serial),
+          }));
+          setItems(normalized);
           setErr(null);
         } else {
           setItems([]);
@@ -120,7 +126,7 @@ export default function CertificatesPage() {
           style={{ display: "flex", flexDirection: "column", gap: 12 }}
         >
           {items.map((c, index) => {
-            const serial = c.serial == null ? null : String(c.serial);
+            const serial = c.serial;
             return (
               <Card key={serial ?? c.id ?? `${c.courseId ?? "unknown"}-${index}`} style={{ gap: 8 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between" }}>
