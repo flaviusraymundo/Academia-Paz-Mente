@@ -126,27 +126,28 @@ export default function CertificatesPage() {
           style={{ display: "flex", flexDirection: "column", gap: 12 }}
         >
           {items.map((c, index) => {
-            const serial = c.serial == null ? null : String(c.serial);
-            const serialForTest = serial ?? String(index);
+            const serialText: string = c.serial ?? "";
+            const hasSerial = serialText.length > 0;
+            const serialForTest = hasSerial ? serialText : String(index);
             return (
               <Card
-                key={serial ?? c.id ?? `${c.courseId ?? "unknown"}-${index}`}
+                key={hasSerial ? serialText : c.id ?? `${c.courseId ?? "unknown"}-${index}`}
                 style={{ gap: 8 }}
               >
                 <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                  <strong>Serial:</strong> <code>{serial ?? "-"}</code>
+                  <strong>Serial:</strong> <code>{hasSerial ? serialText : "-"}</code>
                   {c.status && <Badge tone={c.status === "valid" ? "success" : "neutral"}>{c.status}</Badge>}
                   {c.issuedAt && <Badge tone="info">{new Date(c.issuedAt).toLocaleDateString()}</Badge>}
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
-                  {serial ? (
+                  {hasSerial ? (
                     <Link
-                      href={`/certificate/${encodeURIComponent(serial)}`}
+                      href={`/certificate/${encodeURIComponent(serialText)}`}
                       style={linkBtn}
-                      data-testid={`certificate-verify-${serial}`}
+                      data-testid={`certificate-verify-${serialText}`}
                     >
-                      Verificar
+                      {serialText}
                     </Link>
                   ) : (
                     <span style={{ ...linkBtn, opacity: 0.6, pointerEvents: "none" as const }}>Sem serial</span>
