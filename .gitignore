@@ -1,5 +1,6 @@
 node_modules/
 **/node_modules/
+web/node_modules
 .next/
 **/.next/
 dist/
@@ -9,3 +10,4 @@ coverage/
 .DS_Store
 # se NÃO quiser versionar o lockfile:
 # package-lock.json
+web/package-lock.json

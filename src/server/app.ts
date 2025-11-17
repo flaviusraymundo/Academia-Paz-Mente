@@ -3,6 +3,7 @@ import express, { Request, Response, NextFunction } from "express";
 import helmet from "helmet";
 import morgan from "morgan";
 import { json } from "express";
+import fs from "node:fs";
 import path from "node:path";
 import next from "next";
 import { pool } from "./lib/db";
@@ -28,13 +29,63 @@ import { requireRole } from "./middleware/roles";
 const app = express();
 app.set("trust proxy", true); // faz req.protocol/hostname respeitarem x-forwarded-*
 
-const isDev = process.env.NODE_ENV !== "production";
-const nextDir = path.join(process.cwd(), "web");
+const isServerless = Boolean(
+  process.env.NETLIFY || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.LAMBDA_TASK_ROOT
+);
+const nodeEnv = process.env.NODE_ENV ?? (isServerless ? "production" : "development");
+if (!process.env.NODE_ENV) {
+  Reflect.set(process.env, "NODE_ENV", nodeEnv);
+}
+const isDev = nodeEnv !== "production";
+function resolveNextDir({ allowMissingBuild = false } = {}) {
+  const configured = process.env.NEXT_DIR;
+  const candidates = [
+    configured && path.resolve(configured),
+    path.join(process.cwd(), "web"),
+    path.join(__dirname, "..", "..", "web"),
+    path.join(process.cwd(), "..", "web"),
+  ].filter(Boolean) as string[];
+
+  for (const dir of candidates) {
+    if (!dir) continue;
+    if (!fs.existsSync(dir)) continue;
+    if (allowMissingBuild) return dir;
+    const buildDir = path.join(dir, ".next");
+    if (fs.existsSync(buildDir)) return dir;
+  }
+
+  const tried = candidates.map((dir) => `"${dir}"`).join(", ");
+  const reason = allowMissingBuild ? "directory" : ".next build";
+  throw new Error(`Next ${reason} not found. Checked: ${tried}`);
+}
+
+const nextDir = resolveNextDir({ allowMissingBuild: isDev });
 const nextServer = next({ dev: isDev, dir: nextDir });
 const nextHandlerPromise = nextServer.prepare().then(() => nextServer.getRequestHandler());
-const shouldBypassNext = (pathname: string) => pathname.startsWith("/api") || pathname.startsWith("/.netlify/");
+const nextApiAllowlist = new Set(["/api/dev-jwt"]);
+const normalizePathname = (pathname: string) => {
+  if (!pathname) return "/";
+  if (pathname.length > 1 && pathname.endsWith("/")) {
+    let trimmed = pathname;
+    while (trimmed.length > 1 && trimmed.endsWith("/")) {
+      trimmed = trimmed.slice(0, -1);
+    }
+    return trimmed;
+  }
+  return pathname;
+};
+const shouldBypassNext = (pathname: string) => {
+  const normalized = normalizePathname(pathname);
+  if (nextApiAllowlist.has(normalized)) return false;
+  return normalized.startsWith("/api") || normalized.startsWith("/.netlify/");
+};
 
-app.use(helmet());
+app.use(
+  helmet({
+    // A função Netlify precisa permitir scripts/styles do Next.
+    contentSecurityPolicy: false,
+  })
+);
 app.use(morgan("combined"));
 app.use(json({ limit: "1mb" }));
 

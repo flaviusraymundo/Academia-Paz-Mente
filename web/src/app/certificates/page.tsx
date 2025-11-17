@@ -10,9 +10,11 @@ import { Badge } from "../../components/ui/Badge";
 import { Skeleton } from "../../components/ui/Skeleton";
 import { CertificateListSchema, type Certificate } from "../../schemas/certificates";
 
+type CertificateUI = Omit<Certificate, "serial"> & { serial: string | null };
+
 export default function CertificatesPage() {
   const { authReady, isAuthenticated, cookieMode, jwt } = useAuth();
-  const [items, setItems] = useState<Certificate[]>([]);
+  const [items, setItems] = useState<CertificateUI[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -34,7 +36,11 @@ export default function CertificatesPage() {
       if (status === 200 && typeof body === "object") {
         const parsed = CertificateListSchema.safeParse(body);
         if (parsed.success) {
-          setItems(parsed.data.certificates ?? []);
+          const normalized: CertificateUI[] = (parsed.data.certificates ?? []).map((cert) => ({
+            ...cert,
+            serial: cert.serial == null ? null : String(cert.serial),
+          }));
+          setItems(normalized);
           setErr(null);
         } else {
           setItems([]);
@@ -119,22 +125,29 @@ export default function CertificatesPage() {
           data-testid="certificates-list"
           style={{ display: "flex", flexDirection: "column", gap: 12 }}
         >
-          {items.map((c, index) => (
-            <Card key={c.serial ?? c.id ?? `${c.courseId ?? "unknown"}-${index}`} style={{ gap: 8 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between" }}>
+          {items.map((c, index) => {
+            const serialText: string = c.serial ?? "";
+            const hasSerial = serialText.length > 0;
+            const serialForTest = hasSerial ? serialText : String(index);
+            return (
+              <Card
+                key={hasSerial ? serialText : c.id ?? `${c.courseId ?? "unknown"}-${index}`}
+                style={{ gap: 8 }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                  <strong>Serial:</strong> <code>{c.serial ?? "-"}</code>
+                  <strong>Serial:</strong> <code>{hasSerial ? serialText : "-"}</code>
                   {c.status && <Badge tone={c.status === "valid" ? "success" : "neutral"}>{c.status}</Badge>}
                   {c.issuedAt && <Badge tone="info">{new Date(c.issuedAt).toLocaleDateString()}</Badge>}
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
-                  {c.serial ? (
+                  {hasSerial ? (
                     <Link
-                      href={`/certificate/${encodeURIComponent(c.serial)}`}
+                      href={`/certificate/${encodeURIComponent(serialText)}`}
                       style={linkBtn}
-                      data-testid={`certificate-verify-${c.serial}`}
+                      data-testid={`certificate-verify-${serialText}`}
                     >
-                      Verificar
+                      {serialText}
                     </Link>
                   ) : (
                     <span style={{ ...linkBtn, opacity: 0.6, pointerEvents: "none" as const }}>Sem serial</span>
@@ -145,7 +158,7 @@ export default function CertificatesPage() {
                       target="_blank"
                       rel="noreferrer"
                       style={primaryBtn}
-                      data-testid={`certificate-download-${c.serial ?? index}`}
+                      data-testid={`certificate-download-${serialForTest}`}
                     >
                       Baixar PDF
                     </a>
@@ -160,7 +173,8 @@ export default function CertificatesPage() {
                 </div>
               )}
             </Card>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

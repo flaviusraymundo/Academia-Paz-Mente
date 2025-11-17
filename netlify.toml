@@ -4,7 +4,17 @@
 
 [functions]
   node_bundler = "nft"
-  external_node_modules = ["pg", "puppeteer-core", "@sparticuz/chromium", "qrcode", "styled-jsx", "next"]
+  external_node_modules = [
+    "pg",
+    "puppeteer-core",
+    "@sparticuz/chromium",
+    "qrcode",
+    "styled-jsx",
+    "next",
+    "typescript",
+    "@types/react",
+    "@types/node"
+  ]
   included_files = [
     "public/cert-templates/**",
     "public/images/**",
@@ -13,7 +23,10 @@
     "dist/server/**",
     "node_modules/styled-jsx/**",
     "node_modules/next/dist/compiled/**",
-    "node_modules/next/dist/server/**"
+    "node_modules/next/dist/server/**",
+    "node_modules/typescript/**",
+    "node_modules/@types/react/**",
+    "node_modules/@types/node/**"
   ]
 
 [functions."*"]
@@ -25,7 +38,10 @@
     "dist/server/**",
     "node_modules/styled-jsx/**",
     "node_modules/next/dist/compiled/**",
-    "node_modules/next/dist/server/**"
+    "node_modules/next/dist/server/**",
+    "node_modules/typescript/**",
+    "node_modules/@types/react/**",
+    "node_modules/@types/node/**"
   ]
 
 [build.environment]
