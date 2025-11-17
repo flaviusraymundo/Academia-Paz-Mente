@@ -7,6 +7,33 @@ export const runtime = "nodejs";
 
 import crypto from "crypto";
 
+const allowedOrigins = [
+  /^https:\/\/lifeflourishconsulting\.com$/,
+  /^https:\/\/www\.lifeflourishconsulting\.com$/,
+  /^https:\/\/lifeflourishconsulting\.netlify\.app$/,
+  /^https:\/\/staging--lifeflourishconsulting\.netlify\.app$/,
+  /^https:\/\/deploy-preview-\d+--lifeflourishconsulting\.netlify\.app$/,
+];
+
+const allowOrigin = (origin: string | null) => {
+  if (!origin) return "";
+  const ok = allowedOrigins.some((pattern) => pattern.test(origin));
+  return ok ? origin : "";
+};
+
+const corsHeaders = (origin: string) => {
+  const headers: Record<string, string> = {
+    "Access-Control-Allow-Methods": "GET,POST,PUT,PATCH,OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type,Authorization",
+    Vary: "Origin",
+  };
+  if (origin) {
+    headers["Access-Control-Allow-Origin"] = origin;
+    headers["Access-Control-Allow-Credentials"] = "true";
+  }
+  return headers;
+};
+
 /** UUID v5 (determinístico a partir do e-mail + namespace) */
 function uuidV5(name: string, namespace: string): string {
   const ns = /^[0-9a-fA-F-]{36}$/.test(namespace)
@@ -152,7 +179,13 @@ function isDevJwtEnabled() {
   return !isProductionContext();
 }
 
+export async function OPTIONS(req: Request) {
+  const origin = allowOrigin(req.headers.get("origin"));
+  return new Response("", { status: 204, headers: corsHeaders(origin) });
+}
+
 export async function GET(req: Request) {
+  const origin = allowOrigin(req.headers.get("origin"));
   devJwtLog("request", {
     url: req.url,
     context: getNormalizedContext() || null,
@@ -161,13 +194,13 @@ export async function GET(req: Request) {
   // Gate principal
   if (!isDevJwtEnabled()) {
     devJwtLog("blocked", { reason: "flag_disabled" });
-    return new Response("Not Found", { status: 404 });
+    return new Response("Not Found", { status: 404, headers: corsHeaders(origin) });
   }
 
   // Safety net em produção (só libera com override explícito)
   if (isProductionContext() && !allowDevJwtInProduction()) {
     devJwtLog("blocked", { reason: "production", context: getNormalizedContext() || null });
-    return new Response("Not Found", { status: 404 });
+    return new Response("Not Found", { status: 404, headers: corsHeaders(origin) });
   }
 
   const url = new URL(req.url);
@@ -203,6 +236,11 @@ export async function GET(req: Request) {
   devJwtLog("issued", { email, sub: userId, context: getNormalizedContext() || null });
   return new Response(token, {
     status: 200,
-    headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" },
+    headers: {
+      ...corsHeaders(origin),
+      "Content-Type": "text/plain",
+      "Cache-Control": "no-store",
+      "X-Dev-Jwt-Source": "next",
+    },
   });
 }

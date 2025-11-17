@@ -148,8 +148,14 @@ const handler = async (event: any) => {
     client.release();
   }
 
-  const secretBase = process.env.JWT_SECRET || process.env.DEV_JWT_SECRET;
-  const secret = secretBase || (allowClientFallback() ? "insecure-dev-secret" : null);
+const allowFallbackSecret = () => {
+  if (!isProductionContext()) return true;
+  if (allowDevJwtInProduction()) return true;
+  return allowClientFallback();
+};
+
+const secretBase = process.env.JWT_SECRET || process.env.DEV_JWT_SECRET;
+const secret = secretBase || (allowFallbackSecret() ? "insecure-dev-secret" : null);
   if (!secret) {
     return {
       statusCode: 502,
