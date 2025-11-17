@@ -62,7 +62,14 @@ function resolveNextDir({ allowMissingBuild = false } = {}) {
 const nextDir = resolveNextDir({ allowMissingBuild: isDev });
 const nextServer = next({ dev: isDev, dir: nextDir });
 const nextHandlerPromise = nextServer.prepare().then(() => nextServer.getRequestHandler());
-const nextApiAllowlist = new Set(["/api/dev-jwt"]);
+const devJwtPathname = "/api/dev-jwt";
+const nextApiAllowlist = new Set([devJwtPathname]);
+const debugNamespace = (process.env.DEBUG || process.env.LOG_LEVEL || "").toLowerCase();
+const devJwtDebugEnabled = debugNamespace.includes("dev-jwt");
+const devJwtLog = (...args: any[]) => {
+  if (!devJwtDebugEnabled) return;
+  console.debug("[dev-jwt][express]", ...args);
+};
 const normalizePathname = (pathname: string) => {
   if (!pathname) return "/";
   if (pathname.length > 1 && pathname.endsWith("/")) {
@@ -74,6 +81,7 @@ const normalizePathname = (pathname: string) => {
   }
   return pathname;
 };
+const isDevJwtPath = (pathname: string) => normalizePathname(pathname) === devJwtPathname;
 const shouldBypassNext = (pathname: string) => {
   const normalized = normalizePathname(pathname);
   if (nextApiAllowlist.has(normalized)) return false;
@@ -88,6 +96,23 @@ app.use(
 );
 app.use(morgan("combined"));
 app.use(json({ limit: "1mb" }));
+
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const pathname = req.path || req.url || "/";
+  if (!isDevJwtPath(pathname)) return next();
+  devJwtLog("short-circuit express stack", {
+    method: req.method,
+    url: req.originalUrl || req.url,
+    phase: "before-routes",
+  });
+  nextHandlerPromise
+    .then((handler) => handler(req, res))
+    .catch((err) => {
+      devJwtLog("next handler rejected", { error: err?.message || err });
+      next(err);
+    });
+  return;
+});
 
 const allowedOrigins = [
   /^https:\/\/lifeflourishconsulting\.com$/,
@@ -159,7 +184,17 @@ app.use("/api/admin", requireAuth, requireAdmin, adminRouter);
 // app.use("/api/studio", requireAuth, requireRole('instructor','admin'), studioRouter);
 
 app.all("*", (req: Request, res: Response, nextHandler: NextFunction) => {
-  if (shouldBypassNext(req.path || "/")) return nextHandler();
+  const pathname = req.path || req.url || "/";
+  const normalized = normalizePathname(pathname);
+  const bypass = shouldBypassNext(normalized);
+  if (devJwtDebugEnabled && isDevJwtPath(normalized)) {
+    devJwtLog("catch-all decision", {
+      method: req.method,
+      url: req.originalUrl || req.url,
+      bypass,
+    });
+  }
+  if (bypass) return nextHandler();
   nextHandlerPromise
     .then((handler) => handler(req, res))
     .catch((err) => nextHandler(err));

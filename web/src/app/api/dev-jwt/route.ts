@@ -117,10 +117,31 @@ async function createOrFetchUserId(email: string): Promise<string> {
   }
 }
 
+const previewContexts = new Set(["deploy-preview", "branch-deploy"]);
+const debugNamespace = (process.env.DEBUG || process.env.LOG_LEVEL || "").toLowerCase();
+const devJwtDebugEnabled = debugNamespace.includes("dev-jwt");
+const devJwtLog = (...args: any[]) => {
+  if (!devJwtDebugEnabled) return;
+  console.debug("[dev-jwt][next]", ...args);
+};
+
+function getNormalizedContext() {
+  return (process.env.CONTEXT || process.env.VERCEL_ENV || "").toLowerCase();
+}
+
+function isPreviewContext() {
+  return previewContexts.has(getNormalizedContext());
+}
+
 function isProductionContext() {
-  const ctx = (process.env.CONTEXT || process.env.VERCEL_ENV || "").toLowerCase();
+  const ctx = getNormalizedContext();
   if (ctx) return ctx === "production";
   return (process.env.NODE_ENV || "").toLowerCase() === "production";
+}
+
+function allowDevJwtInProduction() {
+  if (process.env.DEV_JWT_ALLOW_IN_PRODUCTION === "1") return true;
+  return isPreviewContext();
 }
 
 function isDevJwtEnabled() {
@@ -132,13 +153,20 @@ function isDevJwtEnabled() {
 }
 
 export async function GET(req: Request) {
+  devJwtLog("request", {
+    url: req.url,
+    context: getNormalizedContext() || null,
+    nodeEnv: process.env.NODE_ENV,
+  });
   // Gate principal
   if (!isDevJwtEnabled()) {
+    devJwtLog("blocked", { reason: "flag_disabled" });
     return new Response("Not Found", { status: 404 });
   }
 
   // Safety net em produção (só libera com override explícito)
-  if (isProductionContext() && process.env.DEV_JWT_ALLOW_IN_PRODUCTION !== "1") {
+  if (isProductionContext() && !allowDevJwtInProduction()) {
+    devJwtLog("blocked", { reason: "production", context: getNormalizedContext() || null });
     return new Response("Not Found", { status: 404 });
   }
 
@@ -172,6 +200,7 @@ export async function GET(req: Request) {
   const signature = b64url(crypto.createHmac("sha256", secret).update(toSign).digest());
   const token = `${toSign}.${signature}`;
 
+  devJwtLog("issued", { email, sub: userId, context: getNormalizedContext() || null });
   return new Response(token, {
     status: 200,
     headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" },

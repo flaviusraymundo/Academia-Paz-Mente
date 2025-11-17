@@ -41,10 +41,27 @@ const getExternalApiBase = () =>
 const allowClientFallback = () =>
   truthy(process.env.NEXT_PUBLIC_ALLOW_CLIENT_FAKE_JWT) || truthy(process.env.ALLOW_CLIENT_FAKE_JWT);
 
+const previewContexts = new Set(["deploy-preview", "branch-deploy"]);
+const debugNamespace = (process.env.DEBUG || process.env.LOG_LEVEL || "").toLowerCase();
+const devJwtDebugEnabled = debugNamespace.includes("dev-jwt");
+const devJwtLog = (...args: any[]) => {
+  if (!devJwtDebugEnabled) return;
+  console.debug("[dev-jwt][netlify]", ...args);
+};
+
+const getNormalizedContext = () => (process.env.CONTEXT || process.env.VERCEL_ENV || "").toLowerCase();
+
+const isPreviewContext = () => previewContexts.has(getNormalizedContext());
+
 const isProductionContext = () => {
-  const ctx = (process.env.CONTEXT || process.env.VERCEL_ENV || "").toLowerCase();
+  const ctx = getNormalizedContext();
   if (ctx) return ctx === "production";
   return (process.env.NODE_ENV || "").toLowerCase() === "production";
+};
+
+const allowDevJwtInProduction = () => {
+  if (process.env.DEV_JWT_ALLOW_IN_PRODUCTION === "1") return true;
+  return isPreviewContext();
 };
 
 const isDevJwtEnabled = () => {
@@ -68,10 +85,18 @@ const fetchUpstreamToken = async (search: string) => {
 const handler = async (event: any) => {
   const origin = allowOrigin(event.headers?.origin);
 
+  devJwtLog("request", {
+    method: event.httpMethod,
+    rawPath: event.rawUrl || event.path,
+    context: getNormalizedContext() || null,
+  });
+
   if (!isDevJwtEnabled()) {
+    devJwtLog("blocked", { reason: "flag_disabled" });
     return { statusCode: 404, body: "Not Found" };
   }
-  if (isProductionContext() && process.env.DEV_JWT_ALLOW_IN_PRODUCTION !== "1") {
+  if (isProductionContext() && !allowDevJwtInProduction()) {
+    devJwtLog("blocked", { reason: "production", context: getNormalizedContext() || null });
     return { statusCode: 404, body: "Not Found" };
   }
 
@@ -89,7 +114,7 @@ const handler = async (event: any) => {
   try {
     const upstreamToken = await fetchUpstreamToken(search);
     if (upstreamToken) {
-      return {
+      const response = {
         statusCode: 200,
         headers: {
           ...corsHeaders(origin),
@@ -99,6 +124,8 @@ const handler = async (event: any) => {
         },
         body: upstreamToken,
       };
+      devJwtLog("issued", { source: "upstream", context: getNormalizedContext() || null });
+      return response;
     }
   } catch (err: any) {
     upstreamErrors.push(String(err?.message || err));
@@ -152,6 +179,7 @@ const handler = async (event: any) => {
     headers["X-Dev-Jwt-Upstream"] = upstreamErrors.join(";");
   }
 
+  devJwtLog("issued", { source: upstreamErrors.length ? "local-fallback" : "local" });
   return {
     statusCode: 200,
     headers,
