@@ -119,20 +119,22 @@ export default function CertificatesPage() {
           data-testid="certificates-list"
           style={{ display: "flex", flexDirection: "column", gap: 12 }}
         >
-          {items.map((c, index) => (
-            <Card key={c.serial ?? c.id ?? `${c.courseId ?? "unknown"}-${index}`} style={{ gap: 8 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between" }}>
+          {items.map((c, index) => {
+            const serial = c.serial == null ? null : String(c.serial);
+            return (
+              <Card key={serial ?? c.id ?? `${c.courseId ?? "unknown"}-${index}`} style={{ gap: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                  <strong>Serial:</strong> <code>{c.serial ?? "-"}</code>
+                  <strong>Serial:</strong> <code>{serial ?? "-"}</code>
                   {c.status && <Badge tone={c.status === "valid" ? "success" : "neutral"}>{c.status}</Badge>}
                   {c.issuedAt && <Badge tone="info">{new Date(c.issuedAt).toLocaleDateString()}</Badge>}
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
-                  {c.serial ? (
+                  {serial ? (
                     <Link
-                      href={`/certificate/${encodeURIComponent(c.serial)}`}
+                      href={`/certificate/${encodeURIComponent(serial)}`}
                       style={linkBtn}
-                      data-testid={`certificate-verify-${c.serial}`}
+                      data-testid={`certificate-verify-${serial}`}
                     >
                       Verificar
                     </Link>
@@ -145,7 +147,7 @@ export default function CertificatesPage() {
                       target="_blank"
                       rel="noreferrer"
                       style={primaryBtn}
-                      data-testid={`certificate-download-${c.serial ?? index}`}
+                      data-testid={`certificate-download-${serial ?? index}`}
                     >
                       Baixar PDF
                     </a>
@@ -160,7 +162,8 @@ export default function CertificatesPage() {
                 </div>
               )}
             </Card>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
