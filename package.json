@@ -9,6 +9,7 @@
     "start": "NODE_ENV=production node dist/server/index.js",
     "postinstall": "node scripts/ensure-web-node-modules.mjs",
     "ensure:web-node-modules": "node scripts/ensure-web-node-modules.mjs",
+    "materialize:web-node-modules": "node scripts/materialize-web-node-modules.mjs",
     "web:dev": "cd web && next dev",
     "web:build": "cd web && next build",
     "web:start": "cd web && next start",
