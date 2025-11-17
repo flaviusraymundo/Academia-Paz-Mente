@@ -62,7 +62,23 @@ function resolveNextDir({ allowMissingBuild = false } = {}) {
 const nextDir = resolveNextDir({ allowMissingBuild: isDev });
 const nextServer = next({ dev: isDev, dir: nextDir });
 const nextHandlerPromise = nextServer.prepare().then(() => nextServer.getRequestHandler());
-const shouldBypassNext = (pathname: string) => pathname.startsWith("/api") || pathname.startsWith("/.netlify/");
+const nextApiAllowlist = new Set(["/api/dev-jwt"]);
+const normalizePathname = (pathname: string) => {
+  if (!pathname) return "/";
+  if (pathname.length > 1 && pathname.endsWith("/")) {
+    let trimmed = pathname;
+    while (trimmed.length > 1 && trimmed.endsWith("/")) {
+      trimmed = trimmed.slice(0, -1);
+    }
+    return trimmed;
+  }
+  return pathname;
+};
+const shouldBypassNext = (pathname: string) => {
+  const normalized = normalizePathname(pathname);
+  if (nextApiAllowlist.has(normalized)) return false;
+  return normalized.startsWith("/api") || normalized.startsWith("/.netlify/");
+};
 
 app.use(
   helmet({
